@@ -1,0 +1,14 @@
+# OS / editor noise
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Python (for future scripts/validate.py)
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Local Codex working state
+.codex/

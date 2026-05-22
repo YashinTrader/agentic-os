@@ -1,0 +1,49 @@
+id: T-0002
+title: "Commit docs/ (ARCHITECTURE, AGENT_PROTOCOL, etc.)"
+owner: codex
+status: done
+created: 2026-05-22T00:00:00Z
+updated: 2026-05-23T01:15:00Z
+
+objective: >
+  Add the five protocol documents from the Manager-Architect plan and ensure
+  their Markdown examples render cleanly.
+
+inputs:
+  - docs/ARCHITECTURE.md
+  - docs/AGENT_PROTOCOL.md
+  - docs/TASK_SCHEMA.md
+  - docs/HANDOFF_PROTOCOL.md
+  - docs/DECISIONS.md
+
+outputs:
+  - docs/ARCHITECTURE.md
+  - docs/AGENT_PROTOCOL.md
+  - docs/TASK_SCHEMA.md
+  - docs/HANDOFF_PROTOCOL.md
+  - docs/DECISIONS.md
+
+constraints:
+  - Do not redesign the protocol.
+  - Fix only formatting issues that would prevent clear rendering or parsing.
+  - Keep examples visible and valid.
+
+acceptance_criteria:
+  - All five docs exist.
+  - Markdown code blocks close correctly.
+  - Tables render correctly.
+  - YAML and JSONL examples are valid in form.
+
+handoff_notes: >
+  Docs are ready for claude to review alongside the validator and ADR seeds.
+
+risk_level: low
+requires_human_approval: false
+
+priority: P1
+depends_on: [T-0001]
+blocks: [T-0010]
+labels: [docs, protocol, phase-1]
+estimated_effort: S
+related_decisions: [ADR-0001, ADR-0002]
+related_handoff: handoffs/T-0001__codex__to__claude.md

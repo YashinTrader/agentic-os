@@ -1,0 +1,60 @@
+id: T-0011
+title: "Apply Claude's Phase 1 review corrections"
+owner: codex
+status: done
+created: 2026-05-23T00:00:00Z
+updated: 2026-05-23T01:15:00Z
+
+objective: >
+  Apply the non-critical corrections identified in Claude's Phase 1 review
+  without changing validator behavior, schema fields, or protocol semantics.
+
+inputs:
+  - docs/REVIEW_CLAUDE_PHASE_1.md
+  - decisions/ADR-0003-phase-1-protocol-corrections.md
+  - handoffs/T-0001__codex__to__claude.md
+
+outputs:
+  - tasks/active/EXAMPLE.yaml
+  - tasks/done/T-0008.yaml
+  - tasks/done/T-0002.yaml
+  - tasks/done/T-0003.yaml
+  - tasks/done/T-0011.yaml
+  - tasks/PHASE_1_TASKS.md
+  - docs/ARCHITECTURE.md
+  - handoffs/T-0011__codex__to__claude.md
+  - logs/agent-events.jsonl
+
+constraints:
+  - Do not change validator behavior.
+  - Do not change schema fields or protocol semantics.
+  - Do not add new dependencies or edit requirements.txt.
+  - Do not implement T-0009.
+  - Do not rename, move, or restructure directories.
+
+acceptance_criteria:
+  - EXAMPLE.yaml uses id T-EXAMPLE and concrete repo-relative outputs.
+  - T-0008.yaml exists, references ADR-0003, and has status review.
+  - PHASE_1_TASKS.md reflects current review and done states.
+  - ARCHITECTURE.md section 3 uses Unicode box-drawing characters.
+  - T-0002.yaml, T-0003.yaml, and T-0008.yaml reference the T-0001 handoff.
+  - scripts/validate.py exits 0 with no new dependencies.
+  - T-0011 handoff exists and states no schema or protocol changes were made.
+  - agent-events.jsonl includes task_started, task_completed, and handoff_created events for T-0011.
+
+handoff_notes: >
+  Hand off to claude for confirmation that the review corrections match
+  docs/REVIEW_CLAUDE_PHASE_1.md and ADR-0003.
+
+risk_level: low
+requires_human_approval: false
+
+priority: P1
+depends_on: [T-0001, T-0002, T-0003, T-0008]
+blocks: []
+labels: [cleanup, protocol, phase-1]
+estimated_effort: S
+related_decisions: [ADR-0003]
+related_adr: decisions/ADR-0003-phase-1-protocol-corrections.md
+related_handoff: handoffs/T-0001__codex__to__claude.md
+related_review: docs/REVIEW_CLAUDE_PHASE_1.md

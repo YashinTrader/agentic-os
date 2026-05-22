@@ -1,0 +1,40 @@
+id: T-EXAMPLE
+title: "Example task — reference template"
+owner: codex
+status: todo
+created: 2026-05-22T00:00:00Z
+updated: 2026-05-22T00:00:00Z
+
+objective: >
+  Demonstrate every required and optional field of the task schema so other
+  agents have a concrete copy-paste reference.
+
+inputs:
+  - docs/TASK_SCHEMA.md
+  - docs/AGENT_PROTOCOL.md
+
+outputs:
+  - tasks/active/EXAMPLE.yaml
+
+constraints:
+  - Must validate against docs/TASK_SCHEMA.md.
+  - Do not modify docs/.
+
+acceptance_criteria:
+  - File parses as valid YAML.
+  - All required fields present.
+  - Linked from PHASE_1_TASKS.md.
+
+handoff_notes: >
+  Example only. Do not pick this task up for real work.
+
+risk_level: low
+requires_human_approval: false
+
+# --- optional fields ---
+priority: P3
+depends_on: []
+blocks: []
+labels: [example, reference, phase-1]
+estimated_effort: XS
+related_decisions: [ADR-0002]

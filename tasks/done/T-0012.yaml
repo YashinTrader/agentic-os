@@ -1,0 +1,35 @@
+id: T-0012
+title: Phase 1.5 minimal CLI task runner
+owner: codex
+status: done
+created: '2026-05-22T22:24:18Z'
+updated: '2026-05-22T22:24:20Z'
+objective: Add minimal file-based CLI helpers for tasks, logs, and handoffs.
+inputs:
+- docs/TASK_SCHEMA.md
+- docs/AGENT_PROTOCOL.md
+- docs/HANDOFF_PROTOCOL.md
+outputs:
+- scripts/create_task.py
+- scripts/list_tasks.py
+- scripts/update_task.py
+- scripts/append_log.py
+- scripts/create_handoff.py
+- tests/test_phase15_cli.py
+constraints:
+- No new dependencies.
+- Do not add API, database, dashboard, or CI.
+acceptance_criteria:
+- python -m unittest exits 0.
+- python scripts/validate.py exits 0.
+handoff_notes: Hand off Phase 1.5 CLI helpers to claude for review.
+risk_level: low
+requires_human_approval: false
+priority: P1
+depends_on: []
+blocks: []
+labels:
+- phase-1.5
+- cli
+estimated_effort: S
+related_decisions: []

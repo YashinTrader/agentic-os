@@ -1,0 +1,76 @@
+# Agentic OS — Phase 1
+
+A **local-first, file-based control plane** for coordinating multiple AI
+coding/research agents (Codex, Cursor, Claude, Gemini, Hermes, …) using a
+shared Git repository as the temporary communication layer.
+
+> Phase 1 is intentionally minimal. No daemons, no APIs, no databases.
+> Just files, Git, and a strict protocol every agent follows.
+
+## Why
+Most agents (Codex, Claude Code, Cursor, etc.) cannot yet talk to each other
+directly. But they *can* all read and write files in a Git repo. Phase 1
+exploits that: every coordination primitive — tasks, assignments, handoffs,
+decisions, logs — is a structured file.
+
+## Quick Tour
+| Directory      | What lives here                                      |
+|----------------|------------------------------------------------------|
+| `docs/`        | The protocol. Read these first.                      |
+| `tasks/`       | Backlog and in-flight work (YAML files).             |
+| `handoffs/`    | One markdown file per agent-to-agent transition.     |
+| `decisions/`   | ADRs (architectural decision records).               |
+| `logs/`        | Append-only event log (`agent-events.jsonl`).        |
+| `memory/`      | Reserved for Phase 2 (unified semantic memory).      |
+| `scripts/`     | Local validation tooling for Phase 1 files.           |
+
+## Start Here (Humans)
+1. Read `docs/ARCHITECTURE.md` — the big picture.
+2. Read `tasks/PHASE_1_TASKS.md` — what's being built right now.
+3. Assign a task by editing its YAML `owner` field and committing.
+
+## Start Here (Agents)
+**You must read these files before taking any action:**
+1. `docs/AGENT_PROTOCOL.md` — the binding contract.
+2. `docs/TASK_SCHEMA.md` — how tasks are structured.
+3. `docs/HANDOFF_PROTOCOL.md` — how to end a work session.
+4. `docs/DECISIONS.md` — when and how to write ADRs.
+
+Then:
+- Check `tasks/active/` for tasks where `owner: <your-id>`.
+- Work on branch `agent/<your-id>/<task-id>`.
+- Log every significant action to `logs/agent-events.jsonl`.
+- Write a handoff before you stop.
+
+## Agent Roles (Phase 1)
+- **Codex** — primary builder (implements Phase 1 tasks).
+- **Claude** — architect/reviewer (writes & approves ADRs).
+- **Cursor / Gemini / Hermes** — deferred to Phase 2.
+- **Human** — approves risky actions, merges PRs.
+
+## Safety
+- No agent may merge to `main`. Humans merge.
+- Risky actions require an ADR with `approval: human`.
+- Every action is logged. No silent operations.
+
+## Phase 1.5 CLI Helpers
+Small local helpers are available for common file-based operations:
+
+```powershell
+python scripts/create_task.py --id T-0013 --title "Example" --objective "Describe the work."
+python scripts/list_tasks.py
+python scripts/update_task.py --id T-0013 --status in_progress
+python scripts/append_log.py --agent codex --task T-0013 --event started
+python scripts/create_handoff.py --task T-0013 --from-agent codex --to-agent claude --what-i-did "Summarized work."
+```
+
+Run `python -m unittest` and `python scripts/validate.py` before handoff.
+
+## Phase 2 (Preview, Not Built Yet)
+- Unified semantic memory (Cognee or Mem0) via MCP.
+- Cursor-built Kanban dashboard reading the same files.
+- Hermes summarizes the event log nightly.
+- Token/usage monitoring per agent.
+
+## License
+TBD (decide in ADR before Phase 2).

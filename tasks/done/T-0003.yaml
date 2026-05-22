@@ -1,0 +1,47 @@
+id: T-0003
+title: "Create tasks/active, done, blocked directories"
+owner: codex
+status: done
+created: 2026-05-22T00:00:00Z
+updated: 2026-05-23T01:15:00Z
+
+objective: >
+  Create and preserve the task state directories used by the file-based
+  coordination protocol.
+
+inputs:
+  - docs/TASK_SCHEMA.md
+  - docs/AGENT_PROTOCOL.md
+
+outputs:
+  - tasks/active/
+  - tasks/done/
+  - tasks/blocked/
+  - tasks/active/EXAMPLE.yaml
+  - tasks/active/T-0001.yaml
+  - tasks/active/T-0002.yaml
+  - tasks/active/T-0003.yaml
+
+constraints:
+  - Use one YAML file per task.
+  - Keep done and blocked as directories for later task movement.
+  - Do not introduce a database or alternate state store.
+
+acceptance_criteria:
+  - active/, done/, and blocked/ exist.
+  - Active task YAML files parse successfully.
+  - Task statuses and risk levels use allowed values.
+
+handoff_notes: >
+  Task directories and seed task files are ready for claude protocol review.
+
+risk_level: low
+requires_human_approval: false
+
+priority: P1
+depends_on: [T-0001]
+blocks: [T-0010]
+labels: [tasks, scaffolding, phase-1]
+estimated_effort: XS
+related_decisions: [ADR-0002]
+related_handoff: handoffs/T-0001__codex__to__claude.md

@@ -1,0 +1,50 @@
+id: T-0008
+title: "Add validator script: scripts/validate.py"
+owner: codex
+status: done
+created: 2026-05-22T00:00:00Z
+updated: 2026-05-23T01:15:00Z
+
+objective: >
+  Document the already-implemented Phase 1 validator task retroactively so the
+  backlog and active task files match the repository state.
+
+inputs:
+  - docs/TASK_SCHEMA.md
+  - docs/AGENT_PROTOCOL.md
+  - docs/HANDOFF_PROTOCOL.md
+  - docs/DECISIONS.md
+  - decisions/ADR-0003-phase-1-protocol-corrections.md
+
+outputs:
+  - scripts/validate.py
+  - requirements.txt
+  - tasks/done/T-0008.yaml
+
+constraints:
+  - Do not change validator behavior in T-0011.
+  - Do not add dependencies beyond PyYAML.
+  - Keep CI out of scope.
+
+acceptance_criteria:
+  - Validator checks task YAML required fields.
+  - Validator checks allowed task statuses and risk levels.
+  - Validator checks logs/agent-events.jsonl as JSONL.
+  - Validator checks required handoff and ADR sections.
+  - Validator exits 0 on the current repository state.
+
+handoff_notes: >
+  Validator work was bundled into the T-0001 handoff and is now explicitly
+  traceable through ADR-0003 and this task file.
+
+risk_level: medium
+requires_human_approval: true
+
+priority: P1
+depends_on: [T-0001, T-0002, T-0003]
+blocks: [T-0010]
+labels: [validator, protocol, phase-1]
+estimated_effort: S
+related_decisions: [ADR-0003]
+related_adr: decisions/ADR-0003-phase-1-protocol-corrections.md
+related_handoff: handoffs/T-0001__codex__to__claude.md
