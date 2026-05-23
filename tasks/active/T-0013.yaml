@@ -1,0 +1,137 @@
+# T-0013: Read-only local dashboard (Phase 1.6)
+id: T-0013
+title: "Read-only local dashboard for the file-based control plane"
+status: todo
+owner: gemini
+reviewer: claude
+created_by: claude
+created_at: "2026-05-23T00:00:00Z"
+created: "2026-05-23T00:00:00Z"
+updated: "2026-05-23T00:00:00Z"
+priority: high
+risk_level: medium
+requires_human_approval: true
+objective: "Read-only local dashboard for the file-based control plane"
+inputs:
+  - docs/TASK_SCHEMA.md
+  - docs/AGENT_PROTOCOL.md
+constraints:
+  - "Follow the existing Agentic OS protocols."
+handoff_notes: "Refer to docs/REVIEW_CLAUDE_DASHBOARD_V0.md for resubmission context."
+acceptance_criteria:
+  - "`dashboard/app.py` exists and runs via `streamlit run dashboard/app.py` against the real repo without raising."
+  - "`dashboard/requirements.txt` lists exactly `streamlit` and `pyyaml`, pinned to a minimum version."
+  - "`dashboard/README.md` documents: how to run, what it reads, what it explicitly does NOT do (link the non-goals), and known limitations."
+  - "The Kanban shows five columns (todo, in_progress, review, blocked, done) and excludes `EXAMPLE.yaml`."
+  - "Clicking a task opens a detail view that renders every field listed under `goals` above, using the real schema keys (`acceptance`, `notes`, `created_at`, `updated_at`, `priority` as text, etc.)."
+  - "The System Events tab reads `logs/agent-events.jsonl` using the real keys (`ts`, `agent`, `type`, ...). Filtering by agent and by `task_id`/`task` works."
+  - "If ADR-0004 is `accepted` at implementation time, unknown event `type` values are surfaced as a non-fatal warning row, not a `KeyError`."
+  - "Handoffs tab lists every `handoffs/*.md` except `README.md`, sorted by filename. ADR tab lists every `decisions/ADR-*.md` and detects status case-insensitively from the first ~10 lines."
+  - "Sidebar health panel distinguishes ok / empty / error for both tasks and events. All good is not shown when there are zero tasks."
+  - "Every interpolated value inside `unsafe_allow_html=True` passes through `html.escape()`."
+  - "`tests/test_dashboard.py` (synthetic fixtures) and `tests/test_dashboard_real_repo.py` (real repo) both pass under `pytest -q` or `python -m unittest`."
+  - "`python scripts/validate.py` exits 0."
+  - "A handoff file `handoffs/T-0013__gemini__to__claude.md` is written via `scripts/new_handoff.py` (dogfood)."
+  - "The task moves todo → in_progress → review → done in lockstep with the CLI; no direct file moves, no skipping review."
+
+depends_on:
+  - T-0012a    # CLI guardrails (must land first so any future write surface is safe)
+
+# Soft dependency: ADR-0004 should be accepted before this lands so the events
+# parser can target the closed vocabulary. If ADR-0004 is still proposed at
+# implementation time, parse permissively and add a TODO referencing it.
+related_decisions:
+  - ADR-0001
+  - ADR-0003
+  - ADR-0004   # proposed at time of writing
+
+phase: "1.6"
+
+context: |
+  T-DASHBOARD-V0 (Gemini's first attempt) shipped a Streamlit dashboard that
+  looked good but had three structural problems documented in
+  `docs/REVIEW_CLAUDE_DASHBOARD_V0.md`:
+
+    1. It silently expanded scope from read-only to read-write (a second
+       writer to the protocol surface, with no ADR).
+    2. It was written against an invented task schema (`acceptance_criteria`,
+       `handoff_notes`, P0..P3 priorities) instead of the real one in
+       `docs/TASK_SCHEMA.md` (`acceptance`, `notes`, textual priorities).
+    3. The events parser used the wrong JSONL field names (`event` vs `type`).
+
+  T-0013 re-scopes the work as a strictly read-only dashboard, aligned to the
+  real schema and the real event log, with a smoke test that pins it against
+  the actual repository (not a synthetic fixture).
+
+goals:
+  - Ship a strictly read-only Streamlit dashboard under `dashboard/` that reads files only — no writes, no subprocess calls into `scripts/`.
+  - Faithfully render task fields as defined in `docs/TASK_SCHEMA.md`: id, title, owner, reviewer, status, phase, risk_level, requires_human_approval, priority (high|medium|low), depends_on, related_decisions, context, goals, non_goals, outputs, acceptance, human_approval_checklist, notes, created_at, updated_at, created_by.
+  - Faithfully render events from `logs/agent-events.jsonl` using the real keys (`ts`, `agent`, `type`, plus event-specific fields). If ADR-0004 is `accepted` at implementation time, parse against the closed vocabulary and surface unknown types as a warning row.
+  - Provide four tabs: Kanban Board, System Events, Handoffs & ADRs, About/Health.
+  - Provide a sidebar health panel that distinguishes three states per surface: ok, empty, error.
+  - HTML-escape every interpolated value inside any `unsafe_allow_html=True` block.
+  - Add one real-repo smoke test that loads the actual repository and asserts at least one task parses with non-empty `objective`/`acceptance`.
+
+non_goals:
+  - Do NOT add a Control Room / write surface. No `subprocess` calls to `scripts/`. No file mutations of any kind.
+  - Do NOT introduce a database, daemon, server-side state, websockets, or any non-file persistence.
+  - Do NOT add authentication, user accounts, or multi-user state.
+  - Do NOT add a dependency beyond `streamlit` and `pyyaml`.
+  - Do NOT refactor `scripts/` or `docs/TASK_SCHEMA.md` in this task. If the schema feels wrong, raise it in the handoff; do not silently change it.
+  - Do NOT invent task fields. If a field is not in `docs/TASK_SCHEMA.md`, it does not exist for V0.
+  - Do NOT add a token/budget/cost tracker (that is Phase 2).
+  - Do NOT add a dependency graph view (Phase 2).
+
+acceptance:
+  - "`dashboard/app.py` exists and runs via `streamlit run dashboard/app.py` against the real repo without raising."
+  - "`dashboard/requirements.txt` lists exactly `streamlit` and `pyyaml`, pinned to a minimum version."
+  - "`dashboard/README.md` documents: how to run, what it reads, what it explicitly does NOT do (link the non-goals), and known limitations."
+  - "The Kanban shows five columns (todo, in_progress, review, blocked, done) and excludes `EXAMPLE.yaml`."
+  - "Clicking a task opens a detail view that renders every field listed under `goals` above, using the real schema keys (`acceptance`, `notes`, `created_at`, `updated_at`, `priority` as text, etc.)."
+  - "The System Events tab reads `logs/agent-events.jsonl` using the real keys (`ts`, `agent`, `type`, ...). Filtering by agent and by `task_id`/`task` works."
+  - "If ADR-0004 is `accepted` at implementation time, unknown event `type` values are surfaced as a non-fatal warning row, not a `KeyError`."
+  - "Handoffs tab lists every `handoffs/*.md` except `README.md`, sorted by filename. ADR tab lists every `decisions/ADR-*.md` and detects status case-insensitively from the first ~10 lines."
+  - "Sidebar health panel distinguishes ok / empty / error for both tasks and events. All good is not shown when there are zero tasks."
+  - "Every interpolated value inside `unsafe_allow_html=True` passes through `html.escape()`."
+  - "`tests/test_dashboard.py` (synthetic fixtures) and `tests/test_dashboard_real_repo.py` (real repo) both pass under `pytest -q` or `python -m unittest`."
+  - "`python scripts/validate.py` exits 0."
+  - "A handoff file `handoffs/T-0013__gemini__to__claude.md` is written via `scripts/new_handoff.py` (dogfood)."
+  - "The task moves todo → in_progress → review → done in lockstep with the CLI; no direct file moves, no skipping review."
+
+outputs:
+  - dashboard/app.py                                # new
+  - dashboard/requirements.txt                      # new
+  - dashboard/README.md                             # new
+  - tests/test_dashboard.py                         # new (synthetic fixtures, real schema)
+  - tests/test_dashboard_real_repo.py               # new (loads actual repo)
+  - handoffs/T-0013__gemini__to__claude.md          # new
+  - tasks/PHASE_1_TASKS.md                          # updated (entry for T-0013, phase 1.6)
+  - logs/agent-events.jsonl                         # appended
+
+human_approval_checklist:
+  - Confirm the dashboard performs zero writes (no subprocess, no file mutation).
+  - Confirm the parser uses the schema fields in `docs/TASK_SCHEMA.md` exactly (no aliases, no invented fields).
+  - Confirm the events parser handles unknown `type` values without crashing.
+  - Confirm dependencies are exactly `streamlit` and `pyyaml`.
+  - Confirm the real-repo smoke test exists and passes.
+
+notes: |
+  This task supersedes `tasks/active/T-DASHBOARD-V0.yaml`. On acceptance:
+
+    - Delete `tasks/active/T-DASHBOARD-V0.yaml`, or move it to `tasks/done/`
+      annotated as superseded-by: T-0013.
+    - Keep `docs/DASHBOARD_PROTOCOL_GAPS.md` (it is useful Phase 2 input).
+    - Keep, do not re-write, the existing CSS / visual treatment from the V0
+      attempt where possible; the visuals were fine, the data binding was
+      not.
+
+  A read-write dashboard (Control Room) is explicitly out of scope. If wanted
+  later, it must land as `T-0014` behind its own ADR.
+
+  Implementation hint: prefer Streamlit's native widgets over raw HTML for
+  task cards. Where HTML is unavoidable, route every interpolated string
+  through `html.escape()`. The visual loss is small; the safety win is real.
+
+  If the parser discovers a schema ambiguity (e.g. an existing task uses a
+  field not documented in `TASK_SCHEMA.md`), raise it in the handoff under
+  `open_questions`. Do not silently extend the schema.
