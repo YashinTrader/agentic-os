@@ -4,8 +4,8 @@ import json
 import shutil
 import subprocess
 import sys
-import tempfile
 import unittest
+import uuid
 from pathlib import Path
 
 import yaml
@@ -16,13 +16,15 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 class Phase15CliTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.tmp = tempfile.TemporaryDirectory()
-        self.root = Path(self.tmp.name) / "repo"
-        ignore = shutil.ignore_patterns(".codex", "__pycache__", "*.pyc")
+        temp_root = REPO_ROOT / ".tmp-tests"
+        temp_root.mkdir(exist_ok=True)
+        self.tmp_dir = temp_root / uuid.uuid4().hex
+        self.root = self.tmp_dir / "repo"
+        ignore = shutil.ignore_patterns(".codex", ".tmp-tests", "__pycache__", "*.pyc")
         shutil.copytree(REPO_ROOT, self.root, ignore=ignore)
 
     def tearDown(self) -> None:
-        self.tmp.cleanup()
+        shutil.rmtree(self.tmp_dir, ignore_errors=True)
 
     def run_script(self, script: str, *args: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
@@ -62,9 +64,11 @@ class Phase15CliTests(unittest.TestCase):
         self.assertTrue(task_path.exists())
         task = yaml.safe_load(task_path.read_text(encoding="utf-8"))
         self.assertEqual(task["id"], "T-0012")
-        self.assertEqual(task["status"], "todo")
+        self.assertEqual(task["status"], "ready")
         self.assertEqual(task["risk_level"], "low")
         self.assertFalse(task["requires_human_approval"])
+        self.assertEqual(task["reviewer"], "claude")
+        self.assertEqual(task["created_by"], "codex")
         self.assertEqual(task["outputs"], ["scripts/create_task.py"])
         self.assertIn("phase-1.5", task["labels"])
 
@@ -90,6 +94,99 @@ class Phase15CliTests(unittest.TestCase):
         task = yaml.safe_load(done_path.read_text(encoding="utf-8"))
         self.assertEqual(task["status"], "done")
         self.assertEqual(task["owner"], "claude")
+
+    def test_create_task_emits_schema_v2_fields(self) -> None:
+        self.run_script(
+            "create_task.py",
+            "--id",
+            "T-9016",
+            "--title",
+            "Schema v2 task",
+            "--objective",
+            "Exercise v2 creation.",
+            "--output",
+            "tasks/active/T-9016.yaml",
+        )
+
+        task = yaml.safe_load((self.root / "tasks" / "active" / "T-9016.yaml").read_text(encoding="utf-8"))
+        for deprecated in ("created", "updated", "acceptance_criteria", "handoff_notes"):
+            self.assertNotIn(deprecated, task)
+        for required in (
+            "created_at",
+            "updated_at",
+            "reviewer",
+            "created_by",
+            "phase",
+            "goals",
+            "non_goals",
+            "acceptance",
+            "notes",
+            "human_approval_checklist",
+        ):
+            self.assertIn(required, task)
+        self.assertEqual(task["status"], "ready")
+        self.assertEqual(task["priority"], "high")
+
+    def test_create_task_with_human_approval_populates_checklist(self) -> None:
+        self.run_script(
+            "create_task.py",
+            "--id",
+            "T-0017",
+            "--title",
+            "Approval task",
+            "--objective",
+            "Exercise approval checklist.",
+            "--requires-human-approval",
+            "--output",
+            "tasks/active/T-0017.yaml",
+        )
+
+        task = yaml.safe_load((self.root / "tasks" / "active" / "T-0017.yaml").read_text(encoding="utf-8"))
+        self.assertTrue(task["requires_human_approval"])
+        self.assertTrue(task["human_approval_checklist"])
+
+    def test_update_task_preserves_schema_v2_and_review_reviewer_rule(self) -> None:
+        self.run_script(
+            "create_task.py",
+            "--id",
+            "T-0018",
+            "--title",
+            "Review task",
+            "--objective",
+            "Exercise review update.",
+            "--output",
+            "tasks/active/T-0018.yaml",
+        )
+
+        self.run_script("update_task.py", "--id", "T-0018", "--status", "review", "--owner", "codex")
+
+        task = yaml.safe_load((self.root / "tasks" / "active" / "T-0018.yaml").read_text(encoding="utf-8"))
+        self.assertEqual(task["status"], "review")
+        self.assertEqual(task["reviewer"], "claude")
+        self.assertNotIn("updated", task)
+        self.assertIn("updated_at", task)
+
+    def test_create_task_output_validates_without_task_warnings(self) -> None:
+        self.run_script(
+            "create_task.py",
+            "--id",
+            "T-0019",
+            "--title",
+            "Validated task",
+            "--objective",
+            "Exercise validator compatibility.",
+            "--output",
+            "tasks/active/T-0019.yaml",
+        )
+
+        result = subprocess.run(
+            [sys.executable, str(self.root / "scripts" / "validate.py")],
+            cwd=self.root,
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        self.assertNotIn("tasks/active/T-0019.yaml", result.stderr)
 
     def test_append_log_adds_single_jsonl_event(self) -> None:
         before = (self.root / "logs" / "agent-events.jsonl").read_text(encoding="utf-8").splitlines()

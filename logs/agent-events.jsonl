@@ -1,14 +1,2 @@
-{"ts":"2026-05-22T00:00:00Z","agent":"human","task":"T-0000","event":"started","detail":"Phase 1 repo bootstrap"}
-{"ts":"2026-05-23T00:00:00Z","agent":"codex","task":"T-0001","event":"started","detail":"picked up Phase 1 repository skeleton build"}
-{"ts":"2026-05-23T00:05:00Z","agent":"codex","task":"T-0001","event":"progress","detail":"added seed task YAML files and validator"}
-{"ts":"2026-05-23T00:10:00Z","agent":"codex","task":"T-0001","event":"handoff","detail":"to claude for Phase 1 skeleton review","ref":"handoffs/T-0001__codex__to__claude.md"}
-{"ts":"2026-05-23T00:20:00Z","agent":"codex","task":"T-0011","event":"task_started","detail":"started Claude Phase 1 review corrections","ref":"docs/REVIEW_CLAUDE_PHASE_1.md"}
-{"ts":"2026-05-23T00:30:00Z","agent":"codex","task":"T-0011","event":"task_completed","detail":"applied review corrections without schema or protocol changes","ref":"tasks/active/T-0011.yaml"}
-{"ts":"2026-05-23T00:31:00Z","agent":"codex","task":"T-0011","event":"handoff_created","detail":"created handoff to claude for review","ref":"handoffs/T-0011__codex__to__claude.md"}
-{"ts":"2026-05-23T01:15:00Z","agent":"human","task":"T-0010","event":"finished","detail":"Claude and Gabriel Achim approved Phase 1; ADR-0003 accepted","ref":"decisions/ADR-0003-phase-1-protocol-corrections.md"}
-{"ts":"2026-05-23T01:16:00Z","agent":"codex","task":"T-0011","event":"finished","detail":"marked Phase 1 corrective tasks done after human approval","ref":"tasks/PHASE_1_TASKS.md"}
-{"ts":"2026-05-22T22:24:18Z","agent":"codex","task":"T-0012","event":"started","detail":"started Phase 1.5 minimal CLI task runner","ref":"tasks/active/T-0012.yaml"}
-{"ts":"2026-05-22T22:24:19Z","agent":"codex","task":"T-0012","event":"progress","detail":"added CLI scripts and unittest coverage","ref":"tests/test_phase15_cli.py"}
-{"ts":"2026-05-22T22:24:19Z","agent":"codex","task":"T-0012","event":"handoff","detail":"created handoff to claude for Phase 1.5 review","ref":"handoffs/T-0012__codex__to__claude.md"}
-{"ts":"2026-05-22T22:24:25Z","agent":"codex","task":"T-0012","event":"finished","detail":"completed Phase 1.5 minimal CLI task runner","ref":"tasks/done/T-0012.yaml"}
-{"ts":"2026-05-23T00:00:00Z","agent":"codex","type":"decision_recorded","adr_id":"ADR-0005","status":"accepted","task_id":"T-0015","ref":"decisions/ADR-0005-task-schema-v2.md"}
+{"ts":"2026-05-23T00:00:00Z","agent":"human","task":"T-0000","event":"started","detail":"Phase 1 repo bootstrap"}
+{"ts":"2026-05-23T14:48:52Z","agent":"codex","task":"T-0016","event":"started","detail":"updated CLI helpers to emit task schema v2","ref":"scripts/create_task.py"}
