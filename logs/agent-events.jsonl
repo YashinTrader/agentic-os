@@ -11,3 +11,4 @@
 {"ts":"2026-05-22T22:24:19Z","agent":"codex","task":"T-0012","event":"progress","detail":"added CLI scripts and unittest coverage","ref":"tests/test_phase15_cli.py"}
 {"ts":"2026-05-22T22:24:19Z","agent":"codex","task":"T-0012","event":"handoff","detail":"created handoff to claude for Phase 1.5 review","ref":"handoffs/T-0012__codex__to__claude.md"}
 {"ts":"2026-05-22T22:24:25Z","agent":"codex","task":"T-0012","event":"finished","detail":"completed Phase 1.5 minimal CLI task runner","ref":"tasks/done/T-0012.yaml"}
+{"ts":"2026-05-23T00:00:00Z","agent":"codex","type":"decision_recorded","adr_id":"ADR-0005","status":"accepted","task_id":"T-0015","ref":"decisions/ADR-0005-task-schema-v2.md"}

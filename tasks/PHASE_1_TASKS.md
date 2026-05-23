@@ -3,7 +3,7 @@
 All tasks below are the minimum scope to make the file-based control plane
 real and usable. Codex is the primary implementer. Claude reviews.
 
-Status legend: todo | in_progress | review | done | blocked
+Status legend: ready | in_progress | review | done | blocked
 
 | ID     | Title                                              | Owner  | Status | Risk |
 |--------|----------------------------------------------------|--------|--------|------|
@@ -19,6 +19,7 @@ Status legend: todo | in_progress | review | done | blocked
 | T-0010 | Claude review of full Phase 1 (produces ADR-0003)  | claude | done   | low  |
 | T-0011 | Apply Claude's Phase 1 review corrections          | codex  | done   | low  |
 | T-0012 | Phase 1.5 minimal CLI task runner                  | codex  | done   | low  |
+| T-0015 | Migrate repository to task schema v2               | codex  | review | med  |
 
 ## Task Details
 
@@ -90,6 +91,31 @@ Status legend: todo | in_progress | review | done | blocked
   `scripts/update_task.py`, `scripts/append_log.py`,
   `scripts/create_handoff.py`, `tests/test_phase15_cli.py`.
 - **Acceptance:** `python -m unittest` and `python scripts/validate.py` exit 0.
+
+### T-0015 - Migrate repository to task schema v2
+- **Objective:** Apply ADR-0005 by updating the schema doc, validator, and task YAML files.
+- **Outputs:** `docs/TASK_SCHEMA.md`, `scripts/validate.py`,
+  `scripts/migrate_schema_v2.py`, all task YAML files, `docs/AGENT_PROTOCOL.md`,
+  `logs/agent-events.jsonl`, `handoffs/T-0015__codex__to__claude.md`.
+- **Acceptance:** Migration is idempotent; validator accepts v1 with warnings
+  during the migration window; validator and unittests exit 0.
+- **Status:** Review after Codex implementation and human approval of ADR-0005.
+
+## Schema v2 Rename Map
+
+ADR-0005 migrates task YAML from v1 to v2:
+
+| v1                    | v2                 |
+|-----------------------|--------------------|
+| `created`             | `created_at`       |
+| `updated`             | `updated_at`       |
+| `acceptance_criteria` | `acceptance`       |
+| `handoff_notes`       | `notes`            |
+| `priority: P0`        | `priority: high`   |
+| `priority: P1`        | `priority: high`   |
+| `priority: P2`        | `priority: medium` |
+| `priority: P3`        | `priority: low`    |
+| `status: todo`        | `status: ready`    |
 
 ## Exit Criteria for Phase 1
 - Non-deferred Phase 1 tasks are done.

@@ -1,49 +1,58 @@
 id: T-0001
-title: "Initialize repo skeleton (dirs + README)"
-owner: codex
+title: Initialize repo skeleton (dirs + README)
 status: done
-created: 2026-05-22T00:00:00Z
-updated: 2026-05-23T01:15:00Z
-
-objective: >
-  Create the top-level repository skeleton for Agentic OS Phase 1, including
-  README.md and the coordination directories defined by the architecture.
-
-inputs:
-  - README.md
-  - docs/ARCHITECTURE.md
-
-outputs:
-  - README.md
-  - docs/
-  - tasks/
-  - handoffs/
-  - decisions/
-  - logs/
-  - memory/
-  - scripts/
-
-constraints:
-  - Do not add dashboard, database, API, MCP, memory implementation, or CI.
-  - Preserve the Manager-Architect plan.
-  - Keep Phase 1 file-based and local-first.
-
-acceptance_criteria:
-  - Top-level directories match docs/ARCHITECTURE.md.
-  - README.md explains Phase 1 scope and agent startup flow.
-  - A handoff to claude exists for review.
-  - Validator exits 0.
-
-handoff_notes: >
-  Hand off to claude for review of the initialized file-based coordination
-  skeleton and protocol consistency.
-
+owner: codex
+reviewer: claude
+created_by: codex
+created_at: '2026-05-22T00:00:00Z'
+updated_at: '2026-05-23T01:15:00Z'
+phase: '1'
+priority: high
 risk_level: low
 requires_human_approval: false
-
-priority: P1
 depends_on: []
-blocks: [T-0010]
-labels: [scaffolding, phase-1]
+blocks:
+- T-0010
+labels:
+- scaffolding
+- phase-1
 estimated_effort: S
-related_decisions: [ADR-0001, ADR-0002]
+related_decisions:
+- ADR-0001
+- ADR-0002
+objective: 'Create the top-level repository skeleton for Agentic OS Phase 1, including
+  README.md and the coordination directories defined by the architecture.
+
+  '
+context: Create the top-level repository skeleton for Agentic OS Phase 1, including
+  README.md and the coordination directories defined by the architecture.
+goals:
+- Create the top-level repository skeleton for Agentic OS Phase 1, including README.md
+  and the coordination directories defined by the architecture.
+non_goals: []
+inputs:
+- README.md
+- docs/ARCHITECTURE.md
+outputs:
+- README.md
+- docs/
+- tasks/
+- handoffs/
+- decisions/
+- logs/
+- memory/
+- scripts/
+constraints:
+- Do not add dashboard, database, API, MCP, memory implementation, or CI.
+- Preserve the Manager-Architect plan.
+- Keep Phase 1 file-based and local-first.
+acceptance:
+- Top-level directories match docs/ARCHITECTURE.md.
+- README.md explains Phase 1 scope and agent startup flow.
+- A handoff to claude exists for review.
+- Validator exits 0.
+human_approval_checklist: []
+notes: 'Hand off to claude for review of the initialized file-based coordination skeleton
+  and protocol consistency.
+
+  '

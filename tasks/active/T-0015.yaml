@@ -1,0 +1,117 @@
+id: T-0015
+title: Migrate repository to task schema v2
+status: review
+owner: codex
+reviewer: claude
+created_by: claude
+created_at: '2026-05-23T00:00:00Z'
+updated_at: '2026-05-23T00:00:00Z'
+phase: '1.5'
+priority: high
+risk_level: medium
+requires_human_approval: true
+depends_on: []
+related_decisions:
+- ADR-0005
+objective: 'Execute the one-shot migration from task schema v1 to v2 as defined in
+  ADR-0005, updating the schema doc, the validator, and every existing task file in
+  tasks/active/, tasks/done/, and tasks/blocked/.
+
+  '
+context: 'ADR-0005 formalizes field renames and additions that have been
+
+  accumulating organically during Phase 1.5. Codex caught the drift
+
+  during PR #1 inspection. The right resolution is to land the schema
+
+  evolution as one bounded task, not to roll back the new fields.
+
+
+  The migration window per ADR-0005 lasts one phase: during it, the
+
+  validator accepts both v1 and v2 field names, warns on v1, and errors
+
+  on certain mismatches (both names present on one task, missing
+
+  reviewer at review/done, missing checklist when approval required).
+
+
+  The original drop-in listed T-0012a as a dependency, but the human-approved
+
+  landing order puts T-0015 before T-0012a so the validator can accept v2 task
+
+  files. This task is therefore the schema unblocker for T-0012a and T-0013.
+
+  '
+goals:
+- Update docs/TASK_SCHEMA.md to v2 as specified in ADR-0005.
+- Update scripts/validate.py to enforce v2 rules with the warn-then-error behavior
+  in ADR-0005.
+- Rewrite every task file under tasks/active/, tasks/done/, tasks/blocked/ from v1
+  to v2 field names (programmatically, via a one-shot script under scripts/migrate_schema_v2.py).
+- Append the v1 → v2 rename map to docs/AGENT_PROTOCOL.md.
+- Append one decision_recorded event for ADR-0005 to logs/agent-events.jsonl.
+non_goals:
+- Do NOT change task semantics, ordering, IDs, or directory placement.
+- Do NOT modify handoff files (handoffs/*.md) — schema applies to tasks only.
+- Do NOT touch ADR files (decisions/ADR-*.md).
+- Do NOT add a new dependency. PyYAML is sufficient.
+- Do NOT modify scripts/create_task.py or scripts/update_task.py defaults to write
+  v2 in this task — that lands in a follow-up after the migration window confirms
+  v2 in the wild.
+- Do NOT delete the migration script after use; keep it under scripts/ for audit and
+  potential v3 reuse pattern.
+inputs:
+- docs/TASK_SCHEMA.md
+- scripts/validate.py
+- tasks/active/*.yaml
+- tasks/done/*.yaml
+- tasks/blocked/*.yaml
+- decisions/ADR-0005-task-schema-v2.md
+outputs:
+- docs/TASK_SCHEMA.md
+- scripts/validate.py
+- scripts/migrate_schema_v2.py
+- tasks/active/*.yaml
+- tasks/done/*.yaml
+- tasks/blocked/*.yaml
+- docs/AGENT_PROTOCOL.md
+- logs/agent-events.jsonl
+- handoffs/T-0015__codex__to__claude.md
+constraints:
+- The migration must be idempotent: running scripts/migrate_schema_v2.py twice produces
+    no diff after the first run.
+- The migration must preserve YAML key order where the existing file has a stable
+  order; new fields appear in the canonical order defined in ADR-0005.
+- The migration must not lose any field. If a v1 field has no v2 equivalent and is
+  not in the rename map, leave it untouched.
+- The validator must accept both v1 and v2 during this phase. A test must prove this.
+acceptance:
+- decisions/ADR-0005-task-schema-v2.md is present and signed by human.
+- docs/TASK_SCHEMA.md matches the v2 schema in ADR-0005 exactly.
+- scripts/migrate_schema_v2.py exists, is idempotent, and is documented at the top
+  of the file.
+- scripts/validate.py accepts both v1 and v2 field names, warns on v1, and errors
+  on the four hard rules in ADR-0005 (both names present; review/done without reviewer;
+  approval required without checklist; unknown rename).
+- Every task file in tasks/active/, tasks/done/, tasks/blocked/ uses v2 field names
+  after migration.
+- python scripts/validate.py exits 0 on the repository after migration.
+- python -m unittest exits 0; new tests in tests/test_schema_v2_migration.py cover: rename
+    correctness, idempotency, mixed-field rejection, reviewer rule, checklist rule.
+- logs/agent-events.jsonl contains one decision_recorded event for ADR-0005.
+- handoffs/T-0015__codex__to__claude.md written via scripts/create_handoff.py.
+- No new entries in requirements.txt.
+human_approval_checklist:
+- Confirm ADR-0005 is signed before T-0015 starts.
+- Confirm the migration is idempotent (run twice locally, second run produces no diff).
+- Confirm validator changes are warn-not-error for v1 names during this phase.
+- Confirm no task file lost a field during migration.
+notes: "Order of operations:\n\n  1. Sign ADR-0005 (human).\n  2. Implement scripts/migrate_schema_v2.py.\n\
+  \  3. Implement validator changes.\n  4. Run migrate script.\n  5. Run validator\
+  \ (must be 0).\n  6. Run unittests (must be 0).\n  7. Update docs/TASK_SCHEMA.md\
+  \ and docs/AGENT_PROTOCOL.md.\n  8. Append decision_recorded event.\n  9. Write\
+  \ handoff.\n\nIf any task file resists migration (malformed YAML, conflicting fields),\n\
+  do not silently skip it. Halt the migration, write a partial-progress\nnote in the\
+  \ handoff under open_questions, and ask for human input.\n\nAfter T-0015 is in done/,\
+  \ T-0012a and T-0013 can land cleanly against v2.\n"

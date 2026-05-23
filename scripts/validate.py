@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Validate the Agentic OS Phase 1 file coordination skeleton."""
+"""Validate the Agentic OS file coordination skeleton."""
 
 from __future__ import annotations
 
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 try:
     import yaml
@@ -16,26 +17,61 @@ except ImportError:  # pragma: no cover - exercised only without dependency.
 
 ROOT = Path(__file__).resolve().parents[1]
 
-REQUIRED_TASK_FIELDS = {
+RENAMES = {
+    "created": "created_at",
+    "updated": "updated_at",
+    "acceptance_criteria": "acceptance",
+    "handoff_notes": "notes",
+}
+
+V2_REQUIRED_TASK_FIELDS = {
     "id",
     "title",
     "owner",
     "status",
-    "created",
-    "updated",
+    "created_at",
+    "updated_at",
     "objective",
     "inputs",
     "outputs",
     "constraints",
-    "acceptance_criteria",
-    "handoff_notes",
+    "acceptance",
+    "notes",
     "risk_level",
     "requires_human_approval",
+    "reviewer",
+    "created_by",
+    "phase",
+    "goals",
+    "non_goals",
+    "priority",
 }
 
-ALLOWED_STATUSES = {"todo", "in_progress", "review", "blocked", "done"}
+ALLOWED_STATUSES = {"ready", "todo", "in_progress", "review", "blocked", "done"}
 ALLOWED_RISK_LEVELS = {"low", "medium", "high"}
-REQUIRED_LOG_FIELDS = {"ts", "agent", "task", "event"}
+ALLOWED_PRIORITIES = {"high", "medium", "low", "P0", "P1", "P2", "P3"}
+LIST_FIELDS = {
+    "inputs",
+    "outputs",
+    "constraints",
+    "acceptance",
+    "acceptance_criteria",
+    "goals",
+    "non_goals",
+    "human_approval_checklist",
+}
+
+ALLOWED_EVENT_TYPES = {
+    "task_created",
+    "task_assigned",
+    "status_changed",
+    "handoff_written",
+    "reviewed",
+    "decision_recorded",
+    "blocked",
+    "note",
+}
+V1_ALLOWED_EVENTS = {"started", "progress", "blocked", "decision_needed", "handoff", "finished", "error"}
 
 REQUIRED_HANDOFF_SECTIONS = [
     "## What I Did",
@@ -50,17 +86,7 @@ REQUIRED_HANDOFF_SECTIONS = [
 REQUIRED_ADR_SECTIONS = [
     "## Context",
     "## Decision",
-    "## Alternatives Considered",
     "## Consequences",
-    "## References",
-]
-
-REQUIRED_ADR_METADATA = [
-    "**Status:**",
-    "**Date:**",
-    "**Author (agent):**",
-    "**Reviewer (agent):**",
-    "**Approval:**",
 ]
 
 
@@ -72,7 +98,15 @@ def task_files() -> list[Path]:
     return paths
 
 
-def validate_tasks(errors: list[str]) -> None:
+def canonical_task(data: dict[str, Any]) -> dict[str, Any]:
+    canonical = dict(data)
+    for old, new in RENAMES.items():
+        if old in canonical and new not in canonical:
+            canonical[new] = canonical[old]
+    return canonical
+
+
+def validate_tasks(errors: list[str], warnings: list[str]) -> None:
     for path in task_files():
         rel = path.relative_to(ROOT)
         try:
@@ -85,27 +119,51 @@ def validate_tasks(errors: list[str]) -> None:
             errors.append(f"{rel}: task file must contain a YAML mapping")
             continue
 
-        missing = sorted(REQUIRED_TASK_FIELDS - set(data))
+        for old, new in RENAMES.items():
+            if old in data and new in data:
+                errors.append(f"{rel}: contains both {old!r} and {new!r}; choose schema v2 field {new!r}")
+            elif old in data:
+                warnings.append(f"{rel}: uses deprecated v1 field {old!r}; rename to {new!r}")
+
+        canonical = canonical_task(data)
+        missing = sorted(V2_REQUIRED_TASK_FIELDS - set(canonical))
         if missing:
             errors.append(f"{rel}: missing required fields: {', '.join(missing)}")
 
-        status = data.get("status")
+        status = canonical.get("status")
         if status not in ALLOWED_STATUSES:
             errors.append(f"{rel}: invalid status {status!r}; expected one of {sorted(ALLOWED_STATUSES)}")
+        elif status == "todo":
+            warnings.append(f"{rel}: status 'todo' is deprecated; use 'ready'")
 
-        risk_level = data.get("risk_level")
+        risk_level = canonical.get("risk_level")
         if risk_level not in ALLOWED_RISK_LEVELS:
             errors.append(f"{rel}: invalid risk_level {risk_level!r}; expected one of {sorted(ALLOWED_RISK_LEVELS)}")
 
-        if not isinstance(data.get("requires_human_approval"), bool):
+        priority = canonical.get("priority")
+        if priority not in ALLOWED_PRIORITIES:
+            errors.append(f"{rel}: invalid priority {priority!r}; expected high, medium, low")
+        elif isinstance(priority, str) and priority.startswith("P"):
+            warnings.append(f"{rel}: priority {priority!r} is deprecated; use high, medium, or low")
+
+        if not isinstance(canonical.get("requires_human_approval"), bool):
             errors.append(f"{rel}: requires_human_approval must be a boolean")
 
-        for list_field in ("inputs", "outputs", "constraints", "acceptance_criteria"):
-            if list_field in data and not isinstance(data[list_field], list):
+        if status in {"review", "done"} and not canonical.get("reviewer"):
+            errors.append(f"{rel}: reviewer is required when status is review or done")
+        if canonical.get("reviewer") and canonical.get("reviewer") == canonical.get("owner"):
+            errors.append(f"{rel}: reviewer must differ from owner")
+
+        checklist = canonical.get("human_approval_checklist")
+        if canonical.get("requires_human_approval") and not checklist:
+            errors.append(f"{rel}: requires_human_approval is true but human_approval_checklist is empty")
+
+        for list_field in LIST_FIELDS:
+            if list_field in canonical and not isinstance(canonical[list_field], list):
                 errors.append(f"{rel}: {list_field} must be a list")
 
 
-def validate_logs(errors: list[str]) -> None:
+def validate_logs(errors: list[str], warnings: list[str]) -> None:
     path = ROOT / "logs" / "agent-events.jsonl"
     if not path.exists():
         errors.append("logs/agent-events.jsonl: file does not exist")
@@ -128,9 +186,22 @@ def validate_logs(errors: list[str]) -> None:
         if not isinstance(event, dict):
             errors.append(f"logs/agent-events.jsonl:{index}: event must be a JSON object")
             continue
-        missing = sorted(REQUIRED_LOG_FIELDS - set(event))
-        if missing:
-            errors.append(f"logs/agent-events.jsonl:{index}: missing required fields: {', '.join(missing)}")
+
+        base_missing = sorted({"ts", "agent"} - set(event))
+        if base_missing:
+            errors.append(f"logs/agent-events.jsonl:{index}: missing required fields: {', '.join(base_missing)}")
+
+        if "type" in event and "event" in event:
+            errors.append(f"logs/agent-events.jsonl:{index}: contains both 'type' and deprecated 'event'")
+        elif "type" in event:
+            if event["type"] not in ALLOWED_EVENT_TYPES:
+                warnings.append(f"logs/agent-events.jsonl:{index}: unknown event type {event['type']!r}")
+        elif "event" in event:
+            warnings.append(f"logs/agent-events.jsonl:{index}: uses deprecated v1 field 'event'; use 'type'")
+            if event["event"] not in V1_ALLOWED_EVENTS:
+                warnings.append(f"logs/agent-events.jsonl:{index}: unknown v1 event {event['event']!r}")
+        else:
+            errors.append("logs/agent-events.jsonl:{index}: missing required field 'type'")
 
 
 def validate_handoffs(errors: list[str]) -> None:
@@ -149,15 +220,24 @@ def validate_handoffs(errors: list[str]) -> None:
                 errors.append(f"{rel}: missing required section {section}")
 
 
+def has_adr_metadata(text: str, key: str) -> bool:
+    lower_key = key.lower()
+    for line in text.splitlines()[:12]:
+        normalized = line.strip().lstrip("-").strip().lstrip("*").lower()
+        if normalized.startswith(lower_key):
+            return True
+    return False
+
+
 def validate_adrs(errors: list[str]) -> None:
     for path in sorted((ROOT / "decisions").glob("ADR-*.md")):
         rel = path.relative_to(ROOT)
         text = path.read_text(encoding="utf-8")
         if not text.startswith("# ADR-"):
             errors.append(f"{rel}: must start with '# ADR-####: <title>'")
-        for marker in REQUIRED_ADR_METADATA:
-            if marker not in text:
-                errors.append(f"{rel}: missing metadata marker {marker}")
+        for key in ("status:", "date:"):
+            if not has_adr_metadata(text, key):
+                errors.append(f"{rel}: missing metadata key {key}")
         for section in REQUIRED_ADR_SECTIONS:
             if section not in text:
                 errors.append(f"{rel}: missing required section {section}")
@@ -165,10 +245,14 @@ def validate_adrs(errors: list[str]) -> None:
 
 def main() -> int:
     errors: list[str] = []
-    validate_tasks(errors)
-    validate_logs(errors)
+    warnings: list[str] = []
+    validate_tasks(errors, warnings)
+    validate_logs(errors, warnings)
     validate_handoffs(errors)
     validate_adrs(errors)
+
+    for warning in warnings:
+        print(f"Warning: {warning}", file=sys.stderr)
 
     if errors:
         print("Validation failed:")
@@ -181,4 +265,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())
