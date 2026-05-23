@@ -47,7 +47,9 @@ Every work session **must** follow this loop:
 todo → in_progress → review → done
                   ↘ blocked ↗
 ```
-Allowed transitions only. Any other transition is invalid.
+Allowed transitions only. Any other transition is invalid. ADR-0005 renames
+`todo` to `ready`; during the migration window, `todo` is accepted as a
+deprecated alias.
 
 ## 5. Risky Actions (Require Human Approval)
 An agent **must not** perform any of the following without an approved ADR:
@@ -75,6 +77,29 @@ One JSON object per line. Append only. Never edit prior lines.
 **Allowed `event` values:** `started`, `progress`, `blocked`, `decision_needed`,
 `handoff`, `finished`, `error`.
 **Optional fields:** `detail`, `ref` (path to related file).
+
+## 6.1 Task Schema v2 Migration Map
+
+ADR-0005 renames the task schema fields below. During the Phase 1.5 to Phase
+1.6 migration window, the validator accepts v1 names with warnings. New task
+files should use v2 names only.
+
+| v1                    | v2                 |
+|-----------------------|--------------------|
+| `created`             | `created_at`       |
+| `updated`             | `updated_at`       |
+| `acceptance_criteria` | `acceptance`       |
+| `handoff_notes`       | `notes`            |
+| `priority: P0`        | `priority: high`   |
+| `priority: P1`        | `priority: high`   |
+| `priority: P2`        | `priority: medium` |
+| `priority: P3`        | `priority: low`    |
+| `status: todo`        | `status: ready`    |
+
+Schema v2 also adds `reviewer`, `created_by`, `phase`, `context`, `goals`,
+`non_goals`, and `human_approval_checklist`. `reviewer` is required at
+`review` and `done`; `human_approval_checklist` is required when
+`requires_human_approval: true`.
 
 ## 7. Commit Message Convention
 ```
