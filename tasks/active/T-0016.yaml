@@ -1,0 +1,48 @@
+id: T-0016
+title: Update CLI helpers to write task schema v2
+status: review
+owner: codex
+reviewer: claude
+created_by: codex
+created_at: '2026-05-23T14:48:36Z'
+updated_at: '2026-05-23T14:48:47Z'
+phase: '1.5'
+priority: high
+risk_level: low
+requires_human_approval: false
+depends_on: []
+blocks: []
+labels:
+- phase-1.5
+- schema-v2
+estimated_effort: S
+related_decisions: []
+objective: Update Phase 1.5 task CLI helpers so newly created or updated task YAML
+  files use task schema v2 by default after the T-0015 migration.
+context: Update Phase 1.5 task CLI helpers so newly created or updated task YAML files
+  use task schema v2 by default after the T-0015 migration.
+goals:
+- Update Phase 1.5 task CLI helpers so newly created or updated task YAML files use
+  task schema v2 by default after the T-0015 migration.
+non_goals: []
+inputs:
+- scripts/create_task.py
+- scripts/update_task.py
+- docs/TASK_SCHEMA.md
+outputs:
+- scripts/create_task.py
+- scripts/update_task.py
+- tests/test_phase15_cli.py
+- tasks/active/T-0016.yaml
+- handoffs/T-0016__codex__to__claude.md
+constraints:
+- Do not add dependencies.
+- Preserve deprecated status and priority aliases as input compatibility only.
+acceptance:
+- create_task.py emits v2 field names with reviewer, created_by, phase, goals, non_goals,
+  acceptance, notes, and human_approval_checklist.
+- update_task.py preserves or upgrades v2 fields when moving tasks across state directories.
+- python -m unittest -v tests.test_phase15_cli exits 0.
+- python scripts/validate.py exits 0.
+human_approval_checklist: []
+notes: Hand off with a summary of work completed and verification results.
