@@ -18,7 +18,8 @@ Status legend: ready | in_progress | review | done | blocked
 | T-0009 | CI: GitHub Action runs validator on every PR       | codex  | todo   | med  |
 | T-0010 | Claude review of full Phase 1 (produces ADR-0003)  | claude | done   | low  |
 | T-0011 | Apply Claude's Phase 1 review corrections          | codex  | done   | low  |
-| T-0012 | Phase 1.5 minimal CLI task runner                  | codex  | done   | low  |
+| T-0012 | Phase 1.5 minimal CLI task runner                  | codex  | review | med  |
+| T-0012a| CLI guardrails, schema-v2 writers, T-0012 rollback | codex  | review | med  |
 | T-0015 | Migrate repository to task schema v2               | codex  | review | med  |
 
 ## Task Details
@@ -91,6 +92,16 @@ Status legend: ready | in_progress | review | done | blocked
   `scripts/update_task.py`, `scripts/append_log.py`,
   `scripts/create_handoff.py`, `tests/test_phase15_cli.py`.
 - **Acceptance:** `python -m unittest` and `python scripts/validate.py` exit 0.
+- **Status:** Rolled back to `review` by T-0012a under ADR-0003.
+
+### T-0012a - CLI guardrails, schema-v2 writers, and T-0012 rollback
+- **Objective:** Update CLI writers to emit schema v2 and ADR-0004 events, add
+  ADR-0003 guardrails, and roll T-0012 back to review.
+- **Outputs:** `scripts/create_task.py`, `scripts/update_task.py`,
+  `scripts/create_handoff.py`, `scripts/append_log.py`,
+  `tests/test_cli_guardrails.py`, `tasks/active/T-0012.yaml`,
+  `handoffs/T-0012a__codex__to__claude.md`.
+- **Acceptance:** Validator and full unittest suite exit 0.
 
 ### T-0015 - Migrate repository to task schema v2
 - **Objective:** Apply ADR-0005 by updating the schema doc, validator, and task YAML files.
