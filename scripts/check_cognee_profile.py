@@ -37,9 +37,8 @@ REQUIRED_KEYS = {
     "DATA_ROOT_DIRECTORY",
 }
 
-LOCAL_LLM_PROVIDERS = {"ollama"}
 LOCAL_EMBEDDING_PROVIDERS = {"fastembed", "ollama"}
-CLOUD_PROVIDERS = {"openai", "anthropic", "gemini", "azure", "bedrock", "groq", "mistral"}
+CLOUD_EMBEDDING_PROVIDERS = {"openai", "anthropic", "gemini", "azure", "bedrock", "groq", "mistral"}
 
 
 class ProfileError(ValueError):
@@ -53,6 +52,10 @@ def parse_bool(value: str, field: str) -> bool:
     if normalized == "false":
         return False
     raise ProfileError(f"{field} must be true or false")
+
+
+def is_local_http_endpoint(value: str) -> bool:
+    return value.startswith("http://localhost:") or value.startswith("http://127.0.0.1:")
 
 
 def load_profile(path: Path) -> dict[str, str]:
@@ -94,14 +97,11 @@ def validate_profile(profile: dict[str, str]) -> dict[str, Any]:
 
     llm_provider = profile["LLM_PROVIDER"].lower()
     embedding_provider = profile["EMBEDDING_PROVIDER"].lower()
-    if llm_provider not in LOCAL_LLM_PROVIDERS or llm_provider in CLOUD_PROVIDERS:
-        raise ProfileError("LLM_PROVIDER must be a local provider")
-    if embedding_provider not in LOCAL_EMBEDDING_PROVIDERS or embedding_provider in CLOUD_PROVIDERS:
-        raise ProfileError("EMBEDDING_PROVIDER must be a local provider")
-
     endpoint = profile["LLM_ENDPOINT"]
-    if not (endpoint.startswith("http://localhost:") or endpoint.startswith("http://127.0.0.1:")):
+    if not is_local_http_endpoint(endpoint):
         raise ProfileError("LLM_ENDPOINT must point at localhost")
+    if embedding_provider not in LOCAL_EMBEDDING_PROVIDERS or embedding_provider in CLOUD_EMBEDDING_PROVIDERS:
+        raise ProfileError("EMBEDDING_PROVIDER must be a local provider")
 
     try:
         dimensions = int(profile["EMBEDDING_DIMENSIONS"])

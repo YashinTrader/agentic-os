@@ -31,7 +31,8 @@ The checker fails if:
 
 - required keys are missing;
 - cloud providers are enabled;
-- LLM or embedding provider is non-local;
+- LLM endpoint is not localhost or `127.0.0.1`;
+- embedding provider is non-local;
 - only one of the model providers is local;
 - ingestion is enabled;
 - graph/vector/relational providers drift from Kuzu, LanceDB, and SQLite.
@@ -39,6 +40,12 @@ The checker fails if:
 The checker uses only the Python standard library. It does not import Cognee,
 connect to Ollama, create files under `memory/cognee/`, or ingest repository
 content.
+
+OpenAI-compatible local LLM servers are allowed when `LLM_ENDPOINT` points at
+localhost or `127.0.0.1`. For example, LM Studio, llama.cpp server mode, or
+vLLM can use their Cognee-supported provider string while still satisfying the
+local-first boundary. Cloud OpenAI endpoints such as
+`https://api.openai.com/v1` are rejected by the dry-run checker.
 
 ## Dependency
 

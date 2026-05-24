@@ -47,6 +47,8 @@ with `AGENTIC_OS_INGESTION_ENABLED="false"`.
 Important: Cognee can fall back to OpenAI if only the LLM or only the
 embedding provider is configured locally. Agentic OS therefore requires both
 `LLM_PROVIDER` and `EMBEDDING_PROVIDER` to be local in the same profile.
+OpenAI-compatible local LLM servers are acceptable only when `LLM_ENDPOINT`
+points at `localhost` or `127.0.0.1`.
 
 ## Before Real Ingestion
 

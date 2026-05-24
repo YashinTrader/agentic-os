@@ -32,6 +32,24 @@ class CogneeLocalProfileTests(unittest.TestCase):
         with self.assertRaisesRegex(ProfileError, "EMBEDDING_PROVIDER"):
             validate_profile(profile)
 
+    def test_accepts_openai_protocol_local_llm_endpoint(self) -> None:
+        profile = load_profile(PROFILE_PATH)
+        profile["LLM_PROVIDER"] = "openai"
+        profile["LLM_ENDPOINT"] = "http://localhost:8080/v1"
+        profile["LLM_MODEL"] = "local-model"
+
+        summary = validate_profile(profile)
+
+        self.assertEqual(summary["llm_provider"], "openai")
+
+    def test_rejects_openai_cloud_llm_endpoint(self) -> None:
+        profile = load_profile(PROFILE_PATH)
+        profile["LLM_PROVIDER"] = "openai"
+        profile["LLM_ENDPOINT"] = "https://api.openai.com/v1"
+
+        with self.assertRaisesRegex(ProfileError, "LLM_ENDPOINT"):
+            validate_profile(profile)
+
     def test_rejects_cloud_provider_flag(self) -> None:
         profile = load_profile(PROFILE_PATH)
         profile["AGENTIC_OS_ENABLE_CLOUD_PROVIDERS"] = "true"
