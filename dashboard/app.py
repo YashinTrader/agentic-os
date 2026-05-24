@@ -4,6 +4,7 @@ import html
 import http.server
 import json
 import socketserver
+import subprocess
 import sys
 import urllib.parse
 from pathlib import Path
@@ -195,24 +196,30 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
+def run_cli_script(root_dir: Path, script_name: str, args: list[str]) -> str:
+    """Run a CLI script in scripts/ using subprocess and return its stdout. Raise ValueError on failure."""
+    script_path = ROOT_DIR / "scripts" / script_name
+    cmd = [sys.executable, str(script_path), "--root", str(root_dir)] + args
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        error_msg = result.stderr.strip() or result.stdout.strip() or f"Script {script_name} failed with return code {result.returncode}."
+        raise ValueError(error_msg)
+    return result.stdout.strip()
+
+
 def append_note_event(root_dir: Path, agent: str, task_id: str, text: str) -> None:
-    """Append a comment as a 'note' event to logs/agent-events.jsonl."""
-    event = {
-        "ts": utc_now(),
-        "agent": agent,
-        "type": "note",
-        "task_id": task_id,
-        "text": text,
-        "detail": f"commented on task {task_id}: {text[:50]}..."
-    }
-    log_path = root_dir / "logs" / "agent-events.jsonl"
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    with log_path.open("a", encoding="utf-8", newline="\n") as f:
-        f.write(json.dumps(event, separators=(",", ":"), ensure_ascii=False) + "\n")
+    """Append a comment as a 'note' event to logs/agent-events.jsonl by shelling out."""
+    run_cli_script(root_dir, "append_log.py", [
+        "--agent", agent,
+        "--task", task_id,
+        "--type", "note",
+        "--text", text,
+        "--detail", f"commented on task {task_id}: {text[:50]}..."
+    ])
 
 
 def update_task_file(root_dir: Path, task_id: str, status: str, owner: str, reviewer: str, notes: str) -> Path:
-    """Update fields of an existing task YAML, move it based on status, and log standard events."""
+    """Update fields of an existing task YAML by shelling out, and log standard events."""
     current_path = None
     for folder in ("active", "done", "blocked"):
         p = root_dir / "tasks" / folder / f"{task_id}.yaml"
@@ -231,39 +238,35 @@ def update_task_file(root_dir: Path, task_id: str, status: str, owner: str, revi
     old_status = data.get("status", "ready")
     old_owner = data.get("owner", "unassigned")
     
-    # Val checks
-    if status in ("review", "done") and not reviewer:
-        raise ValueError("Reviewer is required when status is review or done.")
-    if reviewer and owner == reviewer:
-        raise ValueError("Reviewer must differ from owner.")
+    # Construct args for update_task.py
+    args = ["--id", task_id]
+    if status:
+        args += ["--status", status]
+    if owner is not None:
+        args += ["--owner", owner]
+    if reviewer is not None:
+        args += ["--reviewer", reviewer]
+    if notes is not None:
+        args += ["--handoff-notes", notes]
         
-    # Update fields
-    data["status"] = status
-    data["owner"] = owner
-    data["reviewer"] = reviewer
-    data["notes"] = notes
-    data["updated_at"] = utc_now()
+    # Execute the CLI script to update task file
+    run_cli_script(root_dir, "update_task.py", args)
     
-    # State mapping
-    STATE_DIRS = {
-        "ready": "active",
-        "in_progress": "active",
-        "review": "active",
-        "blocked": "blocked",
-        "done": "done",
-    }
-    
-    target_dir = STATE_DIRS[status]
-    target_path = root_dir / "tasks" / target_dir / f"{task_id}.yaml"
-    
-    # Write updated task
-    target_path.parent.mkdir(parents=True, exist_ok=True)
-    target_path.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True), encoding="utf-8", newline="\n")
-    
-    if target_path != current_path:
-        current_path.unlink()
+    # Find the newly moved path (since status update might have moved it)
+    target_path = None
+    for folder in ("active", "done", "blocked"):
+        p = root_dir / "tasks" / folder / f"{task_id}.yaml"
+        if p.exists():
+            target_path = p
+            break
+            
+    if not target_path:
+        raise FileNotFoundError(f"Task {task_id} not found after update.")
         
-    # Log status changed
+    # Read the updated task status and target folder location
+    target_dir = target_path.parent.name
+    
+    # Log status changed if needed
     if old_status != status:
         event = {
             "ts": utc_now(),
@@ -278,7 +281,7 @@ def update_task_file(root_dir: Path, task_id: str, status: str, owner: str, revi
         with log_path.open("a", encoding="utf-8", newline="\n") as f:
             f.write(json.dumps(event, separators=(",", ":"), ensure_ascii=False) + "\n")
             
-    # Log reassign changed
+    # Log reassign changed if needed
     if old_owner != owner:
         event = {
             "ts": utc_now(),
@@ -301,7 +304,7 @@ def create_task_file(
     context: str, phase: str, priority: str, risk_level: str,
     goals: list[str], acceptance: list[str]
 ) -> str:
-    """Find next sequential T-NNNN ID, create new YAML in tasks/active/, and log task_created."""
+    """Find next sequential T-NNNN ID, create new YAML in tasks/active/ by shelling out, and log task_created."""
     max_id = 0
     for folder in ("active", "done", "blocked"):
         dir_path = root_dir / "tasks" / folder
@@ -316,34 +319,27 @@ def create_task_file(
                     
     next_id = f"T-{max_id + 1:04d}"
     
-    task_data = {
-        "id": next_id,
-        "title": title,
-        "status": "ready",
-        "owner": owner,
-        "reviewer": reviewer,
-        "created_by": "human",
-        "created_at": utc_now(),
-        "updated_at": utc_now(),
-        "phase": phase,
-        "priority": priority,
-        "risk_level": risk_level,
-        "requires_human_approval": False,
-        "objective": objective,
-        "context": context,
-        "goals": goals,
-        "non_goals": [],
-        "inputs": [],
-        "outputs": [],
-        "constraints": [],
-        "acceptance": acceptance,
-        "human_approval_checklist": [],
-        "notes": ""
-    }
-    
-    target_path = root_dir / "tasks" / "active" / f"{next_id}.yaml"
-    target_path.parent.mkdir(parents=True, exist_ok=True)
-    target_path.write_text(yaml.safe_dump(task_data, sort_keys=False, allow_unicode=True), encoding="utf-8", newline="\n")
+    # Construct args for create_task.py
+    args = [
+        "--id", next_id,
+        "--title", title,
+        "--owner", owner,
+        "--reviewer", reviewer,
+        "--created-by", "human",
+        "--phase", phase,
+        "--priority", priority,
+        "--risk-level", risk_level,
+        "--objective", objective,
+    ]
+    if context:
+        args += ["--context", context]
+    for g in goals:
+        args += ["--goal", g]
+    for a in acceptance:
+        args += ["--acceptance", a]
+        
+    # Run the CLI script to create the task
+    run_cli_script(root_dir, "create_task.py", args)
     
     # Log task created
     event = {

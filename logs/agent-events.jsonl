@@ -20,3 +20,7 @@
 {"ts":"2026-05-24T11:15:18Z","agent":"human","type":"status_changed","task_id":"T-0012a","detail":"merged PR #3 and marked task T-0012a as done","ref":"tasks/done/T-0012a.yaml"}
 {"ts":"2026-05-24T11:15:25Z","agent":"human","type":"status_changed","task_id":"T-0015","detail":"merged PR #2 and marked task T-0015 as done","ref":"tasks/done/T-0015.yaml"}
 {"ts":"2026-05-24T11:15:40Z","agent":"human","type":"status_changed","task_id":"T-0012","detail":"merged PR #3 and marked task T-0012 as done","ref":"tasks/done/T-0012.yaml"}
+{"ts":"2026-05-24T13:42:35Z","agent":"antigravity","type":"decision_recorded","detail":"ADR-0006 accepted and signed","ref":"decisions/ADR-0006-dashboard-is-read-write.md"}
+{"ts":"2026-05-24T13:42:39Z","agent":"antigravity","type":"status_changed","task_id":"T-0017","detail":"Transitioned T-0017 from ready to in_progress"}
+{"ts":"2026-05-24T13:45:37Z","agent":"antigravity","type":"handoff_written","task_id":"T-0017","detail":"handoff to human created for T-0017 review","ref":"handoffs/T-0017__antigravity__to__human.md"}
+{"ts":"2026-05-24T14:55:44Z","agent":"antigravity","type":"status_changed","task_id":"T-0017","detail":"Transitioned T-0017 status from in_progress to review"}

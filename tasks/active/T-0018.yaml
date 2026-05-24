@@ -1,0 +1,61 @@
+id: T-0018
+title: Dashboard UX polish — comment threading, filters, diff view
+owner: antigravity
+reviewer: human
+status: ready
+priority: medium
+risk_level: low
+requires_human_approval: false
+human_approval_checklist: []
+created_at: 2026-05-24
+updated_at: 2026-05-24
+created_by: claude
+phase: "1.7"
+objective: >
+  Polish the read-only UX of the dashboard by implementing comment threading, URL-persisted search filters, and an audit history/YAML diff view.
+inputs:
+  - tasks/active/T-0018.yaml
+  - dashboard/app.py
+constraints:
+  - No new third-party JavaScript or CSS frameworks.
+  - Must run cleanly in the standard library HTTP server.
+  - All write paths must be fully validated by T-0017 guardrails.
+depends_on:
+  - T-0017
+goals:
+  - Comments on a task render as a threaded conversation, newest at bottom
+  - Filter bar: by owner, by status, by priority, by risk_level, free-text search
+  - Task detail view shows a "history" tab rendering status_changed and
+    task_assigned events for that task in order, with before→after diff for
+    YAML field changes
+non_goals:
+  - Editing comments after submission (append-only, per ADR-0004)
+  - Deleting tasks or events
+  - Real-time updates / websockets (poll on navigation is fine)
+  - Memory-store integration
+context: |
+  PR #6 shipped a functional dashboard but the comment rendering is flat and
+  there is no way to filter the board or see how a task evolved. This task is
+  pure read-side UX; it depends on T-0017 only because T-0017 may refactor
+  app.py and we want to avoid merge conflicts.
+acceptance:
+  - Comment view on a task groups note events chronologically with author and
+    timestamp; no in-place edits
+  - Filter bar persists selection in URL query params (shareable links)
+  - History tab on a task detail renders every status_changed and
+    task_assigned event affecting that task, with field-level diffs
+  - No new dependencies beyond what is in requirements.txt
+  - tests/test_dashboard_ui.py covers filter behavior and history rendering
+    via the existing synthetic-repo harness
+  - scripts/validate.py passes
+outputs:
+  - dashboard/app.py
+  - dashboard/static/ (if any new CSS/JS)
+  - tests/test_dashboard_ui.py
+notes: |
+  Stdlib-only constraint still holds. No React, no Vue, no build step.
+  Server-rendered HTML + minimal vanilla JS for the filter bar.
+
+  This is the task where Antigravity's UX instincts pay off. Ship something
+  that feels good to use. But: read-side only. Any write path must go through
+  the T-0017 guardrails.
