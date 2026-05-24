@@ -20,3 +20,4 @@
 {"ts":"2026-05-24T11:15:18Z","agent":"human","type":"status_changed","task_id":"T-0012a","detail":"merged PR #3 and marked task T-0012a as done","ref":"tasks/done/T-0012a.yaml"}
 {"ts":"2026-05-24T11:15:25Z","agent":"human","type":"status_changed","task_id":"T-0015","detail":"merged PR #2 and marked task T-0015 as done","ref":"tasks/done/T-0015.yaml"}
 {"ts":"2026-05-24T11:15:40Z","agent":"human","type":"status_changed","task_id":"T-0012","detail":"merged PR #3 and marked task T-0012 as done","ref":"tasks/done/T-0012.yaml"}
+{"ts":"2026-05-24T14:54:43Z","agent":"codex","type":"note","text":"Seeded Phase 2.1 implementation tasks T-0022 through T-0025 after ADR-0008 and ADR-0009 merged.","ref":"tasks/active/T-0022.yaml"}
