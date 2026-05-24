@@ -1,0 +1,58 @@
+id: T-0020
+title: Author ADR-0008 (Librarian and write rules)
+status: done
+owner: codex
+reviewer: claude
+created_by: claude
+created_at: '2026-05-24T00:00:00Z'
+updated_at: '2026-05-24T14:45:00Z'
+phase: '2'
+priority: high
+risk_level: high
+requires_human_approval: true
+depends_on:
+  - T-0019
+related_decisions:
+  - ADR-0007
+  - ADR-0008
+objective: >
+  Convert decisions/ADR-0008-librarian-and-write-rules.md from proposal stub to
+  signed ADR, defining the Librarian role and the shared-memory write rules for
+  Phase 2.
+context: |
+  ADR-0007 established that only the Librarian writes to shared memory. PR #11
+  authored ADR-0008, Claude approved it, and Gabriel Achim signed it.
+goals:
+  - Convert decisions/ADR-0008-librarian-and-write-rules.md from stub to signed ADR.
+  - Lock in that only the Librarian writes to shared memory.
+  - Define extraction rules per memory type from ADR-0007.
+  - Define confidence, citation, reversibility, deduplication, and conflict rules.
+non_goals:
+  - Implementing the Librarian.
+  - Writing any code.
+  - Choosing the MCP contract (ADR-0009).
+inputs:
+  - decisions/ADR-0007-memory-architecture.md
+  - decisions/ADR-0008-librarian-and-write-rules.md
+  - logs/agent-events.jsonl
+  - docs/AGENT_PROTOCOL.md
+outputs:
+  - decisions/ADR-0008-librarian-and-write-rules.md
+constraints:
+  - This is a writing task only.
+  - Do not implement memory storage, ingestion, or dashboard behavior.
+  - Keep ADR-0009 contract details out of this ADR except where boundaries are required.
+acceptance:
+  - ADR-0008 sections 1-6 all filled in with substantive content.
+  - Extraction rules defined for every in-scope memory type from ADR-0007.
+  - Conflict resolution rule explicit.
+  - Failure modes enumerated with concrete recovery procedures.
+  - Claude review pass with no blocking comments.
+  - Human signs the ADR.
+human_approval_checklist:
+  - ADR-0007 signed.
+  - Librarian role definition is concrete.
+  - Write rules enumerate citation, confidence, reversibility, and deduplication.
+  - Conflict resolution rule specified.
+notes: |
+  Completed by PR #11. Human and Claude sign-off are recorded in ADR-0008.
