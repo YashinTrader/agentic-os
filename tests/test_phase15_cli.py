@@ -37,11 +37,13 @@ class Phase15CliTests(unittest.TestCase):
         self.run_script(
             "create_task.py",
             "--id",
-            "T-0012",
+            "T-9912",
             "--title",
             "Phase 1.5 CLI task runner",
             "--owner",
             "codex",
+            "--reviewer",
+            "claude",
             "--objective",
             "Add minimal file-based CLI helpers.",
             "--input",
@@ -54,17 +56,20 @@ class Phase15CliTests(unittest.TestCase):
             "Task YAML validates.",
             "--handoff-notes",
             "Hand off to claude for review.",
+            "--human-approval-checklist-item",
+            "Confirm scripts change is approved.",
             "--label",
             "phase-1.5",
         )
 
-        task_path = self.root / "tasks" / "active" / "T-0012.yaml"
+        task_path = self.root / "tasks" / "active" / "T-9912.yaml"
         self.assertTrue(task_path.exists())
         task = yaml.safe_load(task_path.read_text(encoding="utf-8"))
-        self.assertEqual(task["id"], "T-0012")
-        self.assertEqual(task["status"], "todo")
-        self.assertEqual(task["risk_level"], "low")
-        self.assertFalse(task["requires_human_approval"])
+        self.assertEqual(task["id"], "T-9912")
+        self.assertEqual(task["status"], "ready")
+        self.assertEqual(task["reviewer"], "claude")
+        self.assertEqual(task["risk_level"], "medium")
+        self.assertTrue(task["requires_human_approval"])
         self.assertEqual(task["outputs"], ["scripts/create_task.py"])
         self.assertIn("phase-1.5", task["labels"])
 
@@ -75,9 +80,17 @@ class Phase15CliTests(unittest.TestCase):
             "T-9993",
             "--title",
             "Move task",
+            "--reviewer",
+            "claude",
             "--objective",
             "Exercise status movement.",
             "--output",
+            "tasks/done/T-0013.yaml",
+            "--human-approval-checklist-item",
+            "Confirm done path output is approved.",
+        )
+
+        self.run_script("update_task.py", "--id", "T-0013", "--status", "done")
             "tasks/done/T-9993.yaml",
         )
 
@@ -89,7 +102,7 @@ class Phase15CliTests(unittest.TestCase):
         self.assertTrue(done_path.exists())
         task = yaml.safe_load(done_path.read_text(encoding="utf-8"))
         self.assertEqual(task["status"], "done")
-        self.assertEqual(task["owner"], "claude")
+        self.assertEqual(task["owner"], "codex")
 
     def test_append_log_adds_single_jsonl_event(self) -> None:
         before = (self.root / "logs" / "agent-events.jsonl").read_text(encoding="utf-8").splitlines()
@@ -100,9 +113,9 @@ class Phase15CliTests(unittest.TestCase):
             "codex",
             "--task",
             "T-0012",
-            "--event",
-            "started",
-            "--detail",
+            "--type",
+            "note",
+            "--text",
             "started Phase 1.5",
             "--ref",
             "tasks/active/T-0012.yaml",
@@ -112,12 +125,25 @@ class Phase15CliTests(unittest.TestCase):
         self.assertEqual(len(lines), len(before) + 1)
         event = json.loads(lines[-1])
         self.assertEqual(event["agent"], "codex")
-        self.assertEqual(event["task"], "T-0012")
-        self.assertEqual(event["event"], "started")
+        self.assertEqual(event["task_id"], "T-0012")
+        self.assertEqual(event["type"], "note")
         self.assertEqual(event["ref"], "tasks/active/T-0012.yaml")
         self.assertTrue(event["ts"].endswith("Z"))
 
     def test_create_handoff_writes_required_sections(self) -> None:
+        self.run_script(
+            "create_task.py",
+            "--id",
+            "T-0099",
+            "--title",
+            "Handoff task",
+            "--reviewer",
+            "claude",
+            "--objective",
+            "Exercise handoff creation.",
+            "--output",
+            "tasks/active/T-0099.yaml",
+        )
         self.run_script(
             "create_handoff.py",
             "--task",
@@ -159,6 +185,8 @@ class Phase15CliTests(unittest.TestCase):
             "T-0014",
             "--title",
             "Visible task",
+            "--reviewer",
+            "claude",
             "--objective",
             "Show up in task list.",
             "--output",

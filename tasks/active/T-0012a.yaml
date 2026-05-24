@@ -1,0 +1,181 @@
+id: T-0012a
+title: CLI guardrails, schema-v2 writers, and T-0012 rollback
+status: review
+owner: codex
+reviewer: claude
+created_by: claude
+created_at: '2026-05-23T09:00:00Z'
+updated_at: '2026-05-23T14:37:47Z'
+phase: '1.5'
+priority: high
+risk_level: medium
+requires_human_approval: true
+depends_on:
+- T-0015
+related_decisions:
+- ADR-0003
+- ADR-0004
+- ADR-0005
+objective: 'Update the CLI writers (create_task.py, update_task.py, create_handoff.py,
+  append_log.py) to emit schema-v2 task YAML and ADR-0004 event types by default,
+  encode the ADR-0003 guardrails directly in create_task.py so risky writes cannot
+  bypass review, and roll back any T-0012 state that self-approved or skipped review.
+
+  '
+context: 'Per the T-0015 handoff, the migration moved task FILES to v2 but left
+
+  the CLI WRITERS emitting v1 (''created'', ''updated'', ''acceptance_criteria'',
+
+  ''handoff_notes'', ''priority: P1'', no reviewer/phase/goals/non_goals/
+
+  human_approval_checklist). Every new task created with the current CLI
+
+  fails v2 strict mode and only passes today because of the migration
+
+  window''s warn-not-error tolerance for v1 names. That tolerance ends at
+
+  Phase 1.6 close. Writers must emit v2 before then.
+
+
+  ADR-0003 also requires that any task touching scripts/, docs/,
+
+  decisions/, or adding deps automatically be risk_level: medium with
+
+  requires_human_approval: true and a non-empty human_approval_checklist.
+
+  This is currently enforced only by reviewer discipline. T-0012a moves
+
+  the enforcement into create_task.py so the protocol is mechanical, not
+
+  cultural.
+
+
+  ADR-0004 standardized the event vocabulary to the 8-type closed set.
+
+  append_log.py must default to those types and reject unknown types
+
+  unless --force is passed (with a warning).
+
+
+  Finally, T-0012 (CLI helpers, original landing) was self-approved by
+
+  its author and skipped the review state. Per ADR-0003 it must roll
+
+  back to status: review, get a real reviewer (claude), and have a
+
+  retroactive human_approval_checklist appended.
+
+  '
+goals:
+- Update scripts/create_task.py to emit schema-v2 field names and full v2 required
+  set, including reviewer (required CLI arg), created_by, phase, goals, non_goals,
+  human_approval_checklist.
+- Update scripts/update_task.py to write created_at/updated_at (not created/updated)
+  and to refuse writes that would put status into review or done without a reviewer
+  present.
+- Update scripts/create_handoff.py to confirm the linked task has a v2-conformant
+  header before writing the handoff stub.
+- Update scripts/append_log.py to default to the ADR-0004 8-type closed set and reject
+  unknown event types unless --force is given.
+- Add guardrails to scripts/create_task.py that auto-escalate risk_level to medium
+  and force requires_human_approval=true when --output paths touch scripts/, docs/,
+  decisions/, or requirements.txt. Refuse to write if --human-approval-checklist-item
+  is empty in that case.
+- Refuse owner==reviewer in create_task.py and update_task.py.
+- 'Roll back T-0012 in the repo to status: review, owner: codex, reviewer: claude,
+  append a human_approval_checklist, and add an ADR-0003-compliant note.'
+- 'Add tests under tests/test_cli_guardrails.py covering: v2 field emission, risky-path
+  auto-escalation, owner==reviewer rejection, review/done without reviewer rejection,
+  append_log unknown-type rejection, and idempotent T-0012 rollback verification.'
+non_goals:
+- Do NOT change the validator. The validator is the source of truth and was set by
+  T-0015.
+- Do NOT change docs/TASK_SCHEMA.md. It already reflects v2.
+- Do NOT add new top-level dependencies. PyYAML is sufficient.
+- Do NOT add new directories or restructure existing ones.
+- Do NOT touch dashboard/, the read-side surface, or tests/test_phase15_cli.py beyond
+  what is needed to keep them passing.
+- Do NOT silently rewrite existing v1 task files; the migration script from T-0015
+  already did that and is idempotent.
+- Do NOT change ADR text. Only INDEX.md may be updated to reference new ADRs if needed.
+- Do NOT modify logs retroactively. New events only.
+inputs:
+- docs/TASK_SCHEMA.md
+- docs/AGENT_PROTOCOL.md
+- decisions/ADR-0003-phase-1-protocol-corrections.md
+- decisions/ADR-0004-event-vocabulary.md
+- decisions/ADR-0005-task-schema-v2.md
+- scripts/create_task.py
+- scripts/update_task.py
+- scripts/create_handoff.py
+- scripts/append_log.py
+- tasks/done/T-0012.yaml
+- handoffs/T-0015__codex__to__claude.md
+outputs:
+- scripts/create_task.py
+- scripts/update_task.py
+- scripts/create_handoff.py
+- scripts/append_log.py
+- tasks/active/T-0012.yaml
+- tests/test_cli_guardrails.py
+- logs/agent-events.jsonl
+- handoffs/T-0012a__codex__to__claude.md
+constraints:
+- Backward-compatible CLI flags. Existing flags must keep working; new required flags
+  (--reviewer, --created-by, --phase) may be added but should have sensible defaults
+  where ADR-0005 permits (created_by defaults to owner; phase defaults to "1.5").
+  --reviewer is required and has NO default.
+- All writers must produce output that passes scripts/validate.py with zero errors
+  and zero warnings on freshly-created files.
+- 'T-0012 rollback must move the file from tasks/done/T-0012.yaml to tasks/active/T-0012.yaml.
+  The file''s content must keep all existing fields, set status: review, set reviewer:
+  claude, append a human_approval_checklist with at least one explicit item ("Confirm
+  T-0012 CLI helpers do not bypass review"), and bump updated_at.'
+- The rollback must append one event of type 'status_changed' to logs/agent-events.jsonl
+  referencing T-0012 and ADR-0003 in the event payload.
+- All new tests must use stdlib unittest (no pytest dependency).
+- The handoff file must use scripts/create_handoff.py (dogfood the updated writer).
+acceptance:
+- scripts/create_task.py emits v2 field names exclusively; no 'created', 'updated',
+  'acceptance_criteria', or 'handoff_notes' keys appear in newly written task files.
+- scripts/create_task.py requires --reviewer and rejects owner==reviewer with a non-zero
+  exit and a clear error message.
+- scripts/create_task.py automatically sets risk_level=medium and requires_human_approval=true
+  whenever any --output path matches scripts/**, docs/**, decisions/**, or requirements.txt;
+  refuses to write if no --human-approval-checklist-item is provided in that case.
+- scripts/update_task.py refuses to set status to review or done unless the file already
+  has a non-empty reviewer field that differs from owner.
+- scripts/append_log.py defaults to the ADR-0004 8-type closed set and rejects unknown
+  --type values unless --force is passed; --force prints a warning to stderr.
+- 'tasks/active/T-0012.yaml exists with status: review, reviewer: claude, owner: codex,
+  and a non-empty human_approval_checklist; tasks/done/T-0012.yaml no longer exists.'
+- One new status_changed event for T-0012 exists in logs/agent-events.jsonl with a
+  note referencing ADR-0003.
+- 'tests/test_cli_guardrails.py exists and passes under python -m unittest with at
+  least these cases: v2 emission, risky-path auto-escalation, owner==reviewer rejection,
+  missing-reviewer rejection at review, unknown event-type rejection, T-0012 rollback
+  shape.'
+- python scripts/validate.py exits 0 on the repo after T-0012a lands.
+- python -m unittest exits 0 across the full suite.
+- handoffs/T-0012a__codex__to__claude.md written via scripts/create_handoff.py and
+  contains all required sections.
+- No changes to requirements.txt.
+human_approval_checklist:
+- Confirm ADR-0003 and ADR-0005 are signed and live on main before this task starts.
+- Confirm new writers refuse to bypass review (owner==reviewer test must fail loudly).
+- Confirm T-0012 rollback is recorded both in the YAML AND in logs/agent-events.jsonl.
+- Confirm no new dependencies and no new directories introduced.
+notes: "Suggested order of operations for Codex:\n\n  1. Read T-0015 handoff and confirm\
+  \ validator behavior is current.\n  2. Refactor scripts/create_task.py first; add\
+  \ tests; ensure existing CLI tests\n     still pass with adjusted expectations (some\
+  \ Phase 1.5 CLI tests may need\n     to be updated to pass --reviewer).\n  3. Refactor\
+  \ scripts/update_task.py and scripts/append_log.py.\n  4. Update scripts/create_handoff.py\
+  \ (lighter change: header sanity-check on the linked task).\n  5. Perform the T-0012\
+  \ rollback as a clean two-step: read tasks/done/T-0012.yaml,\n     rewrite to tasks/active/T-0012.yaml\
+  \ with v2 fields and review-state additions,\n     delete the done/ copy, append\
+  \ the status_changed event.\n  6. Write the handoff via the updated create_handoff.py\
+  \ to dogfood it.\n\nIf the existing Phase 1.5 CLI tests rely on v1-shaped output,\
+  \ update those\ntests to v2 expectations and call it out explicitly in the handoff.\
+  \ Do not\nsilently soften the new writer.\n\nOpen the handoff with a clear \"What\
+  \ Remains\" section that lists T-0013 as\nnext, since after this lands the dashboard\
+  \ task is finally unblocked.\n"

@@ -12,6 +12,7 @@ import yaml
 
 
 STATE_DIRS = {
+    "ready": "active",
     "todo": "active",
     "in_progress": "active",
     "review": "active",
@@ -38,9 +39,10 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--id", required=True, help="Task id to update.")
     p.add_argument("--status", choices=sorted(STATE_DIRS), help="New task status.")
     p.add_argument("--owner", help="New task owner.")
+    p.add_argument("--reviewer", help="New task reviewer.")
     p.add_argument("--title", help="New task title.")
     p.add_argument("--risk-level", choices=["low", "medium", "high"], help="New risk level.")
-    p.add_argument("--handoff-notes", help="Replacement handoff notes.")
+    p.add_argument("--handoff-notes", dest="notes", help="Replacement notes.")
     return p
 
 
@@ -60,18 +62,31 @@ def main() -> int:
     for key, value in (
         ("status", args.status),
         ("owner", args.owner),
+        ("reviewer", args.reviewer),
         ("title", args.title),
         ("risk_level", args.risk_level),
-        ("handoff_notes", args.handoff_notes),
+        ("notes", args.notes),
     ):
         if value is not None:
-            task[key] = value
-    task["updated"] = utc_now()
+            task[key] = "ready" if key == "status" and value == "todo" else value
 
-    target_dir = STATE_DIRS[task.get("status", "todo")]
+    status = task.get("status", "ready")
+    owner = task.get("owner")
+    reviewer = task.get("reviewer")
+    if status in {"review", "done"} and not reviewer:
+        print("reviewer is required when status is review or done", file=sys.stderr)
+        return 1
+    if reviewer and owner == reviewer:
+        print("reviewer must differ from owner", file=sys.stderr)
+        return 1
+
+    task["updated_at"] = utc_now()
+    task.pop("updated", None)
+
+    target_dir = STATE_DIRS[status]
     target_path = root / "tasks" / target_dir / current_path.name
     target_path.parent.mkdir(parents=True, exist_ok=True)
-    target_path.write_text(yaml.safe_dump(task, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    target_path.write_text(yaml.safe_dump(task, sort_keys=False, allow_unicode=True), encoding="utf-8", newline="\n")
     if target_path != current_path:
         current_path.unlink()
 

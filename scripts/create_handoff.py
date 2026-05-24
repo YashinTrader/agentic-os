@@ -8,6 +8,11 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+import yaml
+
+
+V2_HEADER_FIELDS = {"id", "title", "status", "owner", "reviewer", "created_by", "created_at", "updated_at", "phase"}
+
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
@@ -16,6 +21,29 @@ def utc_now() -> str:
 def bullets(items: list[str]) -> str:
     values = items or ["None."]
     return "\n".join(f"- {item}" for item in values)
+
+
+def find_task(root: Path, task_id: str) -> Path | None:
+    for state_dir in ("active", "done", "blocked"):
+        path = root / "tasks" / state_dir / f"{task_id}.yaml"
+        if path.exists():
+            return path
+    return None
+
+
+def validate_task_header(root: Path, task_id: str) -> str | None:
+    path = find_task(root, task_id)
+    if path is None:
+        return f"Task {task_id} not found"
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        return f"{path.relative_to(root)} is not a YAML mapping"
+    missing = sorted(V2_HEADER_FIELDS - set(data))
+    if missing:
+        return f"{path.relative_to(root)} missing v2 header fields: {', '.join(missing)}"
+    if data.get("owner") == data.get("reviewer"):
+        return f"{path.relative_to(root)} reviewer must differ from owner"
+    return None
 
 
 def parser() -> argparse.ArgumentParser:
@@ -40,6 +68,11 @@ def parser() -> argparse.ArgumentParser:
 def main() -> int:
     args = parser().parse_args()
     root = Path(args.root).resolve()
+    header_error = validate_task_header(root, args.task)
+    if header_error:
+        print(header_error, file=sys.stderr)
+        return 1
+
     path = root / "handoffs" / f"{args.task}__{args.from_agent}__to__{args.to_agent}.md"
     if path.exists() and not args.force:
         print(f"{path.relative_to(root)} already exists; use --force to overwrite", file=sys.stderr)
@@ -74,7 +107,7 @@ def main() -> int:
 """
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8")
+    path.write_text(text, encoding="utf-8", newline="\n")
     print(path.relative_to(root).as_posix())
     return 0
 
