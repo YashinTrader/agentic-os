@@ -85,16 +85,18 @@ class Phase15CliTests(unittest.TestCase):
             "--objective",
             "Exercise status movement.",
             "--output",
-            "tasks/done/T-0013.yaml",
+            "tasks/done/T-9993.yaml",
             "--human-approval-checklist-item",
             "Confirm done path output is approved.",
         )
 
-        self.run_script("update_task.py", "--id", "T-0013", "--status", "done")
-            "tasks/done/T-9993.yaml",
+        self.run_script(
+            "update_task.py",
+            "--id",
+            "T-9993",
+            "--status",
+            "done",
         )
-
-        self.run_script("update_task.py", "--id", "T-9993", "--status", "done", "--owner", "claude")
 
         active_path = self.root / "tasks" / "active" / "T-9993.yaml"
         done_path = self.root / "tasks" / "done" / "T-9993.yaml"
