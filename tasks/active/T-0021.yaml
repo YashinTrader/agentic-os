@@ -1,0 +1,59 @@
+id: T-0021
+title: Author ADR-0009 (MCP adapter contract)
+status: ready
+owner: codex
+reviewer: claude
+created_by: claude
+created_at: '2026-05-24T00:00:00Z'
+updated_at: '2026-05-24T14:10:00Z'
+phase: '2'
+priority: high
+risk_level: high
+requires_human_approval: true
+depends_on:
+  - T-0019
+related_decisions:
+  - ADR-0007
+objective: >
+  Convert decisions/ADR-0009-mcp-adapter-contract.md from proposal stub to signed
+  ADR, specifying the memory adapter contract before Phase 2.1 implementation.
+context: |
+  ADR-0007 is accepted and establishes the memory backend and rebuildability
+  model. This task defines the adapter contract that all agents will use to
+  access memory.
+goals:
+  - Convert decisions/ADR-0009-mcp-adapter-contract.md from stub to signed ADR.
+  - Specify the read API surface that Phase 2.1 will implement.
+  - Specify the write API surface that Phase 2.2 will gate behind a flag.
+  - Define versioning and fixture-based contract tests.
+non_goals:
+  - Implementing the adapter.
+  - Writing any code.
+  - Choosing the Librarian implementation (ADR-0008).
+inputs:
+  - decisions/ADR-0007-memory-architecture.md
+  - decisions/ADR-0008-librarian-and-write-rules.md
+  - decisions/ADR-0009-mcp-adapter-contract.md
+  - docs/AGENT_PROTOCOL.md
+outputs:
+  - decisions/ADR-0009-mcp-adapter-contract.md
+constraints:
+  - This is a writing task only.
+  - Do not implement an MCP server, HTTP server, SDK, or test harness.
+  - Keep Librarian policy details in ADR-0008 except where adapter boundaries are required.
+acceptance:
+  - ADR-0009 sections 1-6 all filled in.
+  - Read API endpoints fully specified with inputs, outputs, and errors.
+  - Write API endpoints fully specified and gated.
+  - Versioning scheme defined.
+  - Test contract defined with fixture-based tests and no real backend in gating tests.
+  - Claude review pass with no blocking comments.
+  - Human signs the ADR.
+human_approval_checklist:
+  - ADR-0007 signed.
+  - MCP justified vs. plain HTTP/JSON and direct library import.
+  - Read API surface fully specified.
+  - Write API gated behind feature flag.
+notes: |
+  T-0020 and T-0021 can run in parallel after ADR-0007 lands. They do not touch
+  the same ADR files.

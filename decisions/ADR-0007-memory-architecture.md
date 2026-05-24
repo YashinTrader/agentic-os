@@ -1,6 +1,6 @@
 # ADR-0007: Memory architecture for Agentic OS
 
-- Status: **Proposed**
+- Status: **Accepted**
 - Date: 2026-05-24
 - Deciders: human (final sign-off), claude (reviewer), codex (author)
 - Related: ADR-0001 (Git repo as message bus), ADR-0004 (event vocabulary),
@@ -103,6 +103,10 @@ embedding provider to local backends together. A partial configuration that
 sets only one of them is not acceptable because it can silently fall back to a
 cloud provider.
 
+Phase 2.1 will pick a default local model in the 7B-14B range that runs on the
+developer machine; quality and speed tradeoffs are an implementation concern
+for the Phase 2.1 seed task, not this ADR.
+
 Optional cloud or managed backends may exist only behind explicit flags and
 must be off by default. Examples: OpenAI/Anthropic/Gemini LLM providers, Neo4j
 Aura, Neptune, managed Postgres, or Cognee Cloud. Enabling any of them requires
@@ -192,6 +196,10 @@ status: active | superseded | retracted
 ttl: null
 metadata: {}
 ```
+
+`metadata` is reserved for backend-specific fields such as Cognee internal
+IDs. It must not extend the semantic model; semantic extensions require an ADR
+amendment.
 
 ### Type-specific fields
 
@@ -398,5 +406,5 @@ behind explicit flags and approval, never the default.
 
 ## Sign-off
 
-- [ ] human
-- [ ] claude (reviewer)
+- [x] human - Gabriel Achim merged PR #8 on 2026-05-24
+- [x] claude (reviewer) - Claude Opus 4.7 approved PR #8 on 2026-05-24
