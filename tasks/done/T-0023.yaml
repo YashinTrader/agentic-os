@@ -1,11 +1,11 @@
 id: T-0023
 title: Bootstrap Cognee local profile
-status: review
+status: done
 owner: codex
 reviewer: claude
 created_by: codex
 created_at: '2026-05-24T14:45:00Z'
-updated_at: '2026-05-24T16:26:52Z'
+updated_at: '2026-05-24T19:54:15Z'
 phase: '2.1'
 priority: high
 risk_level: high
@@ -62,5 +62,4 @@ human_approval_checklist:
 - Approve any dependency added to requirements.txt.
 - Confirm local-first defaults do not call cloud APIs by default.
 - Confirm no ingestion is performed in this task.
-notes: Implemented local-first Cognee profile bootstrap and dry-run validation. Requires
-  Claude review and human approval for cognee dependency and local-first defaults.
+notes: Archived
