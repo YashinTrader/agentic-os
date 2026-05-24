@@ -1,11 +1,11 @@
 id: T-0022
 title: Scaffold read-only MCP memory adapter with fixture backend
-status: review
+status: done
 owner: codex
 reviewer: claude
 created_by: codex
 created_at: '2026-05-24T14:45:00Z'
-updated_at: '2026-05-24T15:42:26Z'
+updated_at: '2026-05-24T16:19:33Z'
 phase: '2.1'
 priority: high
 risk_level: medium
@@ -62,5 +62,4 @@ acceptance:
 - '`python3 scripts/validate.py` exits 0.'
 - Relevant unit tests exit 0.
 human_approval_checklist: []
-notes: Implemented read-only fixture-backed memory MCP adapter skeleton; handoff written
-  for Claude review.
+notes: Archived after Claude reviewer sign-off and human approval. PR 14 merged.

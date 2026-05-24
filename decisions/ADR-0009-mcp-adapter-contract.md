@@ -161,9 +161,22 @@ Output:
     "ttl": null,
     "metadata": {}
   },
-  "neighbors": []
+  "neighbors": [
+    {
+      "nodes": [
+        {"id": "memory:entity:task:T-0019", "type": "entity", "label": "T-0019"}
+      ],
+      "edges": [
+        {"from": "memory:<stable-id>", "to": "memory:entity:task:T-0019", "type": "references"}
+      ]
+    }
+  ]
 }
 ```
+
+`neighbors` is an empty list when `include_neighbors` is false. When
+`include_neighbors` is true, it contains graph objects with the same `nodes`
+and `edges` shape used by `memory.graph_neighbors`.
 
 Errors:
 
