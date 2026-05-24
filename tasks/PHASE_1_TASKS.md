@@ -23,8 +23,8 @@ Status legend: ready | in_progress | review | done | blocked
 | T-0015 | Migrate repository to task schema v2               | codex  | done   | med  |
 | T-0013 | Read-only Phase 1.6 dashboard for schema v2        | antigravity | done   | low  |
 | T-0017 | Dashboard - CLI guardrail parity (close ADR-0006)  | antigravity | done   | high |
-| T-0018 | MCP adapter implementation                         | antigravity | ready  | med  |
-| T-0019 | Agent persona/voice scaffolding                    | antigravity | ready  | low  |
+| T-0018 | Dashboard UX polish - comment threading/filter/diff | antigravity | ready  | low  |
+| T-0019 | Author ADR-0007 (memory architecture)              | codex  | done   | high |
 
 ## Task Details
 
