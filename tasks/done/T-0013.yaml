@@ -1,11 +1,11 @@
 id: T-0013
 title: Read-only Phase 1.6 dashboard for schema v2
-status: review
+status: done
 owner: antigravity
 reviewer: human
 created_by: antigravity
 created_at: '2026-05-24T09:33:19Z'
-updated_at: '2026-05-24T10:42:32Z'
+updated_at: '2026-05-24T11:14:52Z'
 phase: '1.6'
 priority: high
 risk_level: low
