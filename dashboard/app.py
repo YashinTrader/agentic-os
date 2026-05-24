@@ -186,6 +186,181 @@ def get_health_metrics(root_dir: Path) -> dict:
 
 
 # ==========================================
+# 1.5 WRITE ACTIONS & INTERACTIVE PERSISTENCE
+# ==========================================
+
+def utc_now() -> str:
+    """Generate canonical ISO-8601 UTC timestamp."""
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def append_note_event(root_dir: Path, agent: str, task_id: str, text: str) -> None:
+    """Append a comment as a 'note' event to logs/agent-events.jsonl."""
+    event = {
+        "ts": utc_now(),
+        "agent": agent,
+        "type": "note",
+        "task_id": task_id,
+        "text": text,
+        "detail": f"commented on task {task_id}: {text[:50]}..."
+    }
+    log_path = root_dir / "logs" / "agent-events.jsonl"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with log_path.open("a", encoding="utf-8", newline="\n") as f:
+        f.write(json.dumps(event, separators=(",", ":"), ensure_ascii=False) + "\n")
+
+
+def update_task_file(root_dir: Path, task_id: str, status: str, owner: str, reviewer: str, notes: str) -> Path:
+    """Update fields of an existing task YAML, move it based on status, and log standard events."""
+    current_path = None
+    for folder in ("active", "done", "blocked"):
+        p = root_dir / "tasks" / folder / f"{task_id}.yaml"
+        if p.exists():
+            current_path = p
+            break
+            
+    if not current_path:
+        raise FileNotFoundError(f"Task {task_id} not found.")
+        
+    content = current_path.read_text(encoding="utf-8")
+    data = yaml.safe_load(content)
+    if not isinstance(data, dict):
+        raise ValueError(f"Task {task_id} is not a valid YAML mapping.")
+        
+    old_status = data.get("status", "ready")
+    old_owner = data.get("owner", "unassigned")
+    
+    # Val checks
+    if status in ("review", "done") and not reviewer:
+        raise ValueError("Reviewer is required when status is review or done.")
+    if reviewer and owner == reviewer:
+        raise ValueError("Reviewer must differ from owner.")
+        
+    # Update fields
+    data["status"] = status
+    data["owner"] = owner
+    data["reviewer"] = reviewer
+    data["notes"] = notes
+    data["updated_at"] = utc_now()
+    
+    # State mapping
+    STATE_DIRS = {
+        "ready": "active",
+        "in_progress": "active",
+        "review": "active",
+        "blocked": "blocked",
+        "done": "done",
+    }
+    
+    target_dir = STATE_DIRS[status]
+    target_path = root_dir / "tasks" / target_dir / f"{task_id}.yaml"
+    
+    # Write updated task
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    target_path.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True), encoding="utf-8", newline="\n")
+    
+    if target_path != current_path:
+        current_path.unlink()
+        
+    # Log status changed
+    if old_status != status:
+        event = {
+            "ts": utc_now(),
+            "agent": "human",
+            "type": "status_changed",
+            "task_id": task_id,
+            "from": old_status,
+            "to": status,
+            "detail": f"changed status from {old_status} to {status}"
+        }
+        log_path = root_dir / "logs" / "agent-events.jsonl"
+        with log_path.open("a", encoding="utf-8", newline="\n") as f:
+            f.write(json.dumps(event, separators=(",", ":"), ensure_ascii=False) + "\n")
+            
+    # Log reassign changed
+    if old_owner != owner:
+        event = {
+            "ts": utc_now(),
+            "agent": "human",
+            "type": "task_assigned",
+            "task_id": task_id,
+            "from": old_owner,
+            "to": owner,
+            "detail": f"reassigned task from {old_owner} to {owner}"
+        }
+        log_path = root_dir / "logs" / "agent-events.jsonl"
+        with log_path.open("a", encoding="utf-8", newline="\n") as f:
+            f.write(json.dumps(event, separators=(",", ":"), ensure_ascii=False) + "\n")
+            
+    return target_path
+
+
+def create_task_file(
+    root_dir: Path, title: str, owner: str, reviewer: str, objective: str,
+    context: str, phase: str, priority: str, risk_level: str,
+    goals: list[str], acceptance: list[str]
+) -> str:
+    """Find next sequential T-NNNN ID, create new YAML in tasks/active/, and log task_created."""
+    max_id = 0
+    for folder in ("active", "done", "blocked"):
+        dir_path = root_dir / "tasks" / folder
+        if dir_path.exists():
+            for p in dir_path.glob("T-*.yaml"):
+                try:
+                    num = int(p.stem.split("-")[1])
+                    if num > max_id:
+                        max_id = num
+                except (ValueError, IndexError):
+                    pass
+                    
+    next_id = f"T-{max_id + 1:04d}"
+    
+    task_data = {
+        "id": next_id,
+        "title": title,
+        "status": "ready",
+        "owner": owner,
+        "reviewer": reviewer,
+        "created_by": "human",
+        "created_at": utc_now(),
+        "updated_at": utc_now(),
+        "phase": phase,
+        "priority": priority,
+        "risk_level": risk_level,
+        "requires_human_approval": False,
+        "objective": objective,
+        "context": context,
+        "goals": goals,
+        "non_goals": [],
+        "inputs": [],
+        "outputs": [],
+        "constraints": [],
+        "acceptance": acceptance,
+        "human_approval_checklist": [],
+        "notes": ""
+    }
+    
+    target_path = root_dir / "tasks" / "active" / f"{next_id}.yaml"
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    target_path.write_text(yaml.safe_dump(task_data, sort_keys=False, allow_unicode=True), encoding="utf-8", newline="\n")
+    
+    # Log task created
+    event = {
+        "ts": utc_now(),
+        "agent": "human",
+        "type": "task_created",
+        "task_id": next_id,
+        "detail": f"created task: {title}"
+    }
+    log_path = root_dir / "logs" / "agent-events.jsonl"
+    with log_path.open("a", encoding="utf-8", newline="\n") as f:
+        f.write(json.dumps(event, separators=(",", ":"), ensure_ascii=False) + "\n")
+        
+    return next_id
+
+
+# ==========================================
 # 2. LOCAL DYNAMIC HTML GENERATION
 # ==========================================
 
@@ -239,13 +414,16 @@ def generate_dashboard_html(query_params: dict[str, list[str]]) -> str:
     filter_agent = query_params.get("agent", [""])[0].strip()
     filter_task = query_params.get("task", [""])[0].strip()
     read_file_path = query_params.get("read_file", [None])[0]
+    success_alert = query_params.get("success", [None])[0]
+    error_alert = query_params.get("error", [None])[0]
     
     # Determine default active tab based on parameters
-    active_tab = "kanban"
-    if filter_agent or filter_task:
-        active_tab = "events"
-    elif read_file_path:
-        active_tab = "handoffs"
+    active_tab = query_params.get("tab", ["kanban"])[0]
+    if not query_params.get("tab"):
+        if filter_agent or filter_task:
+            active_tab = "events"
+        elif read_file_path:
+            active_tab = "handoffs"
         
     # Health status badges
     def make_health_badge(state: str) -> str:
@@ -650,6 +828,138 @@ def generate_dashboard_html(query_params: dict[str, list[str]]) -> str:
         
         .clear-link:hover { color: #94a3b8; }
         
+        /* New Interactive Forms Styling */
+        .toast-alert {
+            padding: 12px 18px;
+            border-radius: 8px;
+            margin-bottom: 24px;
+            font-size: 14px;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .toast-success {
+            background: rgba(16, 185, 129, 0.15);
+            color: #34d399;
+            border: 1px solid rgba(16, 185, 129, 0.25);
+        }
+        
+        .toast-error {
+            background: rgba(239, 68, 68, 0.15);
+            color: #f87171;
+            border: 1px solid rgba(239, 68, 68, 0.25);
+        }
+        
+        /* Comments/Discussion styling */
+        .comments-container {
+            margin-top: 24px;
+            background: rgba(0, 0, 0, 0.15);
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.04);
+            padding: 16px;
+        }
+        
+        .comment-item {
+            border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+            padding: 12px 0;
+        }
+        
+        .comment-item:last-child {
+            border-bottom: none;
+        }
+        
+        .comment-meta {
+            display: flex;
+            justify-content: space-between;
+            font-size: 11px;
+            color: #64748b;
+            margin-bottom: 6px;
+        }
+        
+        .comment-author {
+            background: rgba(59, 130, 246, 0.1);
+            color: #60a5fa;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-weight: 600;
+        }
+        
+        .comment-text {
+            font-size: 13px;
+            color: #e2e8f0;
+            line-height: 1.5;
+        }
+        
+        /* Form inputs styling */
+        .interactive-form {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            margin-top: 12px;
+        }
+        
+        .form-label {
+            font-size: 12px;
+            color: #94a3b8;
+            font-weight: 600;
+            margin-bottom: -6px;
+        }
+        
+        .form-input, .form-select, .form-textarea {
+            background: #0f172a;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 6px;
+            color: #f1f5f9;
+            padding: 8px 12px;
+            font-size: 13px;
+            width: 100%;
+            transition: border-color 0.2s;
+        }
+        
+        .form-input:focus, .form-select:focus, .form-textarea:focus {
+            border-color: #3b82f6;
+            outline: none;
+        }
+        
+        .form-textarea {
+            resize: vertical;
+            min-height: 80px;
+        }
+        
+        .form-submit-btn {
+            background: #3b82f6;
+            border: none;
+            color: white;
+            padding: 10px 16px;
+            font-weight: 600;
+            font-size: 13px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        
+        .form-submit-btn:hover {
+            background: #2563eb;
+        }
+        
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+        
+        /* Create Task Page */
+        .create-task-container {
+            max-width: 800px;
+            background: #1e293b;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 12px 24px rgba(0,0,0,0.3);
+        }
+        
     </style>
 </head>
 <body>
@@ -703,19 +1013,31 @@ def generate_dashboard_html(query_params: dict[str, list[str]]) -> str:
     # 3. RENDER MAIN PANELS WITH TABS
     html_out.append("""
     <div class="main-content">
-        <div class="tabs-container">
-            <div class="tab-headers">
     """)
     
-    # Render Tab Headers
+    if success_alert:
+        html_out.append(f"""
+        <div class="toast-alert toast-success">
+            <span>✨</span>
+            <span>{escape(success_alert)}</span>
+        </div>
+        """)
+    if error_alert:
+        html_out.append(f"""
+        <div class="toast-alert toast-error">
+            <span>⚠️</span>
+            <span><b>Error:</b> {escape(error_alert)}</span>
+        </div>
+        """)
+        
     html_out.append(f"""
+        <div class="tabs-container">
+            <div class="tab-headers">
                 <a href="/?tab=kanban" class="tab-link {'active' if active_tab == 'kanban' else ''}">📋 Kanban Board</a>
+                <a href="/?tab=create_task" class="tab-link {'active' if active_tab == 'create_task' else ''}">🆕 Create Task</a>
                 <a href="/?tab=events" class="tab-link {'active' if active_tab == 'events' else ''}">📜 System Events</a>
                 <a href="/?tab=handoffs" class="tab-link {'active' if active_tab == 'handoffs' else ''}">📑 Handoffs & ADRs</a>
                 <a href="/?tab=health" class="tab-link {'active' if active_tab == 'health' else ''}">🏥 Health Panel</a>
-    """)
-    
-    html_out.append("""
             </div>
     """)
     
@@ -830,8 +1152,53 @@ def generate_dashboard_html(query_params: dict[str, list[str]]) -> str:
                             
                             <div class="inspector-section-title">Handoff Notes / Remarks</div>
                             <p style="font-size:13px; line-height:1.6; color:#cbd5e1; margin:0 0 20px 0; background:rgba(255,255,255,0.01); padding:10px; border-radius:6px; border:1px solid rgba(255,255,255,0.03);">{escape(selected_task.get('notes', 'No handoff notes.'))}</p>
+            """)
+            
+            # Comments Section
+            html_out.append(f"""
+                            <div class="comments-container">
+                                <div class="inspector-section-title" style="border:none; margin-bottom:12px;">💬 Task Discussion & Comments</div>
+                                <div style="max-height: 250px; overflow-y: auto; margin-bottom: 16px; padding-right: 4px;">
+            """)
+            
+            task_comments = [e for e in events if str(e.get("task_id", "")) == selected_task_id and e.get("type", e.get("event")) == "note"]
+            if not task_comments:
+                html_out.append('<div style="font-size:12px; color:#64748b; font-style:italic; padding:10px 0;">No comments yet on this task.</div>')
+            else:
+                for c in task_comments:
+                    html_out.append(f"""
+                                    <div class="comment-item">
+                                        <div class="comment-meta">
+                                            <span class="comment-author">{escape(c.get('agent', 'unknown'))}</span>
+                                            <span>⏱ {escape(c.get('ts', 'N/A'))}</span>
+                                        </div>
+                                        <div class="comment-text">{escape(c.get('text', ''))}</div>
+                                    </div>
+                    """)
+                    
+            html_out.append(f"""
+                                </div>
+                                <form action="/comment" method="POST" class="interactive-form" style="border-top:1px solid rgba(255,255,255,0.05); padding-top:12px;">
+                                    <input type="hidden" name="task_id" value="{escape(selected_task['id'])}">
+                                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                                        <label class="form-label" style="margin:0;">Speak as Agent:</label>
+                                        <select name="agent" class="form-select" style="max-width:150px; padding:4px 8px; font-size:11px; height:auto; background:#1e293b;">
+                                            <option value="human">human (you)</option>
+                                            <option value="antigravity">antigravity</option>
+                                            <option value="claude">claude</option>
+                                            <option value="cursor">cursor</option>
+                                            <option value="gemini">gemini</option>
+                                            <option value="hermes">hermes</option>
+                                        </select>
+                                    </div>
+                                    <textarea name="comment" class="form-textarea" placeholder="Type a comment or ask a question..." required></textarea>
+                                    <button type="submit" class="form-submit-btn" style="align-self:flex-end; padding:6px 14px; font-size:12px;">Post Comment</button>
+                                </form>
+                            </div>
                         </div>
-                        
+            """)
+            
+            html_out.append(f"""
                         <div style="background:rgba(255,255,255,0.01); border:1px solid rgba(255,255,255,0.04); border-radius:8px; padding:16px;">
                             <div class="inspector-section-title">Task Metadata</div>
                             <div class="inspector-meta-row">
@@ -875,10 +1242,54 @@ def generate_dashboard_html(query_params: dict[str, list[str]]) -> str:
                                 <div class="inspector-section-title" style="border:none; margin-bottom:4px;">File Path</div>
                                 <code style="font-size:10px; color:#64748b; background:rgba(0,0,0,0.15); padding:4px; border-radius:4px; display:block; word-break:break-all;">{escape(selected_task['file_path'])}</code>
                             </div>
+            """)
                             
-                            <div style="font-size:10px; color:#475569; margin-top:16px;">
+            # Reassign & Update Status Form
+            status_opts = "".join(f'<option value="{s}" {"selected" if selected_task["status"] == s else ""}>{s}</option>' for s in ["ready", "in_progress", "review", "blocked", "done"])
+            agents = ["human", "antigravity", "claude", "cursor", "gemini", "hermes", "unassigned"]
+            owner_opts = "".join(f'<option value="{a}" {"selected" if selected_task["owner"] == a else ""}>{a}</option>' for a in agents)
+            reviewer_opts = "".join(f'<option value="{a}" {"selected" if selected_task["reviewer"] == a else ""}>{a}</option>' for a in agents)
+            
+            html_out.append(f"""
+                            <div style="font-size:10px; color:#475569; margin-top:16px; border-bottom: 1px solid rgba(255,255,255,0.03); padding-bottom: 12px;">
                                 Created: {escape(selected_task['created_at'])}<br/>
                                 Updated: {escape(selected_task['updated_at'])}
+                            </div>
+                            
+                            <div style="margin-top:20px; background:rgba(0,0,0,0.15); border:1px solid rgba(255,255,255,0.04); padding:14px; border-radius:8px;">
+                                <div class="inspector-section-title" style="border:none; margin-bottom:12px;">🔄 Reassign & Update Status</div>
+                                <form action="/update_task" method="POST" class="interactive-form">
+                                    <input type="hidden" name="task_id" value="{escape(selected_task['id'])}">
+                                    
+                                    <div class="form-row">
+                                        <div>
+                                            <label class="form-label">Status</label>
+                                            <select name="status" class="form-select" style="background:#1e293b;">
+                                                {status_opts}
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label class="form-label">Owner</label>
+                                            <select name="owner" class="form-select" style="background:#1e293b;">
+                                                {owner_opts}
+                                            </select>
+                                        </div>
+                                    </div>
+                                    
+                                    <div style="margin-top:8px;">
+                                        <label class="form-label">Reviewer</label>
+                                        <select name="reviewer" class="form-select" style="background:#1e293b;">
+                                            {reviewer_opts}
+                                        </select>
+                                    </div>
+                                    
+                                    <div style="margin-top:8px;">
+                                        <label class="form-label">Handoff Notes / Remarks</label>
+                                        <textarea name="notes" class="form-textarea" placeholder="Update handoff remarks..." style="background:#1e293b; min-height:60px;">{escape(selected_task.get('notes', ''))}</textarea>
+                                    </div>
+                                    
+                                    <button type="submit" class="form-submit-btn" style="margin-top:8px; width:100%;">Update Task</button>
+                                </form>
                             </div>
                         </div>
                     </div>
@@ -886,6 +1297,91 @@ def generate_dashboard_html(query_params: dict[str, list[str]]) -> str:
             """)
             
     html_out.append("""
+            </div>
+    """)
+    # ==========================================
+    # TAB PANEL: CREATE TASK
+    # ==========================================
+    agents = ["unassigned", "antigravity", "claude", "cursor", "gemini", "hermes", "human"]
+    owner_options = "".join(f'<option value="{a}">{a}</option>' for a in agents)
+    reviewer_options = "".join(f'<option value="{a}">{a}</option>' for a in agents)
+    
+    html_out.append(f"""
+            <div class="tab-panel {'active' if active_tab == 'create_task' else ''}">
+                <div class="create-task-container">
+                    <h3 style="margin-top:0; color:#f8fafc; display:flex; align-items:center; gap:8px;">🆕 Create New Active Task</h3>
+                    <p style="font-size:12px; color:#94a3b8; margin-bottom:20px;">Define and register a new task. The system will automatically allocate the next sequential task ID.</p>
+                    
+                    <form action="/create_task" method="POST" class="interactive-form">
+                        <div>
+                            <label class="form-label">Task Title</label>
+                            <input type="text" name="title" class="form-input" placeholder="e.g. Implement feature X or fix bug Y" required>
+                        </div>
+                        
+                        <div class="form-row">
+                            <div>
+                                <label class="form-label">Assignee (Owner)</label>
+                                <select name="owner" class="form-select" style="background:#0f172a;">
+                                    {owner_options}
+                                </select>
+                            </div>
+                            <div>
+                                <label class="form-label">Reviewer</label>
+                                <select name="reviewer" class="form-select" style="background:#0f172a;">
+                                    {reviewer_options}
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <div class="form-row">
+                            <div>
+                                <label class="form-label">Priority</label>
+                                <select name="priority" class="form-select" style="background:#0f172a;">
+                                    <option value="low">low</option>
+                                    <option value="medium" selected>medium</option>
+                                    <option value="high">high</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="form-label">Risk Level</label>
+                                <select name="risk_level" class="form-select" style="background:#0f172a;">
+                                    <option value="low" selected>low</option>
+                                    <option value="medium">medium</option>
+                                    <option value="high">high</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <div class="form-row">
+                            <div>
+                                <label class="form-label">Phase</label>
+                                <input type="text" name="phase" class="form-input" value="1.6">
+                            </div>
+                        </div>
+                        
+                        <div>
+                            <label class="form-label">Objective</label>
+                            <textarea name="objective" class="form-textarea" placeholder="Describe the high-level objective..." required></textarea>
+                        </div>
+                        
+                        <div>
+                            <label class="form-label">Context / Rationale</label>
+                            <textarea name="context" class="form-textarea" placeholder="Why are we building this? Context..."></textarea>
+                        </div>
+                        
+                        <div>
+                            <label class="form-label">Execution Goals (One per line)</label>
+                            <textarea name="goals" class="form-textarea" placeholder="e.g. Implement parser&#10;Write unit tests"></textarea>
+                        </div>
+                        
+                        <div>
+                            <label class="form-label">Acceptance Criteria (One per line)</label>
+                            <textarea name="acceptance" class="form-textarea" placeholder="e.g. Validator exits 0&#10;Dashboard loads in browser" required></textarea>
+                        </div>
+                        
+                        <button type="submit" class="form-submit-btn" style="margin-top:10px;">Create and Assign Task</button>
+                    </form>
+                </div>
             </div>
     """)
     
@@ -1121,6 +1617,104 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
         
         page_html = generate_dashboard_html(query_params)
         self.wfile.write(page_html.encode("utf-8"))
+
+    def do_POST(self):
+        content_length = int(self.headers.get('Content-Length', 0))
+        post_data = self.rfile.read(content_length).decode('utf-8')
+        params = urllib.parse.parse_qs(post_data)
+        
+        parsed_url = urllib.parse.urlparse(self.path)
+        action = parsed_url.path
+        
+        error_msg = None
+        success_msg = None
+        redirect_url = "/?tab=kanban"
+        
+        try:
+            if action == "/comment":
+                task_id = params.get("task_id", [""])[0].strip()
+                comment_text = params.get("comment", [""])[0].strip()
+                agent = params.get("agent", ["human"])[0].strip()
+                
+                if not task_id or not comment_text:
+                    raise ValueError("Task ID and Comment content are required.")
+                
+                append_note_event(ROOT_DIR, agent, task_id, comment_text)
+                success_msg = "Comment posted successfully!"
+                redirect_url = f"/?task_id={task_id}&tab=kanban"
+                
+            elif action == "/update_task":
+                task_id = params.get("task_id", [""])[0].strip()
+                status = params.get("status", [""])[0].strip()
+                owner = params.get("owner", [""])[0].strip()
+                reviewer = params.get("reviewer", [""])[0].strip()
+                notes = params.get("notes", [""])[0].strip()
+                
+                if not task_id:
+                    raise ValueError("Task ID is required.")
+                
+                update_task_file(ROOT_DIR, task_id, status, owner, reviewer, notes)
+                success_msg = f"Task {task_id} reassigned/updated successfully!"
+                redirect_url = f"/?task_id={task_id}&tab=kanban"
+                
+            elif action == "/create_task":
+                title = params.get("title", [""])[0].strip()
+                owner = params.get("owner", ["unassigned"])[0].strip()
+                reviewer = params.get("reviewer", ["unassigned"])[0].strip()
+                priority = params.get("priority", ["medium"])[0].strip()
+                risk_level = params.get("risk_level", ["low"])[0].strip()
+                phase = params.get("phase", ["1.6"])[0].strip()
+                objective = params.get("objective", [""])[0].strip()
+                context = params.get("context", [""])[0].strip()
+                goals_raw = params.get("goals", [""])[0].strip()
+                acceptance_raw = params.get("acceptance", [""])[0].strip()
+                
+                if not title or not objective or not acceptance_raw:
+                    raise ValueError("Title, Objective, and Acceptance Criteria are required.")
+                
+                goals = [g.strip() for g in goals_raw.split("\n") if g.strip()]
+                acceptance = [a.strip() for a in acceptance_raw.split("\n") if a.strip()]
+                
+                new_id = create_task_file(
+                    ROOT_DIR, title, owner, reviewer, objective,
+                    context, phase, priority, risk_level, goals, acceptance
+                )
+                success_msg = f"Task {new_id} created successfully!"
+                redirect_url = f"/?task_id={new_id}&tab=kanban"
+                
+            else:
+                raise ValueError(f"Unknown POST action: {action}")
+                
+        except Exception as e:
+            error_msg = str(e)
+            # Retain tab state on error
+            if action == "/create_task":
+                redirect_url = "/?tab=create_task"
+            elif action == "/comment" or action == "/update_task":
+                task_id = params.get("task_id", [None])[0]
+                redirect_url = f"/?task_id={task_id}&tab=kanban" if task_id else "/?tab=kanban"
+                
+        # Send 303 Redirect back
+        parsed_redirect = urllib.parse.urlparse(redirect_url)
+        redirect_params = urllib.parse.parse_qs(parsed_redirect.query)
+        if error_msg:
+            redirect_params["error"] = [error_msg]
+        if success_msg:
+            redirect_params["success"] = [success_msg]
+            
+        new_query = urllib.parse.urlencode(redirect_params, doseq=True)
+        new_redirect = urllib.parse.urlunparse((
+            parsed_redirect.scheme,
+            parsed_redirect.netloc,
+            parsed_redirect.path,
+            parsed_redirect.params,
+            new_query,
+            parsed_redirect.fragment
+        ))
+        
+        self.send_response(303)
+        self.send_header("Location", new_redirect)
+        self.end_headers()
 
 
 def serve_dashboard(port: int = 8501) -> None:

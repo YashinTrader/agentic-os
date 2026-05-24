@@ -16,7 +16,11 @@ from dashboard.app import (
     load_handoffs,
     load_adrs,
     get_health_metrics,
+    append_note_event,
+    update_task_file,
+    create_task_file,
 )
+
 
 
 class TestDashboardParsing(unittest.TestCase):
@@ -116,6 +120,62 @@ class TestDashboardParsing(unittest.TestCase):
         self.assertEqual(metrics["last_event_ts"], "2026-05-23T09:00:00Z")
         self.assertEqual(metrics["tasks_state"], "ok")
         self.assertEqual(metrics["events_state"], "ok")
+
+    def test_append_note_event(self) -> None:
+        append_note_event(self.root, "human", "T-TEST", "This is a test comment")
+        events, _ = load_events(self.root)
+        self.assertEqual(len(events), 3)
+        self.assertEqual(events[2]["type"], "note")
+        self.assertEqual(events[2]["task_id"], "T-TEST")
+        self.assertEqual(events[2]["text"], "This is a test comment")
+
+    def test_update_task_file(self) -> None:
+        # Move status to blocked, and change owner/reviewer
+        update_task_file(self.root, "T-TEST", "blocked", "claude", "human", "Blocked notes.")
+        
+        # Check files are moved/updated correctly
+        active_path = self.root / "tasks" / "active" / "T-TEST.yaml"
+        blocked_path = self.root / "tasks" / "blocked" / "T-TEST.yaml"
+        
+        self.assertFalse(active_path.exists())
+        self.assertTrue(blocked_path.exists())
+        
+        data = yaml.safe_load(blocked_path.read_text(encoding="utf-8"))
+        self.assertEqual(data["status"], "blocked")
+        self.assertEqual(data["owner"], "claude")
+        self.assertEqual(data["reviewer"], "human")
+        self.assertEqual(data["notes"], "Blocked notes.")
+        
+        # Event check (should log status_changed and task_assigned)
+        events, _ = load_events(self.root)
+        self.assertEqual(len(events), 4)
+        self.assertEqual(events[2]["type"], "status_changed")
+        self.assertEqual(events[2]["to"], "blocked")
+        self.assertEqual(events[3]["type"], "task_assigned")
+        self.assertEqual(events[3]["to"], "claude")
+
+    def test_create_task_file(self) -> None:
+        new_id = create_task_file(
+            self.root, "New Dashboard Task", "antigravity", "human", "Create a dashboard",
+            "Context", "1.6", "high", "low", ["Goal 1"], ["Criteria 1"]
+        )
+        self.assertEqual(new_id, "T-0001") # Since T-TEST isn't standard format T-NNNN, standard should default next to T-0001
+        
+        new_path = self.root / "tasks" / "active" / "T-0001.yaml"
+        self.assertTrue(new_path.exists())
+        
+        data = yaml.safe_load(new_path.read_text(encoding="utf-8"))
+        self.assertEqual(data["id"], "T-0001")
+        self.assertEqual(data["title"], "New Dashboard Task")
+        self.assertEqual(data["status"], "ready")
+        self.assertEqual(data["owner"], "antigravity")
+        self.assertEqual(data["priority"], "high")
+        self.assertEqual(data["goals"], ["Goal 1"])
+        
+        events, _ = load_events(self.root)
+        self.assertEqual(len(events), 3)
+        self.assertEqual(events[2]["type"], "task_created")
+        self.assertEqual(events[2]["task_id"], "T-0001")
 
 
 if __name__ == "__main__":
