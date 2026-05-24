@@ -21,8 +21,13 @@ Status legend: ready | in_progress | review | done | blocked
 | T-0012 | Phase 1.5 minimal CLI task runner                  | codex  | review | med  |
 | T-0012a| CLI guardrails, schema-v2 writers, T-0012 rollback | codex  | review | med  |
 | T-0015 | Migrate repository to task schema v2               | codex  | review | med  |
+| T-0013 | Read-only Phase 1.6 dashboard for schema v2        | antigravity | ready  | low  |
+| T-0017 | Librarian agent implementation                     | antigravity | ready  | med  |
+| T-0018 | MCP adapter implementation                         | antigravity | ready  | med  |
+| T-0019 | Agent persona/voice scaffolding                    | antigravity | ready  | low  |
 
 ## Task Details
+
 
 ### T-0001 - Initialize repo skeleton
 - **Objective:** Create top-level directories and README.
@@ -109,8 +114,24 @@ Status legend: ready | in_progress | review | done | blocked
   `scripts/migrate_schema_v2.py`, all task YAML files, `docs/AGENT_PROTOCOL.md`,
   `logs/agent-events.jsonl`, `handoffs/T-0015__codex__to__claude.md`.
 - **Acceptance:** Migration is idempotent; validator accepts v1 with warnings
-  during the migration window; validator and unittests exit 0.
 - **Status:** Review after Codex implementation and human approval of ADR-0005.
+
+### T-0013 - Read-only Phase 1.6 dashboard for schema v2
+- **Objective:** Build a local, read-only dashboard that renders the current task ledger, recent events, and open handoffs directly from the repo files.
+- **Outputs:** `dashboard/` directory, `tests/test_dashboard.py`, `handoffs/T-0013__antigravity__to__human.md`.
+- **Acceptance:** Validator is clean, unittest suite green, dashboard renders correctly under standard standard library server on schema v2 files and ADR-0004 events.
+
+### T-0017 - Librarian agent implementation (Phase 2 Placeholder)
+- **Objective:** Implement the Librarian agent which observes other agents' events/handoffs and standardizes memory operations.
+- **Status:** Placeholder (do not start yet).
+
+### T-0018 - MCP adapter implementation (Phase 2 Placeholder)
+- **Objective:** Implement the Model Context Protocol (MCP) adapter read/write contract to interface the control plane with our memory backend.
+- **Status:** Placeholder (do not start yet).
+
+### T-0019 - Agent persona/voice scaffolding (Phase 2 Placeholder)
+- **Objective:** Establish the per-agent persona YAML definitions, capabilities registry, and system prompts to configure agent voices.
+- **Status:** Placeholder (do not start yet).
 
 ## Schema v2 Rename Map
 

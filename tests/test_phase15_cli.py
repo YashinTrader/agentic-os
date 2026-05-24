@@ -77,7 +77,7 @@ class Phase15CliTests(unittest.TestCase):
         self.run_script(
             "create_task.py",
             "--id",
-            "T-0013",
+            "T-9993",
             "--title",
             "Move task",
             "--reviewer",
@@ -91,9 +91,13 @@ class Phase15CliTests(unittest.TestCase):
         )
 
         self.run_script("update_task.py", "--id", "T-0013", "--status", "done")
+            "tasks/done/T-9993.yaml",
+        )
 
-        active_path = self.root / "tasks" / "active" / "T-0013.yaml"
-        done_path = self.root / "tasks" / "done" / "T-0013.yaml"
+        self.run_script("update_task.py", "--id", "T-9993", "--status", "done", "--owner", "claude")
+
+        active_path = self.root / "tasks" / "active" / "T-9993.yaml"
+        done_path = self.root / "tasks" / "done" / "T-9993.yaml"
         self.assertFalse(active_path.exists())
         self.assertTrue(done_path.exists())
         task = yaml.safe_load(done_path.read_text(encoding="utf-8"))
