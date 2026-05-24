@@ -1,62 +1,66 @@
 id: T-0022
 title: Scaffold read-only MCP memory adapter with fixture backend
-status: ready
+status: review
 owner: codex
 reviewer: claude
 created_by: codex
 created_at: '2026-05-24T14:45:00Z'
-updated_at: '2026-05-24T14:45:00Z'
+updated_at: '2026-05-24T15:42:26Z'
 phase: '2.1'
 priority: high
 risk_level: medium
 requires_human_approval: false
 depends_on:
-  - T-0019
-  - T-0020
-  - T-0021
+- T-0019
+- T-0020
+- T-0021
 related_decisions:
-  - ADR-0007
-  - ADR-0008
-  - ADR-0009
-objective: >
-  Implement the first read-only `agentic-os-memory` MCP adapter skeleton using
-  a fixture backend, with all five Phase 2.1 read tools returning valid empty
+- ADR-0007
+- ADR-0008
+- ADR-0009
+objective: 'Implement the first read-only `agentic-os-memory` MCP adapter skeleton
+  using a fixture backend, with all five Phase 2.1 read tools returning valid empty
   or fixture-backed responses.
-context: |
-  ADR-0009 requires a versioned MCP server with read-only tools first. This
+
+  '
+context: 'ADR-0009 requires a versioned MCP server with read-only tools first. This
+
   task should establish the contract surface without connecting to Cognee and
+
   without adding write tools.
+
+  '
 goals:
-  - Add a local MCP adapter entrypoint named for `agentic-os-memory`.
-  - Implement `memory.search`, `memory.get`, `memory.list_entities`,
-    `memory.timeline`, and `memory.graph_neighbors` against a fixture backend.
-  - Return contract-versioned JSON shapes that match ADR-0009.
-  - Add fixture-based tests for empty-store and basic success/error paths.
+- Add a local MCP adapter entrypoint named for `agentic-os-memory`.
+- Implement `memory.search`, `memory.get`, `memory.list_entities`, `memory.timeline`,
+  and `memory.graph_neighbors` against a fixture backend.
+- Return contract-versioned JSON shapes that match ADR-0009.
+- Add fixture-based tests for empty-store and basic success/error paths.
 non_goals:
-  - Do not connect to Cognee.
-  - Do not add write tools.
-  - Do not implement Librarian behavior.
-  - Do not add dashboard integration.
+- Do not connect to Cognee.
+- Do not add write tools.
+- Do not implement Librarian behavior.
+- Do not add dashboard integration.
 inputs:
-  - decisions/ADR-0009-mcp-adapter-contract.md
-  - decisions/ADR-0007-memory-architecture.md
-  - scripts/
-  - tests/
+- decisions/ADR-0009-mcp-adapter-contract.md
+- decisions/ADR-0007-memory-architecture.md
+- scripts/
+- tests/
 outputs:
-  - scripts/
-  - tests/
-  - requirements.txt
+- scripts/
+- tests/
+- requirements.txt
 constraints:
-  - Keep dependencies minimal; if an MCP SDK is added, justify it in the PR body.
-  - Bind any HTTP mode to localhost only if HTTP mode is included.
-  - Fixture tests must not require Cognee, Ollama, or network access.
+- Keep dependencies minimal; if an MCP SDK is added, justify it in the PR body.
+- Bind any HTTP mode to localhost only if HTTP mode is included.
+- Fixture tests must not require Cognee, Ollama, or network access.
 acceptance:
-  - All five read tools are implemented against a fixture backend.
-  - Tool outputs include `contract_version`.
-  - Write tools are absent from the advertised tool list.
-  - Fixture tests cover empty store, not found, invalid argument, and namespace denial.
-  - '`python3 scripts/validate.py` exits 0.'
-  - Relevant unit tests exit 0.
+- All five read tools are implemented against a fixture backend.
+- Tool outputs include `contract_version`.
+- Write tools are absent from the advertised tool list.
+- Fixture tests cover empty store, not found, invalid argument, and namespace denial.
+- '`python3 scripts/validate.py` exits 0.'
+- Relevant unit tests exit 0.
 human_approval_checklist: []
-notes: |
-  This is the first implementation task after the Phase 2 ADR cluster.
+notes: Implemented read-only fixture-backed memory MCP adapter skeleton; handoff written
+  for Claude review.
