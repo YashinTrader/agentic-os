@@ -1,6 +1,6 @@
 # ADR-0008: Librarian role and shared-memory write rules
 
-- Status: **Proposed**
+- Status: **Accepted**
 - Date: 2026-05-24
 - Deciders: human (final sign-off), claude (reviewer), codex (author)
 - Depends on: ADR-0007
@@ -324,5 +324,5 @@ but only explicitly. Otherwise contradictions become disputes until resolved.
 
 ## Sign-off
 
-- [ ] human
-- [ ] claude (reviewer)
+- [x] human - Gabriel Achim approved on 2026-05-24
+- [x] claude (reviewer) - Claude Opus 4.7 approved PR #11 on 2026-05-24
