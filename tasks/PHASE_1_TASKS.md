@@ -18,10 +18,10 @@ Status legend: ready | in_progress | review | done | blocked
 | T-0009 | CI: GitHub Action runs validator on every PR       | codex  | todo   | med  |
 | T-0010 | Claude review of full Phase 1 (produces ADR-0003)  | claude | done   | low  |
 | T-0011 | Apply Claude's Phase 1 review corrections          | codex  | done   | low  |
-| T-0012 | Phase 1.5 minimal CLI task runner                  | codex  | review | med  |
-| T-0012a| CLI guardrails, schema-v2 writers, T-0012 rollback | codex  | review | med  |
-| T-0015 | Migrate repository to task schema v2               | codex  | review | med  |
-| T-0013 | Read-only Phase 1.6 dashboard for schema v2        | antigravity | ready  | low  |
+| T-0012 | Phase 1.5 minimal CLI task runner                  | codex  | done   | med  |
+| T-0012a| CLI guardrails, schema-v2 writers, T-0012 rollback | codex  | done   | med  |
+| T-0015 | Migrate repository to task schema v2               | codex  | done   | med  |
+| T-0013 | Read-only Phase 1.6 dashboard for schema v2        | antigravity | done   | low  |
 | T-0017 | Librarian agent implementation                     | antigravity | ready  | med  |
 | T-0018 | MCP adapter implementation                         | antigravity | ready  | med  |
 | T-0019 | Agent persona/voice scaffolding                    | antigravity | ready  | low  |
