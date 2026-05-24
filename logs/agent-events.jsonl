@@ -28,3 +28,6 @@
 {"ts":"2026-05-24T15:42:26Z","agent":"codex","type":"status_changed","task_id":"T-0022","detail":"moved T-0022 to review after implementing fixture-backed read-only memory adapter","ref":"handoffs/T-0022__codex__to__claude.md"}
 {"ts":"2026-05-24T16:19:50Z","agent":"codex","type":"status_changed","task_id":"T-0022","detail":"moved T-0022 to done after PR 14 merge and Claude human sign-off","ref":"tasks/done/T-0022.yaml"}
 {"ts":"2026-05-24T16:19:55Z","agent":"codex","type":"status_changed","task_id":"T-0017","detail":"moved T-0017 to done after Claude human sign-off","ref":"tasks/done/T-0017.yaml"}
+{"ts":"2026-05-24T16:26:33Z","agent":"codex","type":"status_changed","task_id":"T-0023","detail":"started T-0023 local Cognee profile bootstrap","ref":"tasks/active/T-0023.yaml"}
+{"ts":"2026-05-24T16:26:58Z","agent":"codex","type":"handoff_written","task_id":"T-0023","detail":"created T-0023 handoff for Claude review","ref":"handoffs/T-0023__codex__to__claude.md"}
+{"ts":"2026-05-24T16:27:04Z","agent":"codex","type":"status_changed","task_id":"T-0023","detail":"moved T-0023 to review after local Cognee profile bootstrap","ref":"handoffs/T-0023__codex__to__claude.md"}

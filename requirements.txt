@@ -1,1 +1,2 @@
 PyYAML
+cognee==1.1.0

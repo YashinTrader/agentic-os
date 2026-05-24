@@ -12,3 +12,6 @@ venv/
 
 # Local Codex working state
 .codex/
+
+# Local generated memory stores
+memory/cognee/

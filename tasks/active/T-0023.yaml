@@ -1,63 +1,66 @@
 id: T-0023
 title: Bootstrap Cognee local profile
-status: ready
+status: review
 owner: codex
 reviewer: claude
 created_by: codex
 created_at: '2026-05-24T14:45:00Z'
-updated_at: '2026-05-24T14:45:00Z'
+updated_at: '2026-05-24T16:26:52Z'
 phase: '2.1'
 priority: high
 risk_level: high
 requires_human_approval: true
 depends_on:
-  - T-0019
-  - T-0020
-  - T-0021
+- T-0019
+- T-0020
+- T-0021
 related_decisions:
-  - ADR-0007
-  - ADR-0008
-  - ADR-0009
-objective: >
-  Add the local-first Cognee profile and dependency bootstrap needed for Phase
-  2 memory, without performing real ingestion.
-context: |
-  ADR-0007 selects Cognee with local Kuzu, LanceDB, SQLite, and local
+- ADR-0007
+- ADR-0008
+- ADR-0009
+objective: 'Add the local-first Cognee profile and dependency bootstrap needed for
+  Phase 2 memory, without performing real ingestion.
+
+  '
+context: 'ADR-0007 selects Cognee with local Kuzu, LanceDB, SQLite, and local
+
   LLM/embedding configuration. This task prepares the local profile only; it
+
   must not import repo memory yet.
+
+  '
 goals:
-  - Add minimal dependency/config documentation for local Cognee.
-  - Configure local-first defaults for Kuzu, LanceDB, SQLite, and local embeddings.
-  - Document required local services such as Ollama without calling external APIs.
-  - Add a smoke-test or dry-run check that validates config shape without ingestion.
+- Add minimal dependency/config documentation for local Cognee.
+- Configure local-first defaults for Kuzu, LanceDB, SQLite, and local embeddings.
+- Document required local services such as Ollama without calling external APIs.
+- Add a smoke-test or dry-run check that validates config shape without ingestion.
 non_goals:
-  - Do not ingest repository files.
-  - Do not implement the MCP adapter.
-  - Do not implement Librarian extraction.
-  - Do not enable cloud providers by default.
+- Do not ingest repository files.
+- Do not implement the MCP adapter.
+- Do not implement Librarian extraction.
+- Do not enable cloud providers by default.
 inputs:
-  - decisions/ADR-0007-memory-architecture.md
-  - requirements.txt
-  - memory/README.md
+- decisions/ADR-0007-memory-architecture.md
+- requirements.txt
+- memory/README.md
 outputs:
-  - requirements.txt
-  - memory/
-  - docs/
-  - tests/
+- requirements.txt
+- memory/
+- docs/
+- tests/
 constraints:
-  - Any new dependency must be explained in the PR body.
-  - Defaults must be local-first and must not silently fall back to cloud APIs.
-  - The task must preserve the ability to run validator without optional services.
+- Any new dependency must be explained in the PR body.
+- Defaults must be local-first and must not silently fall back to cloud APIs.
+- The task must preserve the ability to run validator without optional services.
 acceptance:
-  - Local Cognee profile is documented and checked into the repo.
-  - Cloud providers are disabled by default.
-  - No real ingestion runs during tests.
-  - '`python3 scripts/validate.py` exits 0.'
-  - Any added smoke tests exit 0 without requiring network access.
+- Local Cognee profile is documented and checked into the repo.
+- Cloud providers are disabled by default.
+- No real ingestion runs during tests.
+- '`python3 scripts/validate.py` exits 0.'
+- Any added smoke tests exit 0 without requiring network access.
 human_approval_checklist:
-  - Approve any dependency added to requirements.txt.
-  - Confirm local-first defaults do not call cloud APIs by default.
-  - Confirm no ingestion is performed in this task.
-notes: |
-  This task is high risk because it may touch dependencies and local runtime
-  configuration.
+- Approve any dependency added to requirements.txt.
+- Confirm local-first defaults do not call cloud APIs by default.
+- Confirm no ingestion is performed in this task.
+notes: Implemented local-first Cognee profile bootstrap and dry-run validation. Requires
+  Claude review and human approval for cognee dependency and local-first defaults.
