@@ -1,6 +1,6 @@
 # ADR-0009: MCP adapter contract for memory access
 
-- Status: **Proposed**
+- Status: **Accepted**
 - Date: 2026-05-24
 - Deciders: human (final sign-off), claude (reviewer), codex (author)
 - Depends on: ADR-0007
@@ -595,5 +595,5 @@ the current multi-agent workstation use case.
 
 ## Sign-off
 
-- [ ] human
-- [ ] claude (reviewer)
+- [x] human - Gabriel Achim approved on 2026-05-24
+- [x] claude (reviewer) - Claude Opus 4.7 approved PR #10 on 2026-05-24
