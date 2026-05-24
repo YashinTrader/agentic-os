@@ -13,3 +13,6 @@
 {"ts":"2026-05-22T22:24:25Z","agent":"codex","task":"T-0012","event":"finished","detail":"completed Phase 1.5 minimal CLI task runner","ref":"tasks/done/T-0012.yaml"}
 {"ts":"2026-05-23T00:00:00Z","agent":"codex","type":"decision_recorded","adr_id":"ADR-0005","status":"accepted","task_id":"T-0015","ref":"decisions/ADR-0005-task-schema-v2.md"}
 {"ts":"2026-05-23T09:20:00Z","agent":"codex","type":"status_changed","task_id":"T-0012","from":"done","to":"review","detail":"Rolled back T-0012 under ADR-0003 because the original CLI helper task skipped review.","ref":"decisions/ADR-0003-phase-1-protocol-corrections.md"}
+{"ts":"2026-05-24T10:39:55Z","agent":"antigravity","type":"status_changed","task_id":"T-0013","detail":"changed status from ready to in_progress","ref":"tasks/active/T-0013.yaml"}
+{"ts":"2026-05-24T10:42:42Z","agent":"antigravity","type":"handoff_written","task_id":"T-0013","detail":"handoff to human created","ref":"handoffs/T-0013__antigravity__to__human.md"}
+{"ts":"2026-05-24T10:42:44Z","agent":"antigravity","type":"status_changed","task_id":"T-0013","detail":"changed status from in_progress to review","ref":"tasks/active/T-0013.yaml"}

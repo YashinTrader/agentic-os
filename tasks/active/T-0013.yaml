@@ -1,61 +1,71 @@
 id: T-0013
-title: "Read-only Phase 1.6 dashboard for schema v2"
-status: ready
+title: Read-only Phase 1.6 dashboard for schema v2
+status: review
 owner: antigravity
 reviewer: human
 created_by: antigravity
 created_at: '2026-05-24T09:33:19Z'
-updated_at: '2026-05-24T09:33:19Z'
+updated_at: '2026-05-24T10:42:32Z'
 phase: '1.6'
 priority: high
 risk_level: low
 requires_human_approval: false
 depends_on:
-  - T-0012a
+- T-0012a
 related_decisions:
-  - ADR-0001
-  - ADR-0003
-  - ADR-0004
-  - ADR-0005
-objective: >
-  A local, read-only dashboard that renders the current task ledger, recent events, and open handoffs directly from the repo files.
-context: >
-  T-DASHBOARD-V0 (Gemini's first attempt) was rejected during review (docs/REVIEW_CLAUDE_DASHBOARD_V0.md) due to scope creep (adding a write interface), schema mismatch (v1 instead of v2), and events parser mismatch. T-0013 re-scopes the work as a strictly read-only dashboard aligned to task schema v2 and the ADR-0004 standard event vocabulary.
+- ADR-0001
+- ADR-0003
+- ADR-0004
+- ADR-0005
+objective: 'A local, read-only dashboard that renders the current task ledger, recent
+  events, and open handoffs directly from the repo files.
+
+  '
+context: 'T-DASHBOARD-V0 (Gemini''s first attempt) was rejected during review (docs/REVIEW_CLAUDE_DASHBOARD_V0.md)
+  due to scope creep (adding a write interface), schema mismatch (v1 instead of v2),
+  and events parser mismatch. T-0013 re-scopes the work as a strictly read-only dashboard
+  aligned to task schema v2 and the ADR-0004 standard event vocabulary.
+
+  '
 goals:
-  - Parse tasks/active/ and tasks/done/ following task schema v2.
-  - Parse logs/agent-events.jsonl following the ADR-0004 standard vocabulary.
-  - Parse handoffs/ directory for unresolved handoffs.
-  - Render a local, real-time read-only HTML dashboard using a lightweight standard library Python server.
-  - Show per-agent Kanban columns (ready/in_progress/review/done).
-  - Show a recent-events feed of the last 30 events.
-  - Show unresolved handoffs and signed ADRs.
+- Parse tasks/active/ and tasks/done/ following task schema v2.
+- Parse logs/agent-events.jsonl following the ADR-0004 standard vocabulary.
+- Parse handoffs/ directory for unresolved handoffs.
+- Render a local, real-time read-only HTML dashboard using a lightweight standard
+  library Python server.
+- Show per-agent Kanban columns (ready/in_progress/review/done).
+- Show a recent-events feed of the last 30 events.
+- Show unresolved handoffs and signed ADRs.
 non_goals:
-  - Do NOT perform any write operations or shell subprocess commands.
-  - Do NOT add a database, authentication, or server state.
-  - Do NOT add new top-level dependencies beyond PyYAML in requirements.txt.
-  - Do NOT modify TASK_SCHEMA.md or scripts/ defaults.
+- Do NOT perform any write operations or shell subprocess commands.
+- Do NOT add a database, authentication, or server state.
+- Do NOT add new top-level dependencies beyond PyYAML in requirements.txt.
+- Do NOT modify TASK_SCHEMA.md or scripts/ defaults.
 inputs:
-  - docs/TASK_SCHEMA.md
-  - docs/AGENT_PROTOCOL.md
-  - tasks/active/*.yaml
-  - tasks/done/*.yaml
-  - logs/agent-events.jsonl
-  - handoffs/*.md
+- docs/TASK_SCHEMA.md
+- docs/AGENT_PROTOCOL.md
+- tasks/active/*.yaml
+- tasks/done/*.yaml
+- logs/agent-events.jsonl
+- handoffs/*.md
 outputs:
-  - dashboard/app.py
-  - tests/test_dashboard.py
-  - handoffs/T-0013__antigravity__to__human.md
+- dashboard/app.py
+- tests/test_dashboard.py
+- handoffs/T-0013__antigravity__to__human.md
 constraints:
-  - Must not perform any write operations to any repo file at runtime.
-  - Must use only PyYAML and Python standard libraries.
-  - Dashboard must be fully read-only.
+- Must not perform any write operations to any repo file at runtime.
+- Must use only PyYAML and Python standard libraries.
+- Dashboard must be fully read-only.
 acceptance:
-  - Validator is clean and full test suite passes.
-  - Dashboard runs via a single command and renders in the browser.
-  - All 8 ADR-0004 event types render correctly.
-  - Schema v2 fields render correctly, and no v1 keys are used.
-  - Clicking a task shows an inspection panel with all v2 goals, acceptance, and context fields.
-  - A real-repo smoke test passes.
+- Validator is clean and full test suite passes.
+- Dashboard runs via a single command and renders in the browser.
+- All 8 ADR-0004 event types render correctly.
+- Schema v2 fields render correctly, and no v1 keys are used.
+- Clicking a task shows an inspection panel with all v2 goals, acceptance, and context
+  fields.
+- A real-repo smoke test passes.
 human_approval_checklist: []
-notes: >
-  Handoff is to human once the task is complete. Visual layout from the V0 dashboard (e.g. glassmorphism CSS) can be preserved and adapted for HTML templates.
+notes: 'Handoff is to human once the task is complete. Visual layout from the V0 dashboard
+  (e.g. glassmorphism CSS) can be preserved and adapted for HTML templates.
+
+  '
