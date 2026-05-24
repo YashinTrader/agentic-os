@@ -26,3 +26,6 @@
 {"ts":"2026-05-24T14:55:44Z","agent":"antigravity","type":"status_changed","task_id":"T-0017","detail":"Transitioned T-0017 status from in_progress to review"}
 {"ts":"2026-05-24T14:54:43Z","agent":"codex","type":"note","text":"Seeded Phase 2.1 implementation tasks T-0022 through T-0025 after ADR-0008 and ADR-0009 merged.","ref":"tasks/active/T-0022.yaml"}
 {"ts":"2026-05-24T15:42:26Z","agent":"codex","type":"status_changed","task_id":"T-0022","detail":"moved T-0022 to review after implementing fixture-backed read-only memory adapter","ref":"handoffs/T-0022__codex__to__claude.md"}
+{"ts":"2026-05-24T16:26:33Z","agent":"codex","type":"status_changed","task_id":"T-0023","detail":"started T-0023 local Cognee profile bootstrap","ref":"tasks/active/T-0023.yaml"}
+{"ts":"2026-05-24T16:26:58Z","agent":"codex","type":"handoff_written","task_id":"T-0023","detail":"created T-0023 handoff for Claude review","ref":"handoffs/T-0023__codex__to__claude.md"}
+{"ts":"2026-05-24T16:27:04Z","agent":"codex","type":"status_changed","task_id":"T-0023","detail":"moved T-0023 to review after local Cognee profile bootstrap","ref":"handoffs/T-0023__codex__to__claude.md"}
