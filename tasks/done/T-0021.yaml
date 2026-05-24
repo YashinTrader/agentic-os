@@ -1,11 +1,11 @@
 id: T-0021
 title: Author ADR-0009 (MCP adapter contract)
-status: ready
+status: done
 owner: codex
 reviewer: claude
 created_by: claude
 created_at: '2026-05-24T00:00:00Z'
-updated_at: '2026-05-24T14:10:00Z'
+updated_at: '2026-05-24T14:45:00Z'
 phase: '2'
 priority: high
 risk_level: high
@@ -14,13 +14,13 @@ depends_on:
   - T-0019
 related_decisions:
   - ADR-0007
+  - ADR-0009
 objective: >
   Convert decisions/ADR-0009-mcp-adapter-contract.md from proposal stub to signed
   ADR, specifying the memory adapter contract before Phase 2.1 implementation.
 context: |
-  ADR-0007 is accepted and establishes the memory backend and rebuildability
-  model. This task defines the adapter contract that all agents will use to
-  access memory.
+  ADR-0007 established the memory backend and rebuildability model. PR #10
+  authored ADR-0009, Claude approved it, and Gabriel Achim signed it.
 goals:
   - Convert decisions/ADR-0009-mcp-adapter-contract.md from stub to signed ADR.
   - Specify the read API surface that Phase 2.1 will implement.
@@ -55,5 +55,4 @@ human_approval_checklist:
   - Read API surface fully specified.
   - Write API gated behind feature flag.
 notes: |
-  T-0020 and T-0021 can run in parallel after ADR-0007 lands. They do not touch
-  the same ADR files.
+  Completed by PR #10. Human and Claude sign-off are recorded in ADR-0009.
