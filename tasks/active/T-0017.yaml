@@ -1,0 +1,73 @@
+id: T-0017
+title: Dashboard - CLI guardrail parity (close ADR-0006)
+owner: antigravity
+reviewer: claude
+status: review
+priority: high
+risk_level: high
+requires_human_approval: true
+human_approval_checklist:
+  - ADR-0006 signed by human and claude
+  - Guardrail extraction strategy (shell-out vs shared module) approved
+  - No new write surfaces beyond what the CLI already exposes
+created_at: 2026-05-24
+updated_at: 2026-05-24
+created_by: claude
+phase: "1.7"
+objective: >
+  Harden the read-write dashboard by aligning its write paths and guardrails with CLI counterparts, ensuring strict validation parity and closing ADR-0006.
+inputs:
+  - decisions/ADR-0006-dashboard-is-read-write.md
+  - tasks/active/T-0017.yaml
+  - dashboard/app.py
+  - scripts/update_task.py
+  - scripts/create_task.py
+  - scripts/append_log.py
+constraints:
+  - Must not add delete task or memory layer operations.
+  - Must enforce all four guardrails from ADR-0006.
+  - Must not use external third-party routing or UI frameworks.
+depends_on:
+  - ADR-0006
+goals:
+  - Dashboard write paths produce identical results to CLI equivalents
+  - All four guardrails from ADR-0006 §Decision.2 enforced on every dashboard write
+  - Regression tests cover each guardrail at the dashboard layer
+non_goals:
+  - Adding new write surfaces (no delete, no bulk-edit)
+  - Multi-user auth (deferred)
+  - Memory-store writes (Phase 2, separate ADR)
+  - UI redesign (separate task, T-0019)
+context: |
+  PR #6 shipped a read-write dashboard whose write code reimplements
+  scripts/update_task.py, scripts/create_task.py, and scripts/add_comment.py
+  without their guardrails. Specifically the dashboard does NOT enforce
+  risky-path auto-escalation or the human-approval checklist requirement.
+  ADR-0006 ratifies the read-write scope but mandates guardrail parity.
+acceptance:
+  - dashboard/app.py either (a) shells out to scripts/ helpers or
+    (b) imports a shared scripts/_guardrails.py module
+  - Creating a task via POST /create_task with outputs touching scripts/
+    is rejected unless requires_human_approval is true AND
+    human_approval_checklist is non-empty
+  - POST /update_task rejects any change where the new owner equals the reviewer
+  - POST /comment rejects event types outside ADR-0004's 8-type set
+  - Every dashboard write refreshes updated_at on the affected YAML
+  - tests/test_dashboard_guardrails.py covers all four rejection paths
+  - tests/test_dashboard_cli_parity.py creates one task via CLI and one via
+    dashboard with identical inputs; resulting YAMLs are byte-equal except for
+    created_by and timestamps
+  - scripts/validate.py passes
+  - All existing dashboard tests still pass
+outputs:
+  - dashboard/app.py
+  - scripts/_guardrails.py (if option b chosen)
+  - tests/test_dashboard_guardrails.py
+  - tests/test_dashboard_cli_parity.py
+notes: |
+  Strong recommendation: option (a), shell out. Less refactor, single source
+  of truth stays in scripts/. Option (b) is acceptable if you can land the
+  extraction cleanly in the same PR.
+
+  Do NOT touch the memory layer. Do NOT add a delete endpoint. Do NOT change
+  the UI. This task is invisible to users when it lands correctly.
