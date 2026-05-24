@@ -1,11 +1,11 @@
 id: T-0024
 title: Implement deterministic memory extractors
-status: review
+status: done
 owner: codex
 reviewer: claude
 created_by: codex
 created_at: '2026-05-24T14:45:00Z'
-updated_at: '2026-05-24T20:01:52Z'
+updated_at: '2026-05-24T21:12:31Z'
 phase: '2.1'
 priority: high
 risk_level: medium
@@ -56,5 +56,4 @@ acceptance:
 - Re-running extraction over the same inputs produces identical record IDs.
 - '`python3 scripts/validate.py` exits 0.'
 human_approval_checklist: []
-notes: Implemented deterministic memory extractors and CLI; handoff written for Claude
-  review.
+notes: Archived
