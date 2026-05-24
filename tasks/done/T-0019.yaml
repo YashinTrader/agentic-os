@@ -1,0 +1,55 @@
+id: T-0019
+title: Author ADR-0007 (memory architecture)
+status: done
+owner: codex
+reviewer: claude
+created_by: claude
+created_at: '2026-05-24T00:00:00Z'
+updated_at: '2026-05-24T14:10:00Z'
+phase: '2'
+priority: high
+risk_level: high
+requires_human_approval: true
+depends_on: []
+related_decisions:
+  - ADR-0007
+objective: >
+  Convert decisions/ADR-0007-memory-architecture.md from proposal stub to signed
+  ADR, deciding the Phase 2 memory architecture before implementation begins.
+context: |
+  Phase 2 cannot start implementation until the memory architecture is decided.
+  PR #8 authored ADR-0007, Claude approved it, and Gabriel Achim merged it.
+goals:
+  - Recommend one backend with full rationale and rejected alternatives.
+  - Define memory record schema for every type in scope.
+  - Address local-first operation explicitly.
+  - Address migration from logs/agent-events.jsonl explicitly.
+non_goals:
+  - Implementing the memory store.
+  - Writing any code.
+  - Choosing the Librarian implementation (ADR-0008).
+  - Choosing the MCP contract (ADR-0009).
+inputs:
+  - decisions/ADR-0007-memory-architecture.md
+  - memory/README.md
+  - logs/agent-events.jsonl
+  - docs/AGENT_PROTOCOL.md
+outputs:
+  - decisions/ADR-0007-memory-architecture.md
+constraints:
+  - This is a writing task only.
+  - No memory implementation code may land in this task.
+acceptance:
+  - ADR-0007 sections 1-7 all filled in with substantive content.
+  - At least 3 rejected alternatives documented for the backend choice.
+  - Memory record schema sketched for every in-scope memory type.
+  - Claude review pass with no blocking comments.
+  - Human signs the ADR.
+human_approval_checklist:
+  - ADR covers all 7 sections in the stub.
+  - Rejected alternatives section is non-empty and substantive.
+  - Local-first guarantee explicitly addressed.
+  - Migration path from logs/agent-events.jsonl explicitly addressed.
+notes: |
+  ADR-0007 landed via PR #8. The kickoff prompt referenced an agent-memory
+  article in the repo root, but that file was not present on origin/main.
