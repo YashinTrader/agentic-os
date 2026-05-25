@@ -35,4 +35,7 @@
 {"ts":"2026-05-24T19:58:36Z","agent":"codex","type":"status_changed","task_id":"T-0024","detail":"started T-0024 deterministic memory extractor implementation","ref":"tasks/active/T-0024.yaml"}
 {"ts":"2026-05-24T20:01:58Z","agent":"codex","type":"handoff_written","task_id":"T-0024","detail":"created T-0024 handoff for Claude review","ref":"handoffs/T-0024__codex__to__claude.md"}
 {"ts":"2026-05-24T20:02:04Z","agent":"codex","type":"status_changed","task_id":"T-0024","detail":"moved T-0024 to review after deterministic extractor implementation","ref":"handoffs/T-0024__codex__to__claude.md"}
+{"ts":"2026-05-24T21:14:27Z","agent":"codex","type":"status_changed","task_id":"T-0025","detail":"started T-0025 Librarian batch command skeleton","ref":"tasks/active/T-0025.yaml"}
+{"ts":"2026-05-24T21:17:44Z","agent":"codex","type":"handoff_written","task_id":"T-0025","detail":"created T-0025 handoff for Claude review","ref":"handoffs/T-0025__codex__to__claude.md"}
+{"ts":"2026-05-24T21:17:44Z","agent":"codex","type":"status_changed","task_id":"T-0025","detail":"moved T-0025 to review after Librarian dry-run skeleton implementation","ref":"handoffs/T-0025__codex__to__claude.md"}
 {"ts":"2026-05-24T21:13:03Z","agent":"codex","type":"status_changed","task_id":"T-0024","detail":"moved T-0024 to done after PR 18 merge and Claude sign-off","ref":"tasks/done/T-0024.yaml"}

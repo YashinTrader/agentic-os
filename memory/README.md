@@ -10,6 +10,8 @@ memory database, start a server, or call external APIs.
   Kuzu, LanceDB, and SQLite.
 - `cognee/`: ignored local runtime directory for generated Cognee system and
   data files.
+- `candidates/`: ignored local output directory for Librarian dry-run
+  candidate streams.
 
 ## Dry-Run Check
 
@@ -27,6 +29,25 @@ python3 scripts/check_cognee_profile.py --json
 
 The checker validates shape and local-first guardrails only. It intentionally
 does not import Cognee, contact Ollama, create databases, or run ingestion.
+
+## Librarian Dry Runs
+
+T-0025 adds a batchable Librarian policy skeleton:
+
+```bash
+python3 scripts/memory_librarian.py --jsonl
+```
+
+The command reads deterministic extractor output, validates citation and
+confidence policy, emits candidate decisions plus undo records, and can append
+a run-summary audit event. It does not write to Cognee or any shared memory
+backend in Phase 2.1.
+
+To store a local candidate stream:
+
+```bash
+python3 scripts/memory_librarian.py --jsonl --output memory/candidates/latest.jsonl
+```
 
 ## Local Defaults
 
