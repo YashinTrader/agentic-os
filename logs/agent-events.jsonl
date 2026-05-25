@@ -44,3 +44,4 @@
 {"ts":"2026-05-25T05:21:53Z","agent":"codex","type":"status_changed","task_id":"T-0026","detail":"started T-0026 Librarian review polish","ref":"tasks/active/T-0026.yaml"}
 {"ts":"2026-05-25T05:23:17Z","agent":"codex","type":"handoff_written","task_id":"T-0026","detail":"created T-0026 handoff for Claude review","ref":"handoffs/T-0026__codex__to__claude.md"}
 {"ts":"2026-05-25T05:23:17Z","agent":"codex","type":"status_changed","task_id":"T-0026","detail":"moved T-0026 to review after Librarian polish implementation","ref":"handoffs/T-0026__codex__to__claude.md"}
+{"ts":"2026-05-25T06:25:37Z","agent":"codex","type":"status_changed","task_id":"T-0026","detail":"moved T-0026 to done after PR 22 merge and Claude human sign-off","ref":"tasks/done/T-0026.yaml"}
