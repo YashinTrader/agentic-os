@@ -1,0 +1,46 @@
+id: T-0028
+title: Document audit-event schema
+status: done
+owner: codex
+reviewer: claude
+created_by: codex
+created_at: '2026-05-25T19:55:00Z'
+updated_at: '2026-05-25T19:55:00Z'
+phase: '2.1'
+priority: medium
+risk_level: low
+requires_human_approval: false
+depends_on:
+- T-0025
+related_decisions:
+- ADR-0004
+- ADR-0008
+objective: Document the audit-event schema for task events and Librarian dry-run
+  summaries.
+context: AIA-10 Step 4 called for audit-event schema documentation after the
+  Librarian dry-run skeleton landed.
+goals:
+- Document base event fields.
+- Document ADR-0004 event vocabulary.
+- Document Librarian run-summary count fields.
+- Include examples suitable for dashboard parsing.
+non_goals:
+- Do not change the event vocabulary.
+- Do not rewrite existing audit history.
+- Do not add backend writes.
+inputs:
+- decisions/ADR-0004-event-vocabulary.md
+- scripts/memory_librarian.py
+- logs/agent-events.jsonl
+outputs:
+- docs/audit-event-schema.md
+constraints:
+- Keep the schema compatible with ADR-0004.
+- Keep Phase 2.1 dry-run boundaries explicit.
+acceptance:
+- Audit schema documentation exists under `docs/`.
+- Librarian counts are documented with examples.
+- '`python3 scripts/validate.py` exits 0.'
+- '`python3 -m unittest` passes.'
+human_approval_checklist: []
+notes: Implemented under Codex lead approval per AIA-10 agent-led operating rule.
