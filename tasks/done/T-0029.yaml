@@ -1,0 +1,45 @@
+id: T-0029
+title: Wire Librarian dry-run and apply flags
+status: done
+owner: codex
+reviewer: claude
+created_by: codex
+created_at: '2026-05-25T20:05:00Z'
+updated_at: '2026-05-25T20:05:00Z'
+phase: '2.1'
+priority: medium
+risk_level: low
+requires_human_approval: false
+depends_on:
+- T-0025
+related_decisions:
+- ADR-0008
+- ADR-0009
+objective: Wire explicit `--dry-run` and `--apply` CLI flags for the Librarian.
+context: AIA-10 Step 4 called for dry-run/apply flag wiring after the Librarian
+  dry-run skeleton landed.
+goals:
+- Add explicit `--dry-run` mode.
+- Add explicit `--apply` mode.
+- Keep `--apply` as a no-op until the backend gate changes.
+- Cover the CLI behavior with tests.
+non_goals:
+- Do not add backend writes.
+- Do not add LLM extraction.
+- Do not introduce a daemon, watcher, or scheduler.
+inputs:
+- scripts/memory_librarian.py
+- tests/test_memory_librarian.py
+outputs:
+- scripts/memory_librarian.py
+- tests/test_memory_librarian.py
+constraints:
+- Keep shared writes disabled by default.
+- Preserve Phase 2.1 dry-run boundaries.
+acceptance:
+- '`--dry-run` is accepted and reports dry-run mode.'
+- '`--apply` is accepted and reports no-op apply mode while shared writes are disabled.'
+- '`python3 scripts/validate.py` exits 0.'
+- '`python3 -m unittest` passes.'
+human_approval_checklist: []
+notes: Implemented under Codex lead approval per AIA-10 agent-led operating rule.

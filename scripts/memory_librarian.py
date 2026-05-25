@@ -235,6 +235,9 @@ def emit_result(result: dict[str, Any], *, jsonl: bool) -> None:
 
 def parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Run the Agentic OS Librarian policy skeleton.")
+    mode = p.add_mutually_exclusive_group()
+    mode.add_argument("--dry-run", action="store_true", help="Evaluate candidates without backend writes. This is the default.")
+    mode.add_argument("--apply", action="store_true", help="Request apply mode. Phase 2.1 still performs no backend writes.")
     p.add_argument("--root", default=str(REPO_ROOT), help="Repository root. Defaults to this checkout.")
     p.add_argument("--input-jsonl", help="Read candidate records from JSONL instead of running extractors.")
     p.add_argument("--jsonl", action="store_true", help="Emit candidate decisions and summary as JSONL.")
@@ -251,12 +254,15 @@ def main() -> int:
     args = parser().parse_args()
     root = Path(args.root)
     records = load_jsonl(Path(args.input_jsonl)) if args.input_jsonl else extract_repo_records(root)
+    apply_requested = bool(args.apply)
     result = run_librarian(
         records,
         run_ts=args.run_ts or utc_now(),
         circuit_breaker_threshold=args.circuit_breaker_threshold,
-        shared_writes_enabled=args.enable_shared_writes,
+        shared_writes_enabled=args.enable_shared_writes and apply_requested,
     )
+    result["summary"]["mode"] = "apply" if apply_requested else "dry_run"
+    result["summary"]["apply_noop"] = apply_requested and not result["summary"]["shared_writes_enabled"]
 
     try:
         if args.output:

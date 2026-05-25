@@ -183,6 +183,60 @@ class MemoryLibrarianTests(unittest.TestCase):
         self.assertEqual(lines[0]["kind"], "candidate_decision")
         self.assertEqual(lines[-1]["kind"], "run_summary")
         self.assertEqual(lines[-1]["writes"], 1)
+        self.assertEqual(lines[-1]["mode"], "dry_run")
+        self.assertFalse(lines[-1]["apply_noop"])
+
+    def test_cli_explicit_dry_run_matches_default_no_write_behavior(self) -> None:
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False) as handle:
+            handle.write(json.dumps(candidate("memory:entity:task:T-9001")) + "\n")
+            fixture_path = Path(handle.name)
+
+        self.addCleanup(fixture_path.unlink)
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(REPO_ROOT / "scripts" / "memory_librarian.py"),
+                "--input-jsonl",
+                str(fixture_path),
+                "--dry-run",
+            ],
+            cwd=REPO_ROOT,
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["summary"]["mode"], "dry_run")
+        self.assertFalse(payload["summary"]["apply_noop"])
+        self.assertFalse(payload["summary"]["shared_writes_enabled"])
+        self.assertEqual(payload["decisions"][0]["action"], "would_write")
+
+    def test_cli_apply_is_noop_until_shared_write_gate_is_enabled(self) -> None:
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False) as handle:
+            handle.write(json.dumps(candidate("memory:entity:task:T-9001")) + "\n")
+            fixture_path = Path(handle.name)
+
+        self.addCleanup(fixture_path.unlink)
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(REPO_ROOT / "scripts" / "memory_librarian.py"),
+                "--input-jsonl",
+                str(fixture_path),
+                "--apply",
+            ],
+            cwd=REPO_ROOT,
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["summary"]["mode"], "apply")
+        self.assertTrue(payload["summary"]["apply_noop"])
+        self.assertFalse(payload["summary"]["shared_writes_enabled"])
+        self.assertEqual(payload["decisions"][0]["action"], "would_write")
 
     def test_cli_defaults_run_timestamp_to_current_utc(self) -> None:
         with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False) as handle:

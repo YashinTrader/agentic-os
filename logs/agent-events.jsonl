@@ -50,3 +50,5 @@
 {"ts":"2026-05-25T19:48:00Z","agent":"codex","type":"status_changed","task_id":"T-0027","detail":"moved T-0027 to done after fixture coverage expansion and Codex lead approval","ref":"tasks/done/T-0027.yaml"}
 {"ts":"2026-05-25T19:55:00Z","agent":"codex","type":"task_created","task_id":"T-0028","detail":"created T-0028 audit-event schema documentation follow-up from AIA-12","ref":"tasks/done/T-0028.yaml"}
 {"ts":"2026-05-25T19:55:00Z","agent":"codex","type":"status_changed","task_id":"T-0028","detail":"moved T-0028 to done after audit-event schema documentation and Codex lead approval","ref":"tasks/done/T-0028.yaml"}
+{"ts":"2026-05-25T20:05:00Z","agent":"codex","type":"task_created","task_id":"T-0029","detail":"created T-0029 Librarian dry-run/apply flag wiring follow-up from AIA-13","ref":"tasks/done/T-0029.yaml"}
+{"ts":"2026-05-25T20:05:00Z","agent":"codex","type":"status_changed","task_id":"T-0029","detail":"moved T-0029 to done after dry-run/apply flag wiring and Codex lead approval","ref":"tasks/done/T-0029.yaml"}
