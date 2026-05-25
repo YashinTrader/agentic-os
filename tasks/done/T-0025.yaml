@@ -1,11 +1,11 @@
 id: T-0025
 title: Implement Librarian batch command skeleton
-status: review
+status: done
 owner: codex
 reviewer: claude
 created_by: codex
 created_at: '2026-05-24T14:45:00Z'
-updated_at: '2026-05-24T21:17:36Z'
+updated_at: '2026-05-25T05:19:03Z'
 phase: '2.1'
 priority: high
 risk_level: high
@@ -65,5 +65,4 @@ human_approval_checklist:
 - Confirm no LLM extraction is added.
 - Confirm shared writes remain disabled by default.
 - Confirm audit events include counts, not only prose.
-notes: Implemented Librarian dry-run policy skeleton and tests; handoff written for
-  Claude review and human approval checklist.
+notes: Implemented Librarian dry-run policy skeleton and tests; handoff written for Claude review and human approval checklist. Archived 2026-05-25 after PR 20 merge.
