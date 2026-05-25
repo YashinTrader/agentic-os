@@ -3,9 +3,11 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 
 from scripts.memory_librarian import (
+    AUDIT_EVENT_TYPE,
     append_audit_event,
     run_librarian,
     source_refs,
@@ -46,6 +48,11 @@ def candidate(record_id: str, *, content: str = "Task fact", confidence: float =
 
 
 class MemoryLibrarianTests(unittest.TestCase):
+    def test_audit_event_type_is_allowed_by_adr_0004(self) -> None:
+        adr_text = (REPO_ROOT / "decisions" / "ADR-0004-event-vocabulary.md").read_text(encoding="utf-8")
+
+        self.assertIn(f"`{AUDIT_EVENT_TYPE}`", adr_text)
+
     def test_source_refs_are_stable_and_repo_relative(self) -> None:
         refs = source_refs(candidate("memory:entity:task:T-9001"))
 
@@ -146,6 +153,34 @@ class MemoryLibrarianTests(unittest.TestCase):
         self.assertEqual(lines[0]["kind"], "candidate_decision")
         self.assertEqual(lines[-1]["kind"], "run_summary")
         self.assertEqual(lines[-1]["writes"], 1)
+
+    def test_cli_defaults_run_timestamp_to_current_utc(self) -> None:
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False) as handle:
+            handle.write(json.dumps(candidate("memory:entity:task:T-9001")) + "\n")
+            fixture_path = Path(handle.name)
+
+        self.addCleanup(fixture_path.unlink)
+        before = datetime.now(timezone.utc)
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(REPO_ROOT / "scripts" / "memory_librarian.py"),
+                "--input-jsonl",
+                str(fixture_path),
+            ],
+            cwd=REPO_ROOT,
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        after = datetime.now(timezone.utc)
+
+        payload = json.loads(result.stdout)
+        created_at = payload["decisions"][0]["undo"]["created_at"]
+        created = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+        self.assertNotEqual(created_at, "1970-01-01T00:00:00Z")
+        self.assertLessEqual(before.replace(microsecond=0), created)
+        self.assertLessEqual(created, after.replace(microsecond=0))
 
 
 if __name__ == "__main__":

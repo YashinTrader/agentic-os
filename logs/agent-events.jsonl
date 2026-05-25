@@ -41,3 +41,6 @@
 {"ts":"2026-05-24T21:13:03Z","agent":"codex","type":"status_changed","task_id":"T-0024","detail":"moved T-0024 to done after PR 18 merge and Claude sign-off","ref":"tasks/done/T-0024.yaml"}
 {"ts":"2026-05-25T05:19:48Z","agent":"codex","type":"status_changed","task_id":"T-0025","detail":"moved T-0025 to done after PR 20 merge and Claude human sign-off","ref":"tasks/done/T-0025.yaml"}
 {"ts":"2026-05-25T05:19:48Z","agent":"codex","type":"task_created","task_id":"T-0026","detail":"created T-0026 Librarian review polish follow-up","ref":"tasks/active/T-0026.yaml"}
+{"ts":"2026-05-25T05:21:53Z","agent":"codex","type":"status_changed","task_id":"T-0026","detail":"started T-0026 Librarian review polish","ref":"tasks/active/T-0026.yaml"}
+{"ts":"2026-05-25T05:23:17Z","agent":"codex","type":"handoff_written","task_id":"T-0026","detail":"created T-0026 handoff for Claude review","ref":"handoffs/T-0026__codex__to__claude.md"}
+{"ts":"2026-05-25T05:23:17Z","agent":"codex","type":"status_changed","task_id":"T-0026","detail":"moved T-0026 to review after Librarian polish implementation","ref":"handoffs/T-0026__codex__to__claude.md"}

@@ -1,11 +1,11 @@
 id: T-0026
 title: Librarian review polish
-status: ready
+status: review
 owner: codex
 reviewer: claude
 created_by: codex
 created_at: '2026-05-25T05:20:00Z'
-updated_at: '2026-05-25T05:20:00Z'
+updated_at: '2026-05-25T05:23:17Z'
 phase: '2.1'
 priority: medium
 risk_level: low
@@ -16,19 +16,20 @@ related_decisions:
 - ADR-0004
 - ADR-0008
 objective: Apply the low-risk follow-up items from Claude review of T-0025.
-context: >
-  PR #20 was approved with non-blocking polish around audit-event vocabulary
-  confirmation, Librarian CLI timestamp defaults, circuit-breaker tuning, and
-  documented dry-run limitations.
+context: 'PR #20 was approved with non-blocking polish around audit-event vocabulary
+  confirmation, Librarian CLI timestamp defaults, circuit-breaker tuning, and documented
+  dry-run limitations.
+
+  '
 goals:
-- Confirm the Librarian audit event type is valid under ADR-0004 or adjust via
-  task/ADR follow-up.
-- Default the Librarian CLI run timestamp to current UTC while preserving
-  deterministic library and test hooks.
-- Document dry-run limitations around record signatures, conflict ordering, and
-  cross-run deduplication.
-- Review circuit-breaker threshold behavior and either tune it or document the
-  current Phase 2.1 heuristic.
+- Confirm the Librarian audit event type is valid under ADR-0004 or adjust via task/ADR
+  follow-up.
+- Default the Librarian CLI run timestamp to current UTC while preserving deterministic
+  library and test hooks.
+- Document dry-run limitations around record signatures, conflict ordering, and cross-run
+  deduplication.
+- Review circuit-breaker threshold behavior and either tune it or document the current
+  Phase 2.1 heuristic.
 non_goals:
 - Do not add backend writes.
 - Do not add LLM extraction.
@@ -53,4 +54,4 @@ acceptance:
 - Known dry-run limitations are documented.
 - '`python3 scripts/validate.py` exits 0.'
 human_approval_checklist: []
-notes: Seeded from Claude review of PR #20; ready for implementation.
+notes: Implemented Librarian review polish; handoff written for Claude review.

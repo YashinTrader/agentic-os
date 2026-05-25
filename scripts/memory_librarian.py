@@ -23,8 +23,9 @@ except ModuleNotFoundError:
 
 
 DEFAULT_CONFIDENCE_THRESHOLD = 0.8
-DEFAULT_CIRCUIT_BREAKER_THRESHOLD = 3
+DEFAULT_CIRCUIT_BREAKER_THRESHOLD = 10
 DEFAULT_RUN_TS = "1970-01-01T00:00:00Z"
+AUDIT_EVENT_TYPE = "note"
 
 
 def utc_now() -> str:
@@ -201,7 +202,7 @@ def append_audit_event(root: Path, summary: dict[str, Any], *, task_id: str | No
     event: dict[str, Any] = {
         "ts": ts or utc_now(),
         "agent": "librarian",
-        "type": "note",
+        "type": AUDIT_EVENT_TYPE,
         "detail": "Librarian dry-run summary",
         "counts": {
             "candidates": summary["candidates"],
@@ -238,7 +239,7 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--input-jsonl", help="Read candidate records from JSONL instead of running extractors.")
     p.add_argument("--jsonl", action="store_true", help="Emit candidate decisions and summary as JSONL.")
     p.add_argument("--output", help="Write output to a file instead of stdout.")
-    p.add_argument("--run-ts", default=DEFAULT_RUN_TS, help="Timestamp used in generated undo records.")
+    p.add_argument("--run-ts", help="Timestamp used in generated undo records. Defaults to current UTC.")
     p.add_argument("--task-id", help="Task id for optional audit event.")
     p.add_argument("--append-audit-log", action="store_true", help="Append a note event with run counts.")
     p.add_argument("--enable-shared-writes", action="store_true", help="Mark policy-passing candidates as write-planned.")
@@ -252,7 +253,7 @@ def main() -> int:
     records = load_jsonl(Path(args.input_jsonl)) if args.input_jsonl else extract_repo_records(root)
     result = run_librarian(
         records,
-        run_ts=args.run_ts,
+        run_ts=args.run_ts or utc_now(),
         circuit_breaker_threshold=args.circuit_breaker_threshold,
         shared_writes_enabled=args.enable_shared_writes,
     )

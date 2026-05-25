@@ -43,11 +43,33 @@ confidence policy, emits candidate decisions plus undo records, and can append
 a run-summary audit event. It does not write to Cognee or any shared memory
 backend in Phase 2.1.
 
+Audit events use ADR-0004's allowed `note` event type and include structured
+`counts` for candidates, writes, skips, and conflicts.
+
 To store a local candidate stream:
 
 ```bash
 python3 scripts/memory_librarian.py --jsonl --output memory/candidates/latest.jsonl
 ```
+
+Manual CLI runs timestamp generated undo records with current UTC by default.
+Tests and repeatable fixtures can still pass `--run-ts` or call
+`run_librarian(..., run_ts=...)` for deterministic output.
+
+### Dry-Run Limitations
+
+- The default circuit breaker threshold is 10 bad candidates in one run. Tests
+  may lower it to exercise the breaker. This is a Phase 2.1 heuristic, not a
+  final operational limit.
+- Record signatures currently cover `id`, `type`, `content`, and source refs.
+  Metadata-only changes, such as an ADR status moving from proposed to
+  accepted, may be treated as duplicates until update semantics land.
+- Conflict decisions include both the current record and `existing_record`, but
+  the first record seen in a run is treated as the existing record. Later backend
+  work should prefer canonical task state when multiple directories contain the
+  same task ID.
+- Dry runs deduplicate only within one run. Cross-run idempotency requires a
+  backend existence check or persisted candidate ledger in a future task.
 
 ## Local Defaults
 
