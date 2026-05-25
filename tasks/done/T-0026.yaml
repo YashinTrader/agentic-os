@@ -1,11 +1,11 @@
 id: T-0026
 title: Librarian review polish
-status: review
+status: done
 owner: codex
 reviewer: claude
 created_by: codex
 created_at: '2026-05-25T05:20:00Z'
-updated_at: '2026-05-25T05:23:17Z'
+updated_at: '2026-05-25T06:25:23Z'
 phase: '2.1'
 priority: medium
 risk_level: low
@@ -54,4 +54,5 @@ acceptance:
 - Known dry-run limitations are documented.
 - '`python3 scripts/validate.py` exits 0.'
 human_approval_checklist: []
-notes: Implemented Librarian review polish; handoff written for Claude review.
+notes: 'Implemented Librarian review polish; handoff written for Claude review. —
+  archived 2026-05-25 after PR #22 merge'
