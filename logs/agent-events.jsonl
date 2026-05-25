@@ -45,3 +45,6 @@
 {"ts":"2026-05-25T05:23:17Z","agent":"codex","type":"handoff_written","task_id":"T-0026","detail":"created T-0026 handoff for Claude review","ref":"handoffs/T-0026__codex__to__claude.md"}
 {"ts":"2026-05-25T05:23:17Z","agent":"codex","type":"status_changed","task_id":"T-0026","detail":"moved T-0026 to review after Librarian polish implementation","ref":"handoffs/T-0026__codex__to__claude.md"}
 {"ts":"2026-05-25T06:25:37Z","agent":"codex","type":"status_changed","task_id":"T-0026","detail":"moved T-0026 to done after PR 22 merge and Claude human sign-off","ref":"tasks/done/T-0026.yaml"}
+{"ts":"2026-05-25T19:40:00Z","agent":"codex","type":"task_created","task_id":"T-0027","detail":"created T-0027 Librarian fixture coverage follow-up from AIA-11","ref":"tasks/active/T-0027.yaml"}
+{"ts":"2026-05-25T19:40:00Z","agent":"codex","type":"status_changed","task_id":"T-0027","detail":"started T-0027 Librarian fixture coverage expansion","ref":"tasks/active/T-0027.yaml"}
+{"ts":"2026-05-25T19:48:00Z","agent":"codex","type":"status_changed","task_id":"T-0027","detail":"moved T-0027 to done after fixture coverage expansion and Codex lead approval","ref":"tasks/done/T-0027.yaml"}

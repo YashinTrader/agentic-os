@@ -92,6 +92,8 @@ class MemoryLibrarianTests(unittest.TestCase):
         self.assertEqual(result["summary"]["writes"], 1)
         self.assertEqual(result["summary"]["conflicts"], 1)
         self.assertEqual(result["decisions"][1]["action"], "conflict")
+        self.assertEqual(result["decisions"][1]["existing_record"]["content"], "Original")
+        self.assertEqual(result["decisions"][1]["record"]["content"], "Changed")
 
     def test_skips_exact_duplicates_idempotently(self) -> None:
         record = candidate("memory:entity:task:T-9001")
@@ -102,6 +104,34 @@ class MemoryLibrarianTests(unittest.TestCase):
         self.assertEqual(first["summary"], second["summary"])
         self.assertEqual([decision["action"] for decision in first["decisions"]], ["would_write", "skip"])
         self.assertEqual(first["decisions"][1]["reason"], "duplicate")
+        self.assertEqual(first["summary"]["writes"], 1)
+        self.assertEqual(first["summary"]["skips"], 1)
+
+    def test_skips_persona_records_before_write_planning(self) -> None:
+        record = candidate("memory:persona:agent:codex")
+        record["type"] = "persona"
+        record["entity_type"] = "agent"
+        record["canonical_id"] = "codex"
+
+        result = run_librarian([record], run_ts="2026-05-24T00:00:00Z")
+
+        self.assertEqual(result["summary"]["writes"], 0)
+        self.assertEqual(result["summary"]["skips"], 1)
+        self.assertEqual(result["decisions"][0]["action"], "skip")
+        self.assertEqual(result["decisions"][0]["reason"], "persona_record")
+        self.assertNotIn("undo", result["decisions"][0])
+
+    def test_skips_private_namespace_records_before_write_planning(self) -> None:
+        record = candidate("memory:entity:agent-private:T-9001")
+        record["namespace"] = "agent/codex"
+
+        result = run_librarian([record], run_ts="2026-05-24T00:00:00Z")
+
+        self.assertEqual(result["summary"]["writes"], 0)
+        self.assertEqual(result["summary"]["skips"], 1)
+        self.assertEqual(result["decisions"][0]["action"], "skip")
+        self.assertEqual(result["decisions"][0]["reason"], "private_namespace")
+        self.assertNotIn("undo", result["decisions"][0])
 
     def test_circuit_breaker_opens_after_more_than_three_bad_candidates(self) -> None:
         records = []

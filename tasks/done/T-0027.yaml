@@ -1,0 +1,45 @@
+id: T-0027
+title: Expand Librarian fixture coverage
+status: done
+owner: codex
+reviewer: claude
+created_by: codex
+created_at: '2026-05-25T19:40:00Z'
+updated_at: '2026-05-25T19:48:00Z'
+phase: '2.1'
+priority: medium
+risk_level: low
+requires_human_approval: false
+depends_on:
+- T-0025
+related_decisions:
+- ADR-0004
+- ADR-0008
+objective: Add explicit Librarian fixture coverage for duplicate, conflict, persona,
+  and private-namespace edge cases.
+context: AIA-10 Step 4 called for expanded Librarian fixture coverage after the
+  dry-run skeleton landed.
+goals:
+- Pin duplicate detection counts and skip reason.
+- Pin conflict decisions with existing and incoming record details.
+- Pin persona record skip behavior.
+- Pin private namespace skip behavior.
+non_goals:
+- Do not add backend writes.
+- Do not add LLM extraction.
+- Do not introduce a daemon, watcher, or scheduler.
+inputs:
+- scripts/memory_librarian.py
+- tests/test_memory_librarian.py
+outputs:
+- tests/test_memory_librarian.py
+constraints:
+- Keep shared writes disabled by default.
+- Keep tests deterministic.
+- Preserve Phase 2.1 dry-run boundaries.
+acceptance:
+- Duplicate, conflict, persona, and private-namespace fixtures are covered independently.
+- '`python3 scripts/validate.py` exits 0.'
+- '`python3 -m unittest` passes.'
+human_approval_checklist: []
+notes: Implemented under Codex lead approval per AIA-10 agent-led operating rule. Archived 2026-05-25 after validation.
