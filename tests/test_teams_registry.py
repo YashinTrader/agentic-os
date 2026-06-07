@@ -140,7 +140,9 @@ class TeamsRegistryTests(unittest.TestCase):
             )
             self.assertIn("Teams Registry", html)
             self.assertIn("No suggestions for selected task.", html)
-            self.assertNotIn("dashboard-team", html)
+            # Suggestion panel must not render scored rows for traversal input.
+            self.assertNotIn("<th>Score</th>", html)
+            self.assertNotIn("outside.yaml", html)
         finally:
             app_module.ROOT_DIR = original_root
 
