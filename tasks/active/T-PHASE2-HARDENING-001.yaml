@@ -1,0 +1,60 @@
+id: T-PHASE2-HARDENING-001
+title: Phase 2.5 — End-of-Phase-2 hardening and Claude review packet
+owner: composer
+reviewer: claude
+created_by: composer
+status: review
+phase: "2.5"
+created_at: 2026-06-07T22:00:00Z
+updated_at: 2026-06-07T22:00:00Z
+priority: high
+risk_level: low
+requires_human_approval: false
+human_approval_checklist: []
+objective: >
+  Harden Phase 2.0–2.4 (sandboxing, graph errors, event vocabulary, validator,
+  dashboard) and produce a Claude review packet before any Phase 3 agent execution.
+context: |
+  Phases 2.0–2.4 are merged or ready. This phase is governance, validation,
+  documentation, and review packaging only — no dispatch, no LLM/MCP execution.
+goals:
+  - Sandbox orchestrator --output-dir inside repo root
+  - Short-circuit graph on invalid/missing tasks; persist error state
+  - Align event vocabulary across protocol, validator, and emitters
+  - Add PHASE_2_REVIEW_PACKET, HARDENING_REPORT, PHASE_3_READINESS_CRITERIA
+  - Add ADRs 0010–0012, tests, task, and handoff for Claude review
+non_goals:
+  - Phase 3 agent execution or autonomous dispatch
+  - LLM API calls, MCP execution, database, network calls
+  - Bidirectional Obsidian sync
+inputs:
+  - orchestrator/graph.py
+  - scripts/orchestrate_task.py
+  - scripts/validate.py
+  - docs/AGENT_PROTOCOL.md
+  - decisions/ADR-0004-event-vocabulary.md
+  - dashboard/app.py
+outputs:
+  - docs/PHASE_2_REVIEW_PACKET.md
+  - docs/PHASE_2_HARDENING_REPORT.md
+  - docs/PHASE_3_READINESS_CRITERIA.md
+  - decisions/ADR-0010-phase-2-runtime-registries.md
+  - decisions/ADR-0011-langgraph-planning-only-orchestrator.md
+  - decisions/ADR-0012-phase-3-agent-dispatch-gates.md
+  - protocol/event_types.py
+  - tests/test_phase2_hardening.py
+  - tasks/active/T-PHASE2-HARDENING-001.yaml
+  - handoffs/T-PHASE2-HARDENING-001__composer__to__claude.md
+constraints:
+  - No agent execution, MCP execution, or LLM APIs
+  - Validator must not require vault, CLIs, MCP servers, or latest orchestrator run
+  - ADR approval level reviewer unless human required for security
+acceptance:
+  - Output-dir sandbox tests pass (valid, traversal, outside repo)
+  - Missing/invalid tasks do not generate plans; errors in latest_state.json
+  - Event vocabulary tests pass; validator rejects undocumented types
+  - Review packet docs and ADRs exist with required sections
+  - python -m unittest and python scripts/validate.py pass
+notes: >
+  Hand off to Claude for end-of-Phase-2 review. Recommended next milestone:
+  Claude review — not Phase 3 implementation yet.

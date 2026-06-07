@@ -1290,7 +1290,7 @@ def generate_dashboard_html(query_params: dict[str, list[str]]) -> str:
         <div style="flex-grow: 1;"></div>
         
         <div style="font-size: 10px; color: #475569; text-align: center; border-top: 1px solid rgba(255, 255, 255, 0.05); padding-top: 12px;">
-            Antigravity Dashboard • Phase 2.0
+            Antigravity Dashboard • Phase 2.5 (hardened)
         </div>
     </div>
     """)
@@ -2368,7 +2368,8 @@ def generate_dashboard_html(query_params: dict[str, list[str]]) -> str:
             <div class="tab-panel {'active' if active_tab == 'obsidian' else ''}">
                 <h3>📓 Obsidian Vault Sync</h3>
                 <p style="font-size:12px; color:#94a3b8; margin-bottom:16px;">
-                    Read-only status for one-way repo → vault sync. Dashboard does not trigger sync in Phase 2.3.
+                    <strong>One-way only:</strong> repo → vault export. No vault → repo import.
+                    Dashboard does not trigger sync. Use <code>python scripts/sync_obsidian.py</code> manually.
                 </p>
     """)
 
@@ -2430,8 +2431,18 @@ python scripts/sync_obsidian.py --vault "&lt;path-to-vault&gt;"</pre>
             <div class="tab-panel {'active' if active_tab == 'orchestrator' else ''}">
                 <h3>🧭 Orchestrator</h3>
                 <p style="font-size:12px; color:#94a3b8; margin-bottom:16px;">
-                    Read-only view of latest LangGraph orchestration plan. Does not execute agents.
+                    Read-only view of latest LangGraph orchestration plan. Does not execute agents or run LangGraph.
                 </p>
+    """)
+    if orch_errors:
+        html_out.append(
+            '<div class="health-card health-err" style="background:rgba(239,68,68,0.12); border-left:4px solid #ef4444; '
+            'border-radius:6px; padding:12px; margin-bottom:16px;">'
+            '<h4 style="margin:0 0 8px 0; color:#f87171;">Orchestrator errors — fix task input</h4>'
+            + "".join(f'<div style="font-size:11px; color:#fca5a5;">{escape(str(e))}</div>' for e in orch_errors)
+            + "</div>"
+        )
+    html_out.append(f"""
                 <div style="background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.05); border-radius:8px; padding:16px; margin-bottom:16px;">
                     <div class="inspector-section-title" style="border:none; margin-bottom:10px;">Latest Run</div>
                     <div class="inspector-meta-row"><span class="inspector-meta-label">Run ID</span><span class="inspector-meta-val">{escape(str(orch_run_id))}</span></div>
@@ -2472,6 +2483,15 @@ python scripts/orchestrate_task.py --task tasks/active/&lt;task-id&gt;.yaml --js
     html_out.append(f"""
             <div class="tab-panel {'active' if active_tab == 'health' else ''}">
                 <h3>🏥 System Diagnostic Log</h3>
+                <div style="background:rgba(59,130,246,0.08); border-left:4px solid #3b82f6; border-radius:6px; padding:14px; margin-bottom:16px;">
+                    <div style="font-size:12px; color:#93c5fd; font-weight:600; margin-bottom:6px;">Phase 2 status (2.5 hardened)</div>
+                    <div style="font-size:11px; color:#cbd5e1; line-height:1.5;">
+                        2.0 Daemon discovery • 2.1 Skills/MCP registries • 2.2 Teams/Roles •
+                        2.3 Obsidian one-way sync • 2.4 LangGraph planning-only orchestrator.
+                        No agent execution, MCP calls, or LLM APIs. Review packet:
+                        <code>docs/PHASE_2_REVIEW_PACKET.md</code>
+                    </div>
+                </div>
     """)
     
     # Distinguish ok vs empty vs error details

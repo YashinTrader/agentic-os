@@ -14,6 +14,9 @@ except ImportError:  # pragma: no cover - exercised only without dependency.
     print("PyYAML is required. Install with: python -m pip install -r requirements.txt", file=sys.stderr)
     sys.exit(2)
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from protocol.event_types import ALLOWED_EVENT_TYPES, V1_ALLOWED_EVENTS  # noqa: E402
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -60,18 +63,6 @@ LIST_FIELDS = {
     "non_goals",
     "human_approval_checklist",
 }
-
-ALLOWED_EVENT_TYPES = {
-    "task_created",
-    "task_assigned",
-    "status_changed",
-    "handoff_written",
-    "reviewed",
-    "decision_recorded",
-    "blocked",
-    "note",
-}
-V1_ALLOWED_EVENTS = {"started", "progress", "blocked", "decision_needed", "handoff", "finished", "error"}
 
 REQUIRED_HANDOFF_SECTIONS = [
     "## What I Did",
@@ -283,13 +274,13 @@ def validate_logs(errors: list[str], warnings: list[str]) -> None:
             errors.append(f"logs/agent-events.jsonl:{index}: contains both 'type' and deprecated 'event'")
         elif "type" in event:
             if event["type"] not in ALLOWED_EVENT_TYPES:
-                warnings.append(f"logs/agent-events.jsonl:{index}: unknown event type {event['type']!r}")
+                errors.append(f"logs/agent-events.jsonl:{index}: unknown event type {event['type']!r}")
         elif "event" in event:
             warnings.append(f"logs/agent-events.jsonl:{index}: uses deprecated v1 field 'event'; use 'type'")
             if event["event"] not in V1_ALLOWED_EVENTS:
                 warnings.append(f"logs/agent-events.jsonl:{index}: unknown v1 event {event['event']!r}")
         else:
-            errors.append("logs/agent-events.jsonl:{index}: missing required field 'type'")
+            errors.append(f"logs/agent-events.jsonl:{index}: missing required field 'type'")
 
 
 def validate_handoffs(errors: list[str]) -> None:
@@ -696,6 +687,65 @@ OBSIDIAN_MAPPING_REQUIRED_FIELDS = {
 }
 
 
+PHASE_2_REVIEW_REQUIRED_FILES = {
+    "docs/PHASE_2_REVIEW_PACKET.md": [
+        "## A. Phase 2.0",
+        "## B. Phase 2.1",
+        "## C. Phase 2.2",
+        "## D. Phase 2.3",
+        "## E. Phase 2.4",
+        "## F. Current safety model",
+        "## G. Claude review checklist",
+    ],
+    "docs/PHASE_2_HARDENING_REPORT.md": [
+        "## Known limitations fixed",
+        "## Known limitations remaining",
+        "## Test coverage summary",
+        "## Validator summary",
+        "## Risk register",
+        "## Recommended fixes before Phase 3",
+        "## Phase 2 readiness for Claude review",
+    ],
+    "docs/PHASE_3_READINESS_CRITERIA.md": [
+        "## A. Execution gates",
+        "## B. Approval gates",
+        "## C. Sandbox gates",
+        "## D. Logging gates",
+        "## E. Rollback gates",
+    ],
+}
+
+PHASE_2_HARDENING_ADRS = (
+    "decisions/ADR-0010-phase-2-runtime-registries.md",
+    "decisions/ADR-0011-langgraph-planning-only-orchestrator.md",
+    "decisions/ADR-0012-phase-3-agent-dispatch-gates.md",
+)
+
+
+def validate_phase2_review_docs(errors: list[str]) -> None:
+    for rel, sections in PHASE_2_REVIEW_REQUIRED_FILES.items():
+        path = ROOT / rel
+        if not path.exists():
+            errors.append(f"{rel}: file does not exist (Phase 2.5 review packet)")
+            continue
+        text = path.read_text(encoding="utf-8")
+        for section in sections:
+            if section not in text:
+                errors.append(f"{rel}: missing required section {section}")
+
+
+def validate_phase2_hardening_adrs(errors: list[str]) -> None:
+    for rel in PHASE_2_HARDENING_ADRS:
+        path = ROOT / rel
+        if not path.exists():
+            errors.append(f"{rel}: file does not exist (Phase 2.5 ADR)")
+            continue
+        text = path.read_text(encoding="utf-8")
+        for section in REQUIRED_ADR_SECTIONS:
+            if section not in text:
+                errors.append(f"{rel}: missing required section {section}")
+
+
 def validate_obsidian_mapping(errors: list[str]) -> None:
     path = ROOT / "memory" / "obsidian_mapping.yaml"
     rel = path.relative_to(ROOT)
@@ -777,6 +827,8 @@ def main() -> int:
     role_ids = validate_roles_registry(errors, skill_ids, mcp_ids)
     validate_teams_registry(errors, skill_ids, mcp_ids, role_ids)
     validate_obsidian_mapping(errors)
+    validate_phase2_review_docs(errors)
+    validate_phase2_hardening_adrs(errors)
 
     for warning in warnings:
         print(f"Warning: {warning}", file=sys.stderr)

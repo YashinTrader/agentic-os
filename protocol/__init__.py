@@ -1,0 +1,1 @@
+"""Shared protocol constants for Agentic OS."""

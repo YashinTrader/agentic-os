@@ -66,17 +66,26 @@ then log a `decision_needed` event. Wait.
 ## 6. Event Log Format (`logs/agent-events.jsonl`)
 One JSON object per line. Append only. Never edit prior lines.
 
-```json
-{"ts":"2026-05-22T10:14:03Z","agent":"codex","task":"T-0007","event":"started","detail":"picked up task from todo"}
-{"ts":"2026-05-22T10:32:11Z","agent":"codex","task":"T-0007","event":"progress","detail":"scaffolded tasks/ directory"}
-{"ts":"2026-05-22T10:48:55Z","agent":"codex","task":"T-0007","event":"decision_needed","detail":"naming convention for handoff files","ref":"decisions/ADR-0003-handoff-naming.md"}
-{"ts":"2026-05-22T11:05:02Z","agent":"codex","task":"T-0007","event":"handoff","detail":"to claude for review","ref":"handoffs/T-0007__codex__to__claude.md"}
-```
+Canonical vocabulary: `protocol/event_types.py` (ADR-0004 + Phase 2 extension in ADR-0010).
 
-**Required fields:** `ts` (ISO-8601 UTC), `agent`, `task`, `event`.
-**Allowed `event` values:** `started`, `progress`, `blocked`, `decision_needed`,
-`handoff`, `finished`, `error`.
-**Optional fields:** `detail`, `ref` (path to related file).
+**Required fields:** `ts` (ISO-8601 UTC), `agent`, `type`.
+
+**Phase 1 types (`type` field):** `task_created`, `task_assigned`, `status_changed`,
+`handoff_written`, `reviewed`, `decision_recorded`, `blocked`, `note`.
+
+**Phase 2 types:** `discovery_completed`, `registry_updated`, `vault_sync_planned`,
+`vault_sync_completed`, `orchestration_planned`, `validation_passed`, `review_packet_created`.
+
+**Optional fields:** `task_id` (or legacy `task`), `detail`, `text`, `ref`.
+
+**Deprecated v1 field:** `event` — historical log lines may still use it; new emitters
+must use `type` via `scripts/append_log.py --type <name>`.
+
+Example (current):
+
+```json
+{"ts":"2026-06-07T12:00:00Z","agent":"orchestrator","task_id":"T-LANGGRAPH-001","type":"orchestration_planned","detail":"plan generated","ref":"runtime/orchestrator/runs/run-..."}
+```
 
 ## 6.1 Task Schema v2 Migration Map
 

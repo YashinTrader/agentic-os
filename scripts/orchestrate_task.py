@@ -15,6 +15,40 @@ from orchestrator.graph import run_orchestration  # noqa: E402
 from orchestrator.loaders import safe_task_path  # noqa: E402
 
 
+def resolve_output_dir(
+    repo_root: Path,
+    output_dir: str | None,
+    *,
+    allow_outside_repo: bool = False,
+) -> str:
+    """Resolve orchestrator output directory inside repo root by default."""
+    default = repo_root / "runtime" / "orchestrator" / "runs"
+    if output_dir is None:
+        return str(default.resolve())
+
+    candidate = Path(output_dir)
+    if candidate.is_absolute():
+        resolved = candidate.resolve()
+    else:
+        resolved = (repo_root / candidate).resolve()
+
+    if ".." in candidate.parts:
+        raise ValueError(
+            f"output directory must not contain path traversal segments: {output_dir}"
+        )
+
+    try:
+        resolved.relative_to(repo_root)
+    except ValueError as exc:
+        if not allow_outside_repo:
+            raise ValueError(
+                f"output directory must be inside repository root ({repo_root}); "
+                f"got {resolved}. Pass --allow-outside-repo only for explicit override."
+            ) from exc
+
+    return str(resolved)
+
+
 def parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Plan orchestration for a task using LangGraph.")
     p.add_argument("--root", default=str(REPO_ROOT), help="Repository root.")
@@ -25,7 +59,12 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--output-dir",
         default=None,
-        help="Override output runs directory (default: runtime/orchestrator/runs).",
+        help="Override output runs directory (default: runtime/orchestrator/runs; must stay inside repo).",
+    )
+    p.add_argument(
+        "--allow-outside-repo",
+        action="store_true",
+        help="Explicit unsafe override to allow --output-dir outside repository root.",
     )
     return p
 
@@ -41,12 +80,18 @@ def main() -> int:
         return 1
 
     try:
+        resolved_output = resolve_output_dir(root, args.output_dir, allow_outside_repo=args.allow_outside_repo)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+
+    try:
         state = run_orchestration(
             root,
             args.task,
             dry_run=args.dry_run,
             no_log=args.no_log,
-            output_dir=args.output_dir,
+            output_dir=resolved_output,
         )
     except ImportError as exc:
         print(str(exc), file=sys.stderr)

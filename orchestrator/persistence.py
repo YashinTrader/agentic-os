@@ -59,15 +59,32 @@ def save_latest(repo_root: Path, state: dict[str, Any], plan: dict[str, Any], dr
     return str(state_path), str(plan_path)
 
 
+def save_failed_latest(repo_root: Path, state: dict[str, Any], dry_run: bool) -> str:
+    """Persist error-only orchestrator state without a plan."""
+    root = orchestrator_root(repo_root)
+    state_path = root / "latest_state.json"
+    if not dry_run:
+        root.mkdir(parents=True, exist_ok=True)
+        failed = dict(state)
+        failed["plan_path"] = None
+        failed["context_pack_path"] = None
+        failed["next_action"] = failed.get("next_action") or "fix_task_input"
+        state_path.write_text(json.dumps(_json_safe(failed), indent=2, ensure_ascii=False), encoding="utf-8")
+        plan_path = root / "latest_plan.json"
+        if plan_path.exists():
+            plan_path.unlink()
+    return str(state_path)
+
+
 def append_orchestration_event(repo_root: Path, state: dict[str, Any], dry_run: bool, no_log: bool) -> None:
-    if dry_run or no_log:
+    if dry_run or no_log or state.get("errors"):
         return
     log_path = repo_root / "logs" / "agent-events.jsonl"
     event = {
         "ts": utc_now(),
         "agent": "orchestrator",
-        "task": state.get("task_id", ""),
-        "type": "note",
+        "task_id": state.get("task_id", ""),
+        "type": "orchestration_planned",
         "detail": (
             f"orchestration plan generated run_id={state.get('run_id')} "
             f"team={state.get('selected_team')} approval={state.get('approval_level')}"

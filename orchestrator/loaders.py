@@ -10,8 +10,8 @@ from typing import Any
 import yaml
 
 
-def safe_task_path(repo_root: Path, task_arg: str) -> Path:
-    """Resolve task path under repo; reject traversal."""
+def resolve_task_path(repo_root: Path, task_arg: str, *, must_exist: bool = True) -> Path:
+    """Resolve task path under repo tasks/; reject traversal."""
     candidate = Path(task_arg)
     if candidate.is_absolute():
         resolved = candidate.resolve()
@@ -26,9 +26,14 @@ def safe_task_path(repo_root: Path, task_arg: str) -> Path:
         resolved.relative_to(tasks_root)
     except ValueError as exc:
         raise ValueError(f"task path must be under tasks/: {task_arg}") from exc
-    if not resolved.exists():
+    if must_exist and not resolved.exists():
         raise FileNotFoundError(f"task file not found: {resolved}")
     return resolved
+
+
+def safe_task_path(repo_root: Path, task_arg: str) -> Path:
+    """Resolve an existing task path under tasks/."""
+    return resolve_task_path(repo_root, task_arg, must_exist=True)
 
 
 def load_task_yaml(path: Path) -> dict[str, Any]:

@@ -40,7 +40,12 @@ def load_task(state: dict[str, Any]) -> dict[str, Any]:
         task_path = Path(state["task_path"])
         task = load_task_yaml(task_path)
     except Exception as exc:
-        return {"errors": [f"load_task failed: {exc}"]}
+        return {
+            "errors": [f"load_task failed: {exc}"],
+            "next_action": "fix_task_input",
+            "plan_path": None,
+            "context_pack_path": None,
+        }
 
     for optional in ("labels", "acceptance", "constraints", "outputs"):
         if optional not in task or not task.get(optional):

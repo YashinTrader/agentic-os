@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from orchestrator.loaders import safe_task_path
+from orchestrator.loaders import resolve_task_path
 from orchestrator.nodes import (
     classify_task,
     compile_context,
@@ -15,7 +15,7 @@ from orchestrator.nodes import (
     risk_gate,
     suggest_team,
 )
-from orchestrator.persistence import new_run_id, run_dir
+from orchestrator.persistence import new_run_id, run_dir, save_failed_latest, save_state
 from orchestrator.state import OrchestratorState, graph_dict_to_state, merge_state, state_to_graph_dict
 
 try:
@@ -38,9 +38,27 @@ def _wrap(node_fn):
     return runner
 
 
+def _route_after_load(state: dict[str, Any]) -> str:
+    if state.get("errors"):
+        return "persist_failure"
+    return "classify_task"
+
+
+def _persist_failure(state: dict[str, Any]) -> dict[str, Any]:
+    current = graph_dict_to_state(state)
+    repo_root = Path(current.repo_root).resolve()
+    run_path = run_dir(repo_root, current.run_id, current.output_dir or None)
+    serial = state_to_graph_dict(current)
+    save_state(run_path, serial, current.dry_run)
+    if not current.dry_run:
+        save_failed_latest(repo_root, serial, dry_run=False)
+    return serial
+
+
 def build_graph():
     graph = StateGraph(dict)
     graph.add_node("load_task", _wrap(load_task))
+    graph.add_node("persist_failure", _persist_failure)
     graph.add_node("classify_task", _wrap(classify_task))
     graph.add_node("suggest_team", _wrap(suggest_team))
     graph.add_node("compile_context", _wrap(compile_context))
@@ -49,7 +67,12 @@ def build_graph():
     graph.add_node("finalize", _wrap(finalize))
 
     graph.set_entry_point("load_task")
-    graph.add_edge("load_task", "classify_task")
+    graph.add_conditional_edges(
+        "load_task",
+        _route_after_load,
+        {"persist_failure": "persist_failure", "classify_task": "classify_task"},
+    )
+    graph.add_edge("persist_failure", END)
     graph.add_edge("classify_task", "suggest_team")
     graph.add_edge("suggest_team", "compile_context")
     graph.add_edge("compile_context", "risk_gate")
@@ -68,7 +91,7 @@ def run_orchestration(
     output_dir: str | None = None,
 ) -> OrchestratorState:
     repo_root = repo_root.resolve()
-    resolved_task = safe_task_path(repo_root, task_path)
+    resolved_task = resolve_task_path(repo_root, task_path, must_exist=False)
     run_id = new_run_id()
 
     out_path = output_dir or str(repo_root / "runtime" / "orchestrator" / "runs")
