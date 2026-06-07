@@ -1,0 +1,16 @@
+{
+  "schema_version": "1.0",
+  "daemon": "agentic-os-cli-discovery",
+  "mode": "uninitialized",
+  "status": "empty",
+  "started_at": null,
+  "finished_at": null,
+  "last_run_at": null,
+  "inventory_path": "runtime/registry/cli_inventory.yaml",
+  "summary": {
+    "total": 0,
+    "available": 0,
+    "missing": 0
+  },
+  "errors": []
+}

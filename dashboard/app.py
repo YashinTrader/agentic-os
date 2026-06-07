@@ -8,6 +8,7 @@ import subprocess
 import sys
 import urllib.parse
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -138,6 +139,41 @@ def load_adrs(root_dir: Path) -> list[Path]:
     if not decisions_dir.exists():
         return []
     return sorted(list(decisions_dir.glob("ADR-*.md")), key=lambda x: x.name)
+
+
+def load_cli_inventory(root_dir: Path) -> tuple[dict | None, list[str]]:
+    """Load runtime/registry/cli_inventory.yaml written by the discovery daemon."""
+    errors: list[str] = []
+    inventory_path = root_dir / "runtime" / "registry" / "cli_inventory.yaml"
+    if not inventory_path.exists():
+        return None, ["runtime/registry/cli_inventory.yaml: file does not exist"]
+    try:
+        data = yaml.safe_load(inventory_path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            errors.append("runtime/registry/cli_inventory.yaml: root must be a YAML mapping")
+            return None, errors
+        tools = data.get("tools", [])
+        if not isinstance(tools, list):
+            errors.append("runtime/registry/cli_inventory.yaml: tools must be a list")
+        return data, errors
+    except Exception as exc:
+        return None, [f"runtime/registry/cli_inventory.yaml: failed to parse: {exc}"]
+
+
+def load_daemon_status(root_dir: Path) -> tuple[dict | None, list[str]]:
+    """Load runtime/status/daemon_status.json written by the discovery daemon."""
+    errors: list[str] = []
+    status_path = root_dir / "runtime" / "status" / "daemon_status.json"
+    if not status_path.exists():
+        return None, ["runtime/status/daemon_status.json: file does not exist"]
+    try:
+        data = json.loads(status_path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            errors.append("runtime/status/daemon_status.json: root must be a JSON object")
+            return None, errors
+        return data, errors
+    except Exception as exc:
+        return None, [f"runtime/status/daemon_status.json: failed to parse: {exc}"]
 
 
 def get_health_metrics(root_dir: Path) -> dict:
@@ -404,6 +440,8 @@ def generate_dashboard_html(query_params: dict[str, list[str]]) -> str:
     metrics = get_health_metrics(ROOT_DIR)
     tasks, _ = load_all_tasks(ROOT_DIR)
     events, _ = load_events(ROOT_DIR)
+    cli_inventory, cli_inventory_errors = load_cli_inventory(ROOT_DIR)
+    daemon_status, daemon_status_errors = load_daemon_status(ROOT_DIR)
     
     # 1. State extraction
     selected_task_id = query_params.get("task_id", [None])[0]
@@ -955,6 +993,66 @@ def generate_dashboard_html(query_params: dict[str, list[str]]) -> str:
             padding: 30px;
             box-shadow: 0 12px 24px rgba(0,0,0,0.3);
         }
+
+        .tools-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+            margin-top: 16px;
+        }
+
+        .tools-table th,
+        .tools-table td {
+            text-align: left;
+            padding: 10px 12px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            vertical-align: top;
+        }
+
+        .tools-table th {
+            color: #94a3b8;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .tool-available {
+            color: #34d399;
+            font-weight: 700;
+        }
+
+        .tool-missing {
+            color: #f87171;
+            font-weight: 700;
+        }
+
+        .daemon-health-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+
+        .daemon-health-card {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            padding: 14px;
+        }
+
+        .daemon-health-label {
+            font-size: 11px;
+            color: #94a3b8;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 6px;
+        }
+
+        .daemon-health-value {
+            font-size: 18px;
+            font-weight: 700;
+            color: #f8fafc;
+        }
         
     </style>
 </head>
@@ -1033,6 +1131,7 @@ def generate_dashboard_html(query_params: dict[str, list[str]]) -> str:
                 <a href="/?tab=create_task" class="tab-link {'active' if active_tab == 'create_task' else ''}">🆕 Create Task</a>
                 <a href="/?tab=events" class="tab-link {'active' if active_tab == 'events' else ''}">📜 System Events</a>
                 <a href="/?tab=handoffs" class="tab-link {'active' if active_tab == 'handoffs' else ''}">📑 Handoffs & ADRs</a>
+                <a href="/?tab=agents_tools" class="tab-link {'active' if active_tab == 'agents_tools' else ''}">🤖 Agents / Tools</a>
                 <a href="/?tab=health" class="tab-link {'active' if active_tab == 'health' else ''}">🏥 Health Panel</a>
             </div>
     """)
@@ -1522,6 +1621,106 @@ def generate_dashboard_html(query_params: dict[str, list[str]]) -> str:
             </div>
     """)
     
+    # ==========================================
+    # TAB PANEL: AGENTS / TOOLS
+    # ==========================================
+    html_out.append(f"""
+            <div class="tab-panel {'active' if active_tab == 'agents_tools' else ''}">
+                <h3>🤖 Agents / Tools Inventory</h3>
+                <p style="font-size:12px; color:#94a3b8; margin-bottom:16px;">
+                    Read-only view of <code>runtime/registry/cli_inventory.yaml</code> and
+                    <code>runtime/status/daemon_status.json</code>. Run
+                    <code>python -m daemon.daemon --once</code> to refresh.
+                </p>
+    """)
+
+    inventory_summary = (cli_inventory or {}).get("summary", {})
+    daemon_summary = (daemon_status or {}).get("summary", inventory_summary)
+    daemon_run_state = "missing"
+    if daemon_status_errors:
+        daemon_run_state = "error"
+    elif daemon_status:
+        daemon_run_state = daemon_status.get("status", "ok")
+
+    html_out.append(f"""
+                <div class="daemon-health-grid">
+                    <div class="daemon-health-card">
+                        <div class="daemon-health-label">Tools Tracked</div>
+                        <div class="daemon-health-value">{escape(daemon_summary.get('total', inventory_summary.get('total', 'N/A')))}</div>
+                    </div>
+                    <div class="daemon-health-card">
+                        <div class="daemon-health-label">Available</div>
+                        <div class="daemon-health-value" style="color:#34d399;">{escape(daemon_summary.get('available', inventory_summary.get('available', 'N/A')))}</div>
+                    </div>
+                    <div class="daemon-health-card">
+                        <div class="daemon-health-label">Missing</div>
+                        <div class="daemon-health-value" style="color:#f87171;">{escape(daemon_summary.get('missing', inventory_summary.get('missing', 'N/A')))}</div>
+                    </div>
+                    <div class="daemon-health-card">
+                        <div class="daemon-health-label">Last Daemon Run</div>
+                        <div class="daemon-health-value" style="font-size:13px;">{escape((daemon_status or {}).get('last_run_at', 'N/A'))}</div>
+                    </div>
+                    <div class="daemon-health-card">
+                        <div class="daemon-health-label">Daemon Status</div>
+                        <div class="daemon-health-value" style="font-size:13px; text-transform:uppercase;">{escape(daemon_run_state)}</div>
+                    </div>
+                </div>
+    """)
+
+    if cli_inventory_errors or daemon_status_errors:
+        for err in cli_inventory_errors + daemon_status_errors:
+            html_out.append(f'<div class="event-type-warn">{escape(err)}</div>')
+
+    if daemon_status and daemon_status.get("errors"):
+        for err in daemon_status.get("errors", []):
+            html_out.append(f'<div class="event-type-warn">Daemon error: {escape(err)}</div>')
+
+    if cli_inventory and cli_inventory.get("tools"):
+        html_out.append("""
+                <table class="tools-table">
+                    <thead>
+                        <tr>
+                            <th>Tool</th>
+                            <th>Status</th>
+                            <th>Version</th>
+                            <th>Path</th>
+                            <th>Last Checked</th>
+                            <th>Notes</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        """)
+        for tool in cli_inventory.get("tools", []):
+            if not isinstance(tool, dict):
+                continue
+            available = tool.get("available", False)
+            status_class = "tool-available" if available else "tool-missing"
+            status_label = "available" if available else "missing"
+            html_out.append(f"""
+                        <tr>
+                            <td><b>{escape(tool.get('display_name', tool.get('id', 'unknown')))}</b><br/><code style="font-size:10px; color:#64748b;">{escape(tool.get('id', ''))}</code></td>
+                            <td class="{status_class}">{escape(status_label)}</td>
+                            <td>{escape(tool.get('version') or '—')}</td>
+                            <td><code style="font-size:10px; word-break:break-all;">{escape(tool.get('path') or '—')}</code></td>
+                            <td style="font-size:11px; color:#94a3b8;">{escape(tool.get('last_checked', 'N/A'))}</td>
+                            <td style="font-size:11px; color:#94a3b8;">{escape(tool.get('notes') or '—')}</td>
+                        </tr>
+            """)
+        html_out.append("""
+                    </tbody>
+                </table>
+        """)
+    else:
+        html_out.append("""
+                <div style="color:#475569; padding:40px 0; text-align:center; font-style:italic; border:1px dashed rgba(255,255,255,0.05); border-radius:8px;">
+                    No CLI inventory found yet. Run <code>python -m daemon.daemon --once</code> to populate runtime/registry/cli_inventory.yaml.
+                </div>
+        """)
+
+    html_out.append("""
+            </div>
+    """)
+
     # ==========================================
     # TAB PANEL: HEALTH & SAFETY
     # ==========================================

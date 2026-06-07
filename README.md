@@ -23,6 +23,8 @@ decisions, logs — is a structured file.
 | `logs/`        | Append-only event log (`agent-events.jsonl`).        |
 | `memory/`      | Reserved for Phase 2 (unified semantic memory).      |
 | `scripts/`     | Local validation tooling for Phase 1 files.           |
+| `daemon/`      | Phase 2.0 runtime CLI discovery (observe-only).       |
+| `runtime/`     | Machine-readable daemon inventory and status.         |
 
 ## Start Here (Humans)
 1. Read `docs/ARCHITECTURE.md` — the big picture.
@@ -66,9 +68,21 @@ python scripts/create_handoff.py --task T-0013 --from-agent codex --to-agent cla
 
 Run `python -m unittest` and `python scripts/validate.py` before handoff.
 
-## Phase 2 (Preview, Not Built Yet)
+## Phase 2.0 — Runtime Daemon (CLI Discovery)
+A local discovery daemon inventories installed CLIs and agent tools, writes
+`runtime/registry/cli_inventory.yaml`, and exposes the inventory in the dashboard
+**Agents / Tools** tab. Observe-only — no agent launching yet.
+
+```powershell
+python -m daemon.daemon --once
+python dashboard/app.py
+```
+
+See `docs/DAEMON_DISCOVERY.md` for safety guarantees and limitations.
+
+## Phase 2 (Later)
+- Phase 2.1 — Skills + MCP Registry (read-only inventory extension).
 - Unified semantic memory (Cognee or Mem0) via MCP.
-- Cursor-built Kanban dashboard reading the same files.
 - Hermes summarizes the event log nightly.
 - Token/usage monitoring per agent.
 
