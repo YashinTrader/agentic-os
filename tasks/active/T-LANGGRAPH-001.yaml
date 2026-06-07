@@ -1,0 +1,55 @@
+id: T-LANGGRAPH-001
+title: LangGraph orchestrator MVP — planning graph without agent execution
+owner: composer
+reviewer: claude
+created_by: composer
+status: review
+phase: "2.4"
+created_at: 2026-06-07T20:00:00Z
+updated_at: 2026-06-07T20:00:00Z
+priority: high
+risk_level: low
+requires_human_approval: false
+human_approval_checklist: []
+objective: >
+  Create a safe LangGraph-based orchestration layer that reads a task, classifies
+  skills, suggests a team, compiles a context pack, evaluates risk/approval, and
+  writes an orchestration plan without executing agents or APIs.
+context: |
+  Phase 2.3 added Obsidian vault sync. Phase 2.4 introduces deterministic
+  orchestration planning to prepare structured outputs for future agent dispatch.
+goals:
+  - Define orchestrator state schema and LangGraph node pipeline
+  - Implement classify, suggest_team, context_compiler, risk_gate, planner nodes
+  - Add scripts/orchestrate_task.py CLI and runtime persistence
+  - Add dashboard Orchestrator read-only tab
+  - Document protocol in docs/LANGGRAPH_ORCHESTRATOR.md
+non_goals:
+  - Agent execution, LLM API calls, MCP execution
+  - Task owner/status mutation, merge/push/deploy
+  - Database or LangSmith integration
+inputs:
+  - tasks/active/*.yaml
+  - teams/registry.yaml
+  - roles/registry.yaml
+  - skills/registry.yaml
+  - mcps/registry.yaml
+  - scripts/suggest_team.py
+outputs:
+  - orchestrator/
+  - runtime/orchestrator/
+  - scripts/orchestrate_task.py
+  - docs/LANGGRAPH_ORCHESTRATOR.md
+  - tests/test_orchestrator_*.py
+  - dashboard/app.py
+constraints:
+  - LangGraph only; no model provider SDKs
+  - Deterministic classification and risk gate
+  - Planning only — no automatic dispatch
+acceptance:
+  - Graph runs end-to-end and writes context pack and plan
+  - dashboard-team suggested for dashboard tasks; coding-team for CLI tasks
+  - risk_gate requires human for deploy/secret cases; none for read-only planning
+  - python -m unittest and python scripts/validate.py pass
+notes: >
+  Hand off to claude for end-of-Phase-2 review. Next: Phase 2.5 hardening packet.
