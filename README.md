@@ -23,6 +23,7 @@ decisions, logs — is a structured file.
 | `logs/`        | Append-only event log (`agent-events.jsonl`).        |
 | `memory/`      | Obsidian sync config (`obsidian_mapping.yaml`).      |
 | `integrations/`| Phase 2.3 Obsidian vault sync modules.               |
+| `orchestrator/`| Phase 2.4 LangGraph planning graph (no execution).   |
 | `scripts/`     | Local validation tooling for Phase 1 files.           |
 | `daemon/`      | Phase 2.0 runtime CLI discovery (observe-only).       |
 | `runtime/`     | Machine-readable daemon inventory and status.         |
@@ -112,6 +113,19 @@ python dashboard/app.py
 Dashboard tabs: **Teams** (`/?tab=teams`), **Roles** (`/?tab=roles`).  
 See `docs/TEAMS_AND_ROLES.md`.
 
+## Phase 2.4 — LangGraph Orchestrator MVP
+Deterministic planning graph: classify task, suggest team, compile context pack,
+evaluate risk, write plan. No agent execution.
+
+```powershell
+python scripts/orchestrate_task.py --task tasks/active/T-EXAMPLE.yaml
+python scripts/orchestrate_task.py --task tasks/active/T-EXAMPLE.yaml --json
+python dashboard/app.py
+```
+
+Dashboard tab: **Orchestrator** (`/?tab=orchestrator`).  
+See `docs/LANGGRAPH_ORCHESTRATOR.md`. Install: `pip install -r requirements.txt`.
+
 ## Phase 2.3 — Obsidian Vault Sync
 One-way mirror from repo to a local Obsidian vault. Repo remains source of truth.
 
@@ -125,7 +139,7 @@ Dashboard tab: **Obsidian Sync** (`/?tab=obsidian`).
 See `docs/OBSIDIAN_SYNC.md`.
 
 ## Phase 2 (Later)
-- Phase 2.4 — LangGraph Orchestrator MVP.
+- Phase 2.5 — End-of-Phase-2 hardening and Claude review packet.
 - Unified semantic memory (Cognee or Mem0) via MCP.
 - Hermes summarizes the event log nightly.
 - Token/usage monitoring per agent.

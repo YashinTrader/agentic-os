@@ -93,6 +93,22 @@ unknown `type` values for one phase, then error in the ADR that closes Phase
    - Update `scripts/log_event.py` to validate `--type` against the table (warn, do not block).
 3. After Phase 1.6 dashboard lands, flip the validator from warn to error in a follow-up ADR.
 
+## Phase 2 extension (ADR-0010, 2026-06-07)
+
+Additional closed `type` values for Phase 2 operational events:
+
+| type | when |
+|------|------|
+| `discovery_completed` | daemon CLI discovery finished |
+| `registry_updated` | skills/MCP/teams/roles registry changed |
+| `vault_sync_planned` | Obsidian dry-run or plan step |
+| `vault_sync_completed` | Obsidian one-way sync finished |
+| `orchestration_planned` | LangGraph finalize wrote plan (no execution) |
+| `validation_passed` | `scripts/validate.py` succeeded |
+| `review_packet_created` | Phase review docs landed |
+
+Implemented in `protocol/event_types.py`. Validator errors on unknown `type` values.
+
 ## Open questions
 
 - Do we need a `phase` field on every event? (Probably yes, but defer to the implementation task.)

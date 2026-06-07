@@ -10,3 +10,6 @@
 | ADR-0007 | Memory architecture for Agentic OS                        | accepted | 2026-05-24 |
 | ADR-0008 | Librarian role and shared-memory write rules              | accepted | 2026-05-24 |
 | ADR-0009 | MCP adapter contract for memory access                    | accepted | 2026-05-24 |
+| ADR-0010 | Phase 2 file-based runtime registries                   | accepted | 2026-06-07 |
+| ADR-0011 | LangGraph planning-only orchestrator                      | accepted | 2026-06-07 |
+| ADR-0012 | Phase 3 agent dispatch gates                              | accepted | 2026-06-07 |

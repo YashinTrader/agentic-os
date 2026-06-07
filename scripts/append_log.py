@@ -9,17 +9,9 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-
-ALLOWED_EVENT_TYPES = {
-    "task_created",
-    "task_assigned",
-    "status_changed",
-    "handoff_written",
-    "reviewed",
-    "decision_recorded",
-    "blocked",
-    "note",
-}
+REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT))
+from protocol.event_types import ALLOWED_EVENT_TYPES  # noqa: E402
 
 
 def utc_now() -> str:

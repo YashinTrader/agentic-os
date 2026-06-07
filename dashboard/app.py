@@ -200,6 +200,25 @@ def load_teams_registry(root_dir: Path) -> tuple[dict | None, list[str]]:
         return None, [f"teams/registry.yaml: failed to parse: {exc}"]
 
 
+def load_orchestrator_latest(root_dir: Path) -> tuple[dict | None, dict | None, list[str]]:
+    """Load latest orchestrator plan and state JSON if present."""
+    errors: list[str] = []
+    base = root_dir / "runtime" / "orchestrator"
+    plan_path = base / "latest_plan.json"
+    state_path = base / "latest_state.json"
+    plan = state = None
+    try:
+        import json
+
+        if plan_path.exists():
+            plan = json.loads(plan_path.read_text(encoding="utf-8"))
+        if state_path.exists():
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        errors.append(f"failed to read orchestrator latest files: {exc}")
+    return plan, state, errors
+
+
 def load_obsidian_mapping(root_dir: Path) -> tuple[dict | None, list[str]]:
     """Load memory/obsidian_mapping.yaml for the Obsidian Sync dashboard tab."""
     errors: list[str] = []
@@ -596,6 +615,7 @@ def generate_dashboard_html(query_params: dict[str, list[str]]) -> str:
     teams_registry, teams_registry_errors = load_teams_registry(ROOT_DIR)
     roles_registry, roles_registry_errors = load_roles_registry(ROOT_DIR)
     obsidian_mapping, obsidian_mapping_errors = load_obsidian_mapping(ROOT_DIR)
+    orchestrator_plan, orchestrator_state, orchestrator_errors = load_orchestrator_latest(ROOT_DIR)
     obsidian_last_sync, obsidian_sync_errors = load_obsidian_last_sync_report(ROOT_DIR, obsidian_mapping)
     obsidian_notes_planned = count_obsidian_notes_planned(ROOT_DIR)
     
@@ -1270,7 +1290,7 @@ def generate_dashboard_html(query_params: dict[str, list[str]]) -> str:
         <div style="flex-grow: 1;"></div>
         
         <div style="font-size: 10px; color: #475569; text-align: center; border-top: 1px solid rgba(255, 255, 255, 0.05); padding-top: 12px;">
-            Antigravity Dashboard • Phase 2.0
+            Antigravity Dashboard • Phase 2.5 (hardened)
         </div>
     </div>
     """)
@@ -1308,6 +1328,7 @@ def generate_dashboard_html(query_params: dict[str, list[str]]) -> str:
                 <a href="/?tab=teams" class="tab-link {'active' if active_tab == 'teams' else ''}">👥 Teams</a>
                 <a href="/?tab=roles" class="tab-link {'active' if active_tab == 'roles' else ''}">🎭 Roles</a>
                 <a href="/?tab=obsidian" class="tab-link {'active' if active_tab == 'obsidian' else ''}">📓 Obsidian Sync</a>
+                <a href="/?tab=orchestrator" class="tab-link {'active' if active_tab == 'orchestrator' else ''}">🧭 Orchestrator</a>
                 <a href="/?tab=health" class="tab-link {'active' if active_tab == 'health' else ''}">🏥 Health Panel</a>
             </div>
     """)
@@ -2347,7 +2368,8 @@ def generate_dashboard_html(query_params: dict[str, list[str]]) -> str:
             <div class="tab-panel {'active' if active_tab == 'obsidian' else ''}">
                 <h3>📓 Obsidian Vault Sync</h3>
                 <p style="font-size:12px; color:#94a3b8; margin-bottom:16px;">
-                    Read-only status for one-way repo → vault sync. Dashboard does not trigger sync in Phase 2.3.
+                    <strong>One-way only:</strong> repo → vault export. No vault → repo import.
+                    Dashboard does not trigger sync. Use <code>python scripts/sync_obsidian.py</code> manually.
                 </p>
     """)
 
@@ -2383,11 +2405,93 @@ python scripts/sync_obsidian.py --vault "&lt;path-to-vault&gt;"</pre>
     """)
 
     # ==========================================
+    # TAB PANEL: ORCHESTRATOR
+    # ==========================================
+    orch_task_options = []
+    orch_tasks_dir = ROOT_DIR / "tasks" / "active"
+    if orch_tasks_dir.exists():
+        for task_file in sorted(orch_tasks_dir.glob("*.yaml")):
+            if task_file.name == "EXAMPLE.yaml":
+                continue
+            orch_task_options.append(task_file.stem)
+
+    orch_run_id = orchestrator_state.get("run_id", "—") if orchestrator_state else "—"
+    orch_task_id = orchestrator_state.get("task_id", "—") if orchestrator_state else "—"
+    orch_team = orchestrator_state.get("selected_team", "—") if orchestrator_state else "—"
+    orch_agents = ", ".join(orchestrator_state.get("selected_agents", [])) if orchestrator_state else "—"
+    orch_approval = orchestrator_state.get("approval_required", "—") if orchestrator_state else "—"
+    orch_reason = orchestrator_state.get("approval_reason", "—") if orchestrator_state else "—"
+    orch_next = orchestrator_state.get("next_action", "—") if orchestrator_state else "—"
+    orch_plan_path = orchestrator_state.get("plan_path", "—") if orchestrator_state else "—"
+    orch_ctx_path = orchestrator_state.get("context_pack_path", "—") if orchestrator_state else "—"
+    orch_warnings = orchestrator_state.get("warnings", []) if orchestrator_state else []
+    orch_errors = orchestrator_state.get("errors", []) if orchestrator_state else []
+
+    html_out.append(f"""
+            <div class="tab-panel {'active' if active_tab == 'orchestrator' else ''}">
+                <h3>🧭 Orchestrator</h3>
+                <p style="font-size:12px; color:#94a3b8; margin-bottom:16px;">
+                    Read-only view of latest LangGraph orchestration plan. Does not execute agents or run LangGraph.
+                </p>
+    """)
+    if orch_errors:
+        html_out.append(
+            '<div class="health-card health-err" style="background:rgba(239,68,68,0.12); border-left:4px solid #ef4444; '
+            'border-radius:6px; padding:12px; margin-bottom:16px;">'
+            '<h4 style="margin:0 0 8px 0; color:#f87171;">Orchestrator errors — fix task input</h4>'
+            + "".join(f'<div style="font-size:11px; color:#fca5a5;">{escape(str(e))}</div>' for e in orch_errors)
+            + "</div>"
+        )
+    html_out.append(f"""
+                <div style="background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.05); border-radius:8px; padding:16px; margin-bottom:16px;">
+                    <div class="inspector-section-title" style="border:none; margin-bottom:10px;">Latest Run</div>
+                    <div class="inspector-meta-row"><span class="inspector-meta-label">Run ID</span><span class="inspector-meta-val">{escape(str(orch_run_id))}</span></div>
+                    <div class="inspector-meta-row"><span class="inspector-meta-label">Task ID</span><span class="inspector-meta-val">{escape(str(orch_task_id))}</span></div>
+                    <div class="inspector-meta-row"><span class="inspector-meta-label">Selected team</span><span class="inspector-meta-val">{escape(str(orch_team))}</span></div>
+                    <div class="inspector-meta-row"><span class="inspector-meta-label">Agents</span><span class="inspector-meta-val">{escape(str(orch_agents))}</span></div>
+                    <div class="inspector-meta-row"><span class="inspector-meta-label">Approval required</span><span class="inspector-meta-val">{escape(str(orch_approval))}</span></div>
+                    <div class="inspector-meta-row"><span class="inspector-meta-label">Approval reason</span><span class="inspector-meta-val" style="font-size:11px;">{escape(str(orch_reason))}</span></div>
+                    <div class="inspector-meta-row"><span class="inspector-meta-label">Next action</span><span class="inspector-meta-val">{escape(str(orch_next))}</span></div>
+                    <div class="inspector-meta-row"><span class="inspector-meta-label">Plan path</span><span class="inspector-meta-val" style="font-size:10px;">{escape(str(orch_plan_path))}</span></div>
+                    <div class="inspector-meta-row"><span class="inspector-meta-label">Context pack</span><span class="inspector-meta-val" style="font-size:10px;">{escape(str(orch_ctx_path))}</span></div>
+                </div>
+                <div style="background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.05); border-radius:8px; padding:16px;">
+                    <div class="inspector-section-title" style="border:none; margin-bottom:10px;">CLI Hint</div>
+                    <pre style="font-size:12px; color:#cbd5e1; white-space:pre-wrap;">python scripts/orchestrate_task.py --task tasks/active/T-EXAMPLE.yaml
+python scripts/orchestrate_task.py --task tasks/active/&lt;task-id&gt;.yaml --json</pre>
+                    <div style="font-size:11px; color:#64748b; margin-top:8px;">Active tasks: {escape(', '.join(orch_task_options[:8]) or '—')}</div>
+                </div>
+    """)
+
+    if orchestrator_errors:
+        for err in orchestrator_errors:
+            html_out.append(f'<div class="event-type-warn" style="margin-top:12px;">{escape(err)}</div>')
+    if orch_warnings:
+        html_out.append('<div style="margin-top:12px; font-size:11px; color:#fbbf24;">Warnings: ' + escape("; ".join(orch_warnings[:5])) + '</div>')
+    if orch_errors:
+        html_out.append('<div style="margin-top:8px; font-size:11px; color:#f87171;">Errors: ' + escape("; ".join(orch_errors)) + '</div>')
+    if not orchestrator_state:
+        html_out.append('<div style="margin-top:12px; font-size:12px; color:#64748b;">No orchestration run yet. Run the CLI to generate latest_state.json.</div>')
+
+    html_out.append("""
+            </div>
+    """)
+
+    # ==========================================
     # TAB PANEL: HEALTH & SAFETY
     # ==========================================
     html_out.append(f"""
             <div class="tab-panel {'active' if active_tab == 'health' else ''}">
                 <h3>🏥 System Diagnostic Log</h3>
+                <div style="background:rgba(59,130,246,0.08); border-left:4px solid #3b82f6; border-radius:6px; padding:14px; margin-bottom:16px;">
+                    <div style="font-size:12px; color:#93c5fd; font-weight:600; margin-bottom:6px;">Phase 2 status (2.5 hardened)</div>
+                    <div style="font-size:11px; color:#cbd5e1; line-height:1.5;">
+                        2.0 Daemon discovery • 2.1 Skills/MCP registries • 2.2 Teams/Roles •
+                        2.3 Obsidian one-way sync • 2.4 LangGraph planning-only orchestrator.
+                        No agent execution, MCP calls, or LLM APIs. Review packet:
+                        <code>docs/PHASE_2_REVIEW_PACKET.md</code>
+                    </div>
+                </div>
     """)
     
     # Distinguish ok vs empty vs error details

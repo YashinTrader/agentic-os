@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 class SchemaV2MigrationTests(unittest.TestCase):
     def make_repo(self) -> Path:
         tmp = Path(tempfile.mkdtemp())
-        for name in ("scripts", "tasks", "logs", "handoffs", "decisions", "docs"):
+        for name in ("scripts", "tasks", "logs", "handoffs", "decisions", "docs", "protocol"):
             src = ROOT / name
             dst = tmp / name
             if src.is_dir():
