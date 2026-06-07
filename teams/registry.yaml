@@ -1,0 +1,336 @@
+schema_version: "1.0"
+updated_at: 2026-06-07T16:00:00Z
+description: >
+  Team registry for Agentic OS. Teams map agents to roles, skills, MCP access,
+  and approval policies. Configuration only in Phase 2.2.
+teams:
+  - id: dashboard-team
+    name: Dashboard Team
+    description: Builds and improves local dashboard and control-plane UX.
+    purpose: Build and improve local dashboard features.
+    orchestrator:
+      agent: gemini
+      external: false
+    members:
+      - agent: gemini
+        role: builder
+        skills:
+          - build-streamlit-dashboard
+        mcps: []
+        priority: 1
+        notes: Primary dashboard builder.
+      - agent: composer
+        role: builder
+        skills:
+          - build-streamlit-dashboard
+          - implement-python-cli
+        mcps: []
+        priority: 2
+        notes: Integrator and dashboard polish.
+      - agent: codex
+        role: builder
+        skills:
+          - implement-python-cli
+          - build-streamlit-dashboard
+        mcps: []
+        priority: 3
+        notes: Also acts as fixer/tester for dashboard regressions.
+      - agent: claude
+        role: reviewer
+        skills:
+          - review-protocol-change
+        mcps: []
+        priority: 1
+        notes: Default architecture and protocol reviewer.
+    default_reviewer:
+      agent: claude
+      external: false
+    required_skills:
+      - build-streamlit-dashboard
+      - implement-python-cli
+    optional_skills:
+      - review-protocol-change
+    allowed_mcps: []
+    approval_policy:
+      default_level: reviewer
+      requires_human_for_high_risk: true
+      notes: Reviewer approval by default; human for high-risk dashboard write paths.
+    task_suitability:
+      labels:
+        - dashboard
+        - ui
+        - kanban
+      keywords:
+        - dashboard
+        - streamlit
+        - kanban
+        - control plane
+      skills:
+        - build-streamlit-dashboard
+      risk_levels:
+        - low
+        - medium
+    status: active
+    notes: Primary team for dashboard/app.py and read-write UX surfaces.
+
+  - id: coding-team
+    name: Coding Team
+    description: Implements CLI tools, validators, and repository utilities.
+    purpose: Implement CLI tools, validators, repo utilities.
+    orchestrator:
+      agent: codex
+      external: false
+    members:
+      - agent: codex
+        role: builder
+        skills:
+          - implement-python-cli
+        mcps: []
+        priority: 1
+        notes: Primary builder for scripts/ and tests/.
+      - agent: composer
+        role: builder
+        skills:
+          - implement-python-cli
+        mcps: []
+        priority: 2
+        notes: Integrator for multi-file CLI features.
+      - agent: claude
+        role: reviewer
+        skills:
+          - review-protocol-change
+        mcps: []
+        priority: 1
+        notes: Protocol and schema reviewer.
+      - agent: gemini
+        role: reviewer
+        skills:
+          - review-protocol-change
+        mcps: []
+        priority: 2
+        notes: Secondary reviewer; may research integration options.
+    default_reviewer:
+      agent: claude
+      external: false
+    required_skills:
+      - implement-python-cli
+      - review-protocol-change
+    optional_skills:
+      - build-streamlit-dashboard
+    allowed_mcps: []
+    approval_policy:
+      default_level: reviewer
+      requires_human_for_high_risk: true
+      notes: Reviewer sign-off on protocol-impacting CLI changes.
+    task_suitability:
+      labels:
+        - cli
+        - scripts
+        - python
+      keywords:
+        - cli
+        - script
+        - validator
+        - python
+        - unittest
+      skills:
+        - implement-python-cli
+      risk_levels:
+        - low
+        - medium
+    status: active
+    notes: Default team for scripts/ and validation tooling work.
+
+  - id: review-team
+    name: Review Team
+    description: Reviews protocol, architecture, handoffs, and risky changes.
+    purpose: Review protocol, architecture, handoffs, risky changes.
+    orchestrator:
+      agent: claude
+      external: false
+    members:
+      - agent: claude
+        role: reviewer
+        skills:
+          - review-protocol-change
+        mcps: []
+        priority: 1
+        notes: Lead protocol reviewer.
+      - agent: gemini
+        role: reviewer
+        skills:
+          - review-protocol-change
+        mcps: []
+        priority: 2
+        notes: Secondary reviewer and research support.
+      - agent: composer
+        role: reviewer
+        skills:
+          - review-protocol-change
+        mcps: []
+        priority: 3
+        notes: Integrator review for cross-phase changes.
+    default_reviewer:
+      agent: claude
+      external: false
+    required_skills:
+      - review-protocol-change
+    optional_skills:
+      - summarize-logs
+    allowed_mcps: []
+    approval_policy:
+      default_level: reviewer
+      requires_human_for_high_risk: true
+      notes: Human escalation for high-risk governance changes.
+    task_suitability:
+      labels:
+        - review
+        - protocol
+        - adr
+        - governance
+      keywords:
+        - review
+        - protocol
+        - handoff
+        - adr
+        - schema
+        - governance
+      skills:
+        - review-protocol-change
+      risk_levels:
+        - low
+        - medium
+        - high
+    status: active
+    notes: Use for review-only tasks and end-of-phase audits.
+
+  - id: memory-team
+    name: Memory Team
+    description: Prepares future memory, librarian workflows, and Obsidian sync.
+    purpose: Prepare future memory and Obsidian sync.
+    orchestrator:
+      agent: claude
+      external: false
+    members:
+      - agent: claude
+        role: orchestrator
+        skills:
+          - summarize-logs
+          - review-protocol-change
+        mcps:
+          - obsidian-local-rest
+        priority: 1
+        notes: Orchestrates memory architecture; also reviews risky memory changes.
+      - agent: gemini
+        role: researcher
+        skills:
+          - summarize-logs
+        mcps: []
+        priority: 2
+        notes: Researches memory tooling options.
+      - agent: composer
+        role: builder
+        skills:
+          - implement-python-cli
+          - summarize-logs
+        mcps: []
+        priority: 3
+        notes: Builds librarian scripts and registry glue.
+      - agent: hermes
+        role: summarizer
+        skills:
+          - summarize-logs
+        mcps: []
+        priority: 2
+        notes: Log and handoff summarization.
+    default_reviewer:
+      agent: claude
+      external: false
+    required_skills:
+      - summarize-logs
+    optional_skills:
+      - review-protocol-change
+      - implement-python-cli
+    allowed_mcps:
+      - obsidian-local-rest
+    approval_policy:
+      default_level: reviewer
+      requires_human_for_high_risk: true
+      notes: Human approval before any future vault sync execution.
+    task_suitability:
+      labels:
+        - memory
+        - librarian
+        - obsidian
+        - cognee
+      keywords:
+        - memory
+        - librarian
+        - obsidian
+        - cognee
+        - semantic
+      skills:
+        - summarize-logs
+      risk_levels:
+        - low
+        - medium
+    status: planned
+    notes: Planned team for Phase 2.3+ memory work. No Obsidian sync in Phase 2.2.
+
+  - id: research-team
+    name: Research Team
+    description: Researches tools, MCPs, frameworks, and integration options.
+    purpose: Research tools, MCPs, frameworks and integration options.
+    orchestrator:
+      agent: gemini
+      external: false
+    members:
+      - agent: gemini
+        role: researcher
+        skills: []
+        mcps: []
+        priority: 1
+        notes: Primary researcher.
+      - agent: grok
+        role: researcher
+        skills: []
+        mcps: []
+        priority: 2
+        notes: Secondary researcher for tooling scans.
+      - agent: claude
+        role: reviewer
+        skills:
+          - review-protocol-change
+        mcps: []
+        priority: 1
+        notes: Reviews research conclusions and ADR drafts.
+    default_reviewer:
+      agent: claude
+      external: false
+    required_skills: []
+    optional_skills:
+      - review-protocol-change
+      - summarize-logs
+    allowed_mcps: []
+    approval_policy:
+      default_level: reviewer
+      requires_human_for_high_risk: false
+      notes: Research outputs require reviewer sign-off before implementation tasks.
+    task_suitability:
+      labels:
+        - research
+        - mcp
+        - integration
+        - evaluation
+      keywords:
+        - research
+        - evaluate
+        - compare
+        - mcp
+        - framework
+        - langgraph
+      skills: []
+      risk_levels:
+        - low
+    status: planned
+    notes: Planned team for integration research; no external API calls in Phase 2.2.

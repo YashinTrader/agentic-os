@@ -1,0 +1,22 @@
+id: memory_librarian
+name: Memory Librarian
+description: Curates memory candidates, logs, and future vault sync boundaries.
+responsibilities:
+  - Summarize and index handoffs and logs
+  - Prepare memory architecture inputs
+  - Enforce write rules for memory surfaces
+allowed_agents:
+  - claude
+  - hermes
+  - composer
+required_skills:
+  - summarize-logs
+optional_skills: []
+allowed_mcps:
+  - obsidian-local-rest
+risk_level: medium
+approval_level: reviewer
+can_delegate: false
+can_review: false
+can_execute: false
+notes: Example role entry. Canonical source is roles/registry.yaml.

@@ -1,0 +1,23 @@
+id: reviewer
+name: Reviewer
+description: Reviews protocol, architecture, handoffs, and risky changes.
+responsibilities:
+  - Review PRs, handoffs, and ADR proposals
+  - Validate schema and safety constraints
+  - Recommend next actions for builders
+allowed_agents:
+  - claude
+  - gemini
+  - composer
+  - human
+required_skills:
+  - review-protocol-change
+optional_skills:
+  - summarize-logs
+allowed_mcps: []
+risk_level: medium
+approval_level: reviewer
+can_delegate: false
+can_review: true
+can_execute: false
+notes: Example role entry. Canonical source is roles/registry.yaml.

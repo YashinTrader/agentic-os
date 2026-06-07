@@ -1,0 +1,23 @@
+id: researcher
+name: Researcher
+description: Researches tools, MCPs, frameworks, and integration options.
+responsibilities:
+  - Produce evidence-backed research notes
+  - Compare integration options without executing them
+  - Feed findings into tasks and ADRs
+allowed_agents:
+  - gemini
+  - grok
+  - claude
+  - composer
+required_skills: []
+optional_skills:
+  - summarize-logs
+  - review-protocol-change
+allowed_mcps: []
+risk_level: low
+approval_level: none
+can_delegate: false
+can_review: false
+can_execute: false
+notes: Example role entry. Canonical source is roles/registry.yaml.

@@ -132,6 +132,51 @@ ALLOWED_MCP_TRANSPORTS = {"stdio", "streamable_http", "sse", "unknown"}
 ALLOWED_MCP_APPROVAL_LEVELS = {"none", "reviewer", "human", "blocked"}
 MCP_LIST_FIELDS = {"args", "env_vars_required", "allowed_agents", "capabilities"}
 
+ROLE_REQUIRED_FIELDS = {
+    "id",
+    "name",
+    "description",
+    "responsibilities",
+    "allowed_agents",
+    "required_skills",
+    "optional_skills",
+    "allowed_mcps",
+    "risk_level",
+    "approval_level",
+    "can_delegate",
+    "can_review",
+    "can_execute",
+    "notes",
+}
+ROLE_LIST_FIELDS = {
+    "responsibilities",
+    "allowed_agents",
+    "required_skills",
+    "optional_skills",
+    "allowed_mcps",
+}
+ALLOWED_ROLE_APPROVAL_LEVELS = {"none", "reviewer", "human", "blocked"}
+
+TEAM_REQUIRED_FIELDS = {
+    "id",
+    "name",
+    "description",
+    "purpose",
+    "orchestrator",
+    "members",
+    "default_reviewer",
+    "required_skills",
+    "optional_skills",
+    "allowed_mcps",
+    "approval_policy",
+    "task_suitability",
+    "status",
+    "notes",
+}
+TEAM_MEMBER_REQUIRED_FIELDS = {"agent", "role", "skills", "mcps", "priority", "notes"}
+TEAM_LIST_FIELDS = {"required_skills", "optional_skills", "allowed_mcps"}
+ALLOWED_TEAM_STATUSES = {"active", "planned", "disabled"}
+
 
 def task_files() -> list[Path]:
     paths: list[Path] = []
@@ -412,6 +457,232 @@ def validate_mcps_registry(errors: list[str]) -> None:
             errors.append(f"{prefix} ({mcp_id}): planned MCPs must have endpoint: null")
 
 
+def _load_registry_ids(path: Path, key: str) -> set[str]:
+    if not path.exists():
+        return set()
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except Exception:
+        return set()
+    if not isinstance(data, dict):
+        return set()
+    return {
+        item.get("id")
+        for item in data.get(key, [])
+        if isinstance(item, dict) and isinstance(item.get("id"), str)
+    }
+
+
+def _validate_agent_ref(
+    errors: list[str],
+    prefix: str,
+    ref: Any,
+    field_name: str,
+    member_agents: set[str],
+) -> None:
+    if not isinstance(ref, dict):
+        errors.append(f"{prefix}: {field_name} must be a mapping with agent and external")
+        return
+    agent = ref.get("agent")
+    external = ref.get("external")
+    if not isinstance(agent, str) or not agent.strip():
+        errors.append(f"{prefix}: {field_name}.agent must be a non-empty string")
+        return
+    if not isinstance(external, bool):
+        errors.append(f"{prefix}: {field_name}.external must be a boolean")
+        return
+    if not external and agent not in member_agents:
+        errors.append(
+            f"{prefix}: {field_name}.agent {agent!r} must appear in members or external must be true"
+        )
+
+
+def _validate_skill_refs(
+    errors: list[str],
+    prefix: str,
+    skill_ids: set[str],
+    refs: Any,
+    field_name: str,
+) -> None:
+    if not isinstance(refs, list):
+        return
+    for ref in refs:
+        if isinstance(ref, str) and ref not in skill_ids:
+            errors.append(f"{prefix}: {field_name} references unknown skill id {ref!r}")
+
+
+def _validate_mcp_refs(
+    errors: list[str],
+    prefix: str,
+    mcp_ids: set[str],
+    refs: Any,
+    field_name: str,
+) -> None:
+    if not isinstance(refs, list):
+        return
+    for ref in refs:
+        if isinstance(ref, str) and ref and ref not in mcp_ids:
+            errors.append(f"{prefix}: {field_name} references unknown MCP id {ref!r}")
+
+
+def validate_roles_registry(errors: list[str], skill_ids: set[str], mcp_ids: set[str]) -> set[str]:
+    path = ROOT / "roles" / "registry.yaml"
+    rel = path.relative_to(ROOT)
+    role_ids: set[str] = set()
+    if not path.exists():
+        errors.append(f"{rel}: file does not exist")
+        return role_ids
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        errors.append(f"{rel}: invalid YAML: {exc}")
+        return role_ids
+    if not isinstance(data, dict):
+        errors.append(f"{rel}: root must be a YAML mapping")
+        return role_ids
+    roles = data.get("roles")
+    if not isinstance(roles, list):
+        errors.append(f"{rel}: roles must be a list")
+        return role_ids
+    if not roles:
+        errors.append(f"{rel}: roles must contain at least one entry")
+        return role_ids
+
+    seen_ids: set[str] = set()
+    for index, role in enumerate(roles, start=1):
+        prefix = f"{rel}:roles[{index}]"
+        if not isinstance(role, dict):
+            errors.append(f"{prefix}: role entry must be a mapping")
+            continue
+        role_id = role.get("id")
+        if not isinstance(role_id, str) or not role_id.strip():
+            errors.append(f"{prefix}: id must be a non-empty string")
+        elif role_id in seen_ids:
+            errors.append(f"{prefix}: duplicate role id {role_id!r}")
+        else:
+            seen_ids.add(role_id)
+            role_ids.add(role_id)
+
+        missing = sorted(ROLE_REQUIRED_FIELDS - set(role))
+        if missing:
+            errors.append(f"{prefix} ({role_id or 'unknown'}): missing required fields: {', '.join(missing)}")
+
+        if role.get("risk_level") not in ALLOWED_RISK_LEVELS:
+            errors.append(f"{prefix} ({role_id}): invalid risk_level {role.get('risk_level')!r}")
+        if role.get("approval_level") not in ALLOWED_ROLE_APPROVAL_LEVELS:
+            errors.append(f"{prefix} ({role_id}): invalid approval_level {role.get('approval_level')!r}")
+
+        for flag in ("can_delegate", "can_review", "can_execute"):
+            if not isinstance(role.get(flag), bool):
+                errors.append(f"{prefix} ({role_id}): {flag} must be a boolean")
+
+        for list_field in ROLE_LIST_FIELDS:
+            if list_field in role and not isinstance(role[list_field], list):
+                errors.append(f"{prefix} ({role_id}): {list_field} must be a list")
+
+        _validate_skill_refs(errors, prefix, skill_ids, role.get("required_skills"), "required_skills")
+        _validate_skill_refs(errors, prefix, skill_ids, role.get("optional_skills"), "optional_skills")
+        _validate_mcp_refs(errors, prefix, mcp_ids, role.get("allowed_mcps"), "allowed_mcps")
+
+    return role_ids
+
+
+def validate_teams_registry(
+    errors: list[str],
+    skill_ids: set[str],
+    mcp_ids: set[str],
+    role_ids: set[str],
+) -> None:
+    path = ROOT / "teams" / "registry.yaml"
+    rel = path.relative_to(ROOT)
+    if not path.exists():
+        errors.append(f"{rel}: file does not exist")
+        return
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        errors.append(f"{rel}: invalid YAML: {exc}")
+        return
+    if not isinstance(data, dict):
+        errors.append(f"{rel}: root must be a YAML mapping")
+        return
+    teams = data.get("teams")
+    if not isinstance(teams, list):
+        errors.append(f"{rel}: teams must be a list")
+        return
+    if not teams:
+        errors.append(f"{rel}: teams must contain at least one entry")
+        return
+
+    seen_ids: set[str] = set()
+    for index, team in enumerate(teams, start=1):
+        prefix = f"{rel}:teams[{index}]"
+        if not isinstance(team, dict):
+            errors.append(f"{prefix}: team entry must be a mapping")
+            continue
+        team_id = team.get("id")
+        if not isinstance(team_id, str) or not team_id.strip():
+            errors.append(f"{prefix}: id must be a non-empty string")
+        elif team_id in seen_ids:
+            errors.append(f"{prefix}: duplicate team id {team_id!r}")
+        else:
+            seen_ids.add(team_id)
+
+        missing = sorted(TEAM_REQUIRED_FIELDS - set(team))
+        if missing:
+            errors.append(f"{prefix} ({team_id or 'unknown'}): missing required fields: {', '.join(missing)}")
+
+        status = team.get("status")
+        if status not in ALLOWED_TEAM_STATUSES:
+            errors.append(f"{prefix} ({team_id}): invalid status {status!r}")
+
+        for list_field in TEAM_LIST_FIELDS:
+            if list_field in team and not isinstance(team[list_field], list):
+                errors.append(f"{prefix} ({team_id}): {list_field} must be a list")
+
+        _validate_skill_refs(errors, prefix, skill_ids, team.get("required_skills"), "required_skills")
+        _validate_skill_refs(errors, prefix, skill_ids, team.get("optional_skills"), "optional_skills")
+        _validate_mcp_refs(errors, prefix, mcp_ids, team.get("allowed_mcps"), "allowed_mcps")
+
+        members = team.get("members", [])
+        if not isinstance(members, list) or not members:
+            errors.append(f"{prefix} ({team_id}): members must be a non-empty list")
+            member_agents: set[str] = set()
+        else:
+            member_agents = set()
+            for m_index, member in enumerate(members, start=1):
+                m_prefix = f"{prefix}:members[{m_index}]"
+                if not isinstance(member, dict):
+                    errors.append(f"{m_prefix}: member must be a mapping")
+                    continue
+                m_missing = sorted(TEAM_MEMBER_REQUIRED_FIELDS - set(member))
+                if m_missing:
+                    errors.append(f"{m_prefix}: missing required fields: {', '.join(m_missing)}")
+                agent = member.get("agent")
+                role = member.get("role")
+                if isinstance(agent, str):
+                    member_agents.add(agent)
+                if isinstance(role, str) and role not in role_ids:
+                    errors.append(f"{m_prefix}: role {role!r} not found in roles/registry.yaml")
+                if not isinstance(member.get("priority"), int):
+                    errors.append(f"{m_prefix}: priority must be an integer")
+                if not isinstance(member.get("skills"), list):
+                    errors.append(f"{m_prefix}: skills must be a list")
+                else:
+                    _validate_skill_refs(errors, m_prefix, skill_ids, member.get("skills"), "skills")
+                if not isinstance(member.get("mcps"), list):
+                    errors.append(f"{m_prefix}: mcps must be a list")
+                else:
+                    _validate_mcp_refs(errors, m_prefix, mcp_ids, member.get("mcps"), "mcps")
+
+        _validate_agent_ref(errors, prefix, team.get("orchestrator"), "orchestrator", member_agents)
+        _validate_agent_ref(errors, prefix, team.get("default_reviewer"), "default_reviewer", member_agents)
+
+        policy = team.get("approval_policy")
+        if not isinstance(policy, dict):
+            errors.append(f"{prefix} ({team_id}): approval_policy must be a mapping")
+
+
 def validate_skill_mcp_references(errors: list[str]) -> None:
     skills_path = ROOT / "skills" / "registry.yaml"
     mcps_path = ROOT / "mcps" / "registry.yaml"
@@ -451,6 +722,10 @@ def main() -> int:
     validate_skills_registry(errors)
     validate_mcps_registry(errors)
     validate_skill_mcp_references(errors)
+    skill_ids = _load_registry_ids(ROOT / "skills" / "registry.yaml", "skills")
+    mcp_ids = _load_registry_ids(ROOT / "mcps" / "registry.yaml", "mcps")
+    role_ids = validate_roles_registry(errors, skill_ids, mcp_ids)
+    validate_teams_registry(errors, skill_ids, mcp_ids, role_ids)
 
     for warning in warnings:
         print(f"Warning: {warning}", file=sys.stderr)

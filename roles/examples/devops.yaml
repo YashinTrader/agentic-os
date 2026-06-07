@@ -1,0 +1,23 @@
+id: devops
+name: DevOps
+description: Infrastructure, deployment, and high-risk operational changes.
+responsibilities:
+  - Manage deployment and runtime configuration
+  - Operate guarded MCP and secret surfaces
+  - Enforce human approval on production changes
+allowed_agents:
+  - codex
+  - composer
+  - human
+required_skills:
+  - implement-python-cli
+optional_skills: []
+allowed_mcps:
+  - filesystem
+  - github
+risk_level: high
+approval_level: human
+can_delegate: false
+can_review: false
+can_execute: true
+notes: Example role entry. Canonical source is roles/registry.yaml.

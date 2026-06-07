@@ -1,0 +1,71 @@
+id: T-TEAMS-ROLES-001
+title: Teams and roles registry — assignment metadata and suggestion
+owner: composer
+reviewer: claude
+created_by: composer
+status: review
+phase: "2.2"
+created_at: 2026-06-07T16:00:00Z
+updated_at: 2026-06-07T16:00:00Z
+priority: high
+risk_level: low
+requires_human_approval: false
+human_approval_checklist: []
+objective: >
+  Create local-first team and role registries with cross-reference validation,
+  CLI listing helpers, deterministic team suggestion, and read-only dashboard
+  tabs. Prepare for LangGraph orchestration without executing agents or MCPs.
+context: |
+  Phase 2.0 added CLI discovery; Phase 2.1 added skills and MCP registries.
+  Phase 2.2 maps agents into teams and roles with approval policies and task
+  suitability rules for future orchestration.
+goals:
+  - Define roles/registry.yaml with eight canonical roles and capability flags
+  - Define teams/registry.yaml with five teams and member rosters
+  - Extend validation with skill/MCP/role cross-references
+  - Add list_teams.py, list_roles.py, and suggest_team.py
+  - Add dashboard Teams and Roles tabs with read-only suggestion panel
+  - Document protocol in docs/TEAMS_AND_ROLES.md
+non_goals:
+  - LangGraph, autonomous routing, or agent execution
+  - MCP execution, Obsidian sync, or database
+  - Automatic task assignment
+  - External API or LLM calls in suggest_team
+inputs:
+  - skills/registry.yaml
+  - mcps/registry.yaml
+  - scripts/validate.py
+  - dashboard/app.py
+  - docs/SKILLS_AND_MCPS.md
+outputs:
+  - roles/registry.yaml
+  - roles/README.md
+  - roles/examples/
+  - teams/registry.yaml
+  - teams/README.md
+  - teams/examples/
+  - scripts/list_teams.py
+  - scripts/list_roles.py
+  - scripts/suggest_team.py
+  - docs/TEAMS_AND_ROLES.md
+  - tests/test_roles_registry.py
+  - tests/test_teams_registry.py
+  - tests/test_team_suggestion.py
+  - dashboard/app.py
+  - tasks/active/T-TEAMS-ROLES-001.yaml
+  - handoffs/T-TEAMS-ROLES-001__composer__to__claude.md
+constraints:
+  - No agent launching, MCP execution, or external API calls
+  - Cross-reference validation must not require installed CLIs
+  - PyYAML only; no new dependencies
+  - Dashboard read-only for team/role registries
+acceptance:
+  - roles/registry.yaml and teams/registry.yaml validate via scripts/validate.py
+  - Cross-reference errors fail validation for unknown skills/roles/MCPs
+  - suggest_team.py returns dashboard-team for dashboard skill/tasks
+  - suggest_team.py returns coding-team for Python CLI skill/tasks
+  - Dashboard Teams/Roles tabs render with filters and read-only suggestion panel
+  - python -m unittest and python scripts/validate.py pass
+notes: >
+  Hand off to claude for end-of-Phase-2 governance review. Next milestone:
+  Phase 2.3 — Obsidian Vault Sync.

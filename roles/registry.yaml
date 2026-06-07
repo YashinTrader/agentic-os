@@ -1,0 +1,194 @@
+schema_version: "1.0"
+updated_at: 2026-06-07T16:00:00Z
+description: >
+  Role registry for Agentic OS. Roles define responsibilities, skill/MCP access,
+  governance flags, and agent eligibility. Configuration only in Phase 2.2.
+roles:
+  - id: orchestrator
+    name: Orchestrator
+    description: Coordinates work across agents and teams without direct execution.
+    responsibilities:
+      - Route tasks to suitable builders and reviewers
+      - Maintain handoff continuity and task state awareness
+      - Escalate blocked or high-risk work
+    allowed_agents:
+      - claude
+      - composer
+      - gemini
+      - hermes
+    required_skills: []
+    optional_skills:
+      - summarize-logs
+      - review-protocol-change
+    allowed_mcps: []
+    risk_level: medium
+    approval_level: reviewer
+    can_delegate: true
+    can_review: false
+    can_execute: false
+    notes: Planning and coordination role only in Phase 2.2.
+
+  - id: builder
+    name: Builder
+    description: Implements code, CLI utilities, dashboards, and repo changes.
+    responsibilities:
+      - Write and test implementation changes
+      - Follow file-based protocol and handoff requirements
+      - Log significant actions to agent-events.jsonl
+    allowed_agents:
+      - codex
+      - composer
+      - cursor
+      - gemini
+    required_skills:
+      - implement-python-cli
+    optional_skills:
+      - build-streamlit-dashboard
+    allowed_mcps: []
+    risk_level: medium
+    approval_level: reviewer
+    can_delegate: false
+    can_review: false
+    can_execute: true
+    notes: Execution flag is metadata for future orchestration gates.
+
+  - id: reviewer
+    name: Reviewer
+    description: Reviews protocol, architecture, handoffs, and risky changes.
+    responsibilities:
+      - Review PRs, handoffs, and ADR proposals
+      - Validate schema and safety constraints
+      - Recommend next actions for builders
+    allowed_agents:
+      - claude
+      - gemini
+      - composer
+      - human
+    required_skills:
+      - review-protocol-change
+    optional_skills:
+      - summarize-logs
+    allowed_mcps: []
+    risk_level: medium
+    approval_level: reviewer
+    can_delegate: false
+    can_review: true
+    can_execute: false
+    notes: Reviewer role does not merge to main.
+
+  - id: researcher
+    name: Researcher
+    description: Researches tools, MCPs, frameworks, and integration options.
+    responsibilities:
+      - Produce evidence-backed research notes
+      - Compare integration options without executing them
+      - Feed findings into tasks and ADRs
+    allowed_agents:
+      - gemini
+      - grok
+      - claude
+      - composer
+    required_skills: []
+    optional_skills:
+      - summarize-logs
+      - review-protocol-change
+    allowed_mcps: []
+    risk_level: low
+    approval_level: none
+    can_delegate: false
+    can_review: false
+    can_execute: false
+    notes: Read-only research; no external API calls in Phase 2.2.
+
+  - id: memory_librarian
+    name: Memory Librarian
+    description: Curates memory candidates, logs, and future vault sync boundaries.
+    responsibilities:
+      - Summarize and index handoffs and logs
+      - Prepare memory architecture inputs
+      - Enforce write rules for memory surfaces
+    allowed_agents:
+      - claude
+      - hermes
+      - composer
+    required_skills:
+      - summarize-logs
+    optional_skills: []
+    allowed_mcps:
+      - obsidian-local-rest
+    risk_level: medium
+    approval_level: reviewer
+    can_delegate: false
+    can_review: false
+    can_execute: false
+    notes: MCP access is planned metadata only.
+
+  - id: qa_redteam
+    name: QA / Red Team
+    description: Adversarial review, guardrail parity, and regression detection.
+    responsibilities:
+      - Challenge assumptions in risky changes
+      - Verify tests and validator coverage
+      - Flag security and protocol regressions
+    allowed_agents:
+      - claude
+      - gemini
+      - composer
+    required_skills:
+      - review-protocol-change
+    optional_skills:
+      - implement-python-cli
+    allowed_mcps: []
+    risk_level: medium
+    approval_level: reviewer
+    can_delegate: false
+    can_review: true
+    can_execute: false
+    notes: Red-team review is advisory until orchestration enforces it.
+
+  - id: summarizer
+    name: Summarizer
+    description: Produces concise status summaries from logs and handoffs.
+    responsibilities:
+      - Summarize event logs and handoff chains
+      - Produce human-readable status briefs
+      - Support nightly or on-demand summaries
+    allowed_agents:
+      - hermes
+      - gemini
+      - claude
+      - composer
+    required_skills:
+      - summarize-logs
+    optional_skills: []
+    allowed_mcps: []
+    risk_level: low
+    approval_level: none
+    can_delegate: false
+    can_review: false
+    can_execute: false
+    notes: No LLM automation in Phase 2.2; role is registry metadata.
+
+  - id: devops
+    name: DevOps
+    description: Infrastructure, deployment, and high-risk operational changes.
+    responsibilities:
+      - Manage deployment and runtime configuration
+      - Operate guarded MCP and secret surfaces
+      - Enforce human approval on production changes
+    allowed_agents:
+      - codex
+      - composer
+      - human
+    required_skills:
+      - implement-python-cli
+    optional_skills: []
+    allowed_mcps:
+      - filesystem
+      - github
+    risk_level: high
+    approval_level: human
+    can_delegate: false
+    can_review: false
+    can_execute: true
+    notes: High-risk role; human approval required before future execution.

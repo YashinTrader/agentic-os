@@ -1,0 +1,23 @@
+id: orchestrator
+name: Orchestrator
+description: Coordinates work across agents and teams without direct execution.
+responsibilities:
+  - Route tasks to suitable builders and reviewers
+  - Maintain handoff continuity and task state awareness
+  - Escalate blocked or high-risk work
+allowed_agents:
+  - claude
+  - composer
+  - gemini
+  - hermes
+required_skills: []
+optional_skills:
+  - summarize-logs
+  - review-protocol-change
+allowed_mcps: []
+risk_level: medium
+approval_level: reviewer
+can_delegate: true
+can_review: false
+can_execute: false
+notes: Example role entry. Canonical source is roles/registry.yaml.

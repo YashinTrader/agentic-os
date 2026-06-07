@@ -1,0 +1,57 @@
+id: research-team
+name: Research Team
+description: Researches tools, MCPs, frameworks, and integration options.
+purpose: Research tools, MCPs, frameworks and integration options.
+orchestrator:
+  agent: gemini
+  external: false
+members:
+  - agent: gemini
+    role: researcher
+    skills: []
+    mcps: []
+    priority: 1
+    notes: Primary researcher.
+  - agent: grok
+    role: researcher
+    skills: []
+    mcps: []
+    priority: 2
+    notes: Secondary researcher for tooling scans.
+  - agent: claude
+    role: reviewer
+    skills:
+      - review-protocol-change
+    mcps: []
+    priority: 1
+    notes: Reviews research conclusions and ADR drafts.
+default_reviewer:
+  agent: claude
+  external: false
+required_skills: []
+optional_skills:
+  - review-protocol-change
+  - summarize-logs
+allowed_mcps: []
+approval_policy:
+  default_level: reviewer
+  requires_human_for_high_risk: false
+  notes: Research outputs require reviewer sign-off before implementation tasks.
+task_suitability:
+  labels:
+    - research
+    - mcp
+    - integration
+    - evaluation
+  keywords:
+    - research
+    - evaluate
+    - compare
+    - mcp
+    - framework
+    - langgraph
+  skills: []
+  risk_levels:
+    - low
+status: planned
+notes: Planned team for integration research; no external API calls in Phase 2.2. Example team entry. Canonical source is teams/registry.yaml.
