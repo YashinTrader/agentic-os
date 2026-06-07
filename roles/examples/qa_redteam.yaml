@@ -1,0 +1,22 @@
+id: qa_redteam
+name: QA / Red Team
+description: Adversarial review, guardrail parity, and regression detection.
+responsibilities:
+  - Challenge assumptions in risky changes
+  - Verify tests and validator coverage
+  - Flag security and protocol regressions
+allowed_agents:
+  - claude
+  - gemini
+  - composer
+required_skills:
+  - review-protocol-change
+optional_skills:
+  - implement-python-cli
+allowed_mcps: []
+risk_level: medium
+approval_level: reviewer
+can_delegate: false
+can_review: true
+can_execute: false
+notes: Example role entry. Canonical source is roles/registry.yaml.

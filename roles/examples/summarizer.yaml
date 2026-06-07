@@ -1,0 +1,22 @@
+id: summarizer
+name: Summarizer
+description: Produces concise status summaries from logs and handoffs.
+responsibilities:
+  - Summarize event logs and handoff chains
+  - Produce human-readable status briefs
+  - Support nightly or on-demand summaries
+allowed_agents:
+  - hermes
+  - gemini
+  - claude
+  - composer
+required_skills:
+  - summarize-logs
+optional_skills: []
+allowed_mcps: []
+risk_level: low
+approval_level: none
+can_delegate: false
+can_review: false
+can_execute: false
+notes: Example role entry. Canonical source is roles/registry.yaml.

@@ -1,0 +1,62 @@
+id: review-team
+name: Review Team
+description: Reviews protocol, architecture, handoffs, and risky changes.
+purpose: Review protocol, architecture, handoffs, risky changes.
+orchestrator:
+  agent: claude
+  external: false
+members:
+  - agent: claude
+    role: reviewer
+    skills:
+      - review-protocol-change
+    mcps: []
+    priority: 1
+    notes: Lead protocol reviewer.
+  - agent: gemini
+    role: reviewer
+    skills:
+      - review-protocol-change
+    mcps: []
+    priority: 2
+    notes: Secondary reviewer and research support.
+  - agent: composer
+    role: reviewer
+    skills:
+      - review-protocol-change
+    mcps: []
+    priority: 3
+    notes: Integrator review for cross-phase changes.
+default_reviewer:
+  agent: claude
+  external: false
+required_skills:
+  - review-protocol-change
+optional_skills:
+  - summarize-logs
+allowed_mcps: []
+approval_policy:
+  default_level: reviewer
+  requires_human_for_high_risk: true
+  notes: Human escalation for high-risk governance changes.
+task_suitability:
+  labels:
+    - review
+    - protocol
+    - adr
+    - governance
+  keywords:
+    - review
+    - protocol
+    - handoff
+    - adr
+    - schema
+    - governance
+  skills:
+    - review-protocol-change
+  risk_levels:
+    - low
+    - medium
+    - high
+status: active
+notes: Use for review-only tasks and end-of-phase audits. Example team entry. Canonical source is teams/registry.yaml.

@@ -1,0 +1,72 @@
+id: memory-team
+name: Memory Team
+description: Prepares future memory, librarian workflows, and Obsidian sync.
+purpose: Prepare future memory and Obsidian sync.
+orchestrator:
+  agent: claude
+  external: false
+members:
+  - agent: claude
+    role: orchestrator
+    skills:
+      - summarize-logs
+      - review-protocol-change
+    mcps:
+      - obsidian-local-rest
+    priority: 1
+    notes: Orchestrates memory architecture; also reviews risky memory changes.
+  - agent: gemini
+    role: researcher
+    skills:
+      - summarize-logs
+    mcps: []
+    priority: 2
+    notes: Researches memory tooling options.
+  - agent: composer
+    role: builder
+    skills:
+      - implement-python-cli
+      - summarize-logs
+    mcps: []
+    priority: 3
+    notes: Builds librarian scripts and registry glue.
+  - agent: hermes
+    role: summarizer
+    skills:
+      - summarize-logs
+    mcps: []
+    priority: 2
+    notes: Log and handoff summarization.
+default_reviewer:
+  agent: claude
+  external: false
+required_skills:
+  - summarize-logs
+optional_skills:
+  - review-protocol-change
+  - implement-python-cli
+allowed_mcps:
+  - obsidian-local-rest
+approval_policy:
+  default_level: reviewer
+  requires_human_for_high_risk: true
+  notes: Human approval before any future vault sync execution.
+task_suitability:
+  labels:
+    - memory
+    - librarian
+    - obsidian
+    - cognee
+  keywords:
+    - memory
+    - librarian
+    - obsidian
+    - cognee
+    - semantic
+  skills:
+    - summarize-logs
+  risk_levels:
+    - low
+    - medium
+status: planned
+notes: Planned team for Phase 2.3+ memory work. No Obsidian sync in Phase 2.2. Example team entry. Canonical source is teams/registry.yaml.

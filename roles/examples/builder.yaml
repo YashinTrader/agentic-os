@@ -1,0 +1,23 @@
+id: builder
+name: Builder
+description: Implements code, CLI utilities, dashboards, and repo changes.
+responsibilities:
+  - Write and test implementation changes
+  - Follow file-based protocol and handoff requirements
+  - Log significant actions to agent-events.jsonl
+allowed_agents:
+  - codex
+  - composer
+  - cursor
+  - gemini
+required_skills:
+  - implement-python-cli
+optional_skills:
+  - build-streamlit-dashboard
+allowed_mcps: []
+risk_level: medium
+approval_level: reviewer
+can_delegate: false
+can_review: false
+can_execute: true
+notes: Example role entry. Canonical source is roles/registry.yaml.

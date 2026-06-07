@@ -180,6 +180,46 @@ def load_skills_registry(root_dir: Path) -> tuple[dict | None, list[str]]:
         return None, [f"skills/registry.yaml: failed to parse: {exc}"]
 
 
+def load_teams_registry(root_dir: Path) -> tuple[dict | None, list[str]]:
+    """Load teams/registry.yaml for the Teams dashboard tab."""
+    errors: list[str] = []
+    registry_path = root_dir / "teams" / "registry.yaml"
+    if not registry_path.exists():
+        return None, ["teams/registry.yaml: file does not exist"]
+    try:
+        data = yaml.safe_load(registry_path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            errors.append("teams/registry.yaml: root must be a YAML mapping")
+            return None, errors
+        teams = data.get("teams", [])
+        if not isinstance(teams, list):
+            errors.append("teams/registry.yaml: teams must be a list")
+            return None, errors
+        return data, errors
+    except Exception as exc:
+        return None, [f"teams/registry.yaml: failed to parse: {exc}"]
+
+
+def load_roles_registry(root_dir: Path) -> tuple[dict | None, list[str]]:
+    """Load roles/registry.yaml for the Roles dashboard tab."""
+    errors: list[str] = []
+    registry_path = root_dir / "roles" / "registry.yaml"
+    if not registry_path.exists():
+        return None, ["roles/registry.yaml: file does not exist"]
+    try:
+        data = yaml.safe_load(registry_path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            errors.append("roles/registry.yaml: root must be a YAML mapping")
+            return None, errors
+        roles = data.get("roles", [])
+        if not isinstance(roles, list):
+            errors.append("roles/registry.yaml: roles must be a list")
+            return None, errors
+        return data, errors
+    except Exception as exc:
+        return None, [f"roles/registry.yaml: failed to parse: {exc}"]
+
+
 def load_mcps_registry(root_dir: Path) -> tuple[dict | None, list[str]]:
     """Load mcps/registry.yaml for the MCPs dashboard tab."""
     errors: list[str] = []
@@ -484,6 +524,8 @@ def generate_dashboard_html(query_params: dict[str, list[str]]) -> str:
     daemon_status, daemon_status_errors = load_daemon_status(ROOT_DIR)
     skills_registry, skills_registry_errors = load_skills_registry(ROOT_DIR)
     mcps_registry, mcps_registry_errors = load_mcps_registry(ROOT_DIR)
+    teams_registry, teams_registry_errors = load_teams_registry(ROOT_DIR)
+    roles_registry, roles_registry_errors = load_roles_registry(ROOT_DIR)
     
     # 1. State extraction
     selected_task_id = query_params.get("task_id", [None])[0]
@@ -495,6 +537,15 @@ def generate_dashboard_html(query_params: dict[str, list[str]]) -> str:
     skill_filter_category = query_params.get("skill_category", [""])[0].strip()
     mcp_filter_agent = query_params.get("mcp_agent", [""])[0].strip()
     mcp_filter_status = query_params.get("mcp_status", [""])[0].strip()
+    team_filter_status = query_params.get("team_status", [""])[0].strip()
+    team_filter_agent = query_params.get("team_agent", [""])[0].strip()
+    team_filter_skill = query_params.get("team_skill", [""])[0].strip()
+    role_filter_agent = query_params.get("role_agent", [""])[0].strip()
+    role_filter_risk = query_params.get("role_risk", [""])[0].strip()
+    role_filter_approval = query_params.get("role_approval", [""])[0].strip()
+    role_filter_can_execute = query_params.get("role_can_execute", [""])[0].strip()
+    role_filter_can_review = query_params.get("role_can_review", [""])[0].strip()
+    suggest_task_id = query_params.get("suggest_task", [""])[0].strip()
     read_file_path = query_params.get("read_file", [None])[0]
     success_alert = query_params.get("success", [None])[0]
     error_alert = query_params.get("error", [None])[0]
@@ -1182,6 +1233,8 @@ def generate_dashboard_html(query_params: dict[str, list[str]]) -> str:
                 <a href="/?tab=agents_tools" class="tab-link {'active' if active_tab == 'agents_tools' else ''}">🤖 Agents / Tools</a>
                 <a href="/?tab=skills" class="tab-link {'active' if active_tab == 'skills' else ''}">🧩 Skills</a>
                 <a href="/?tab=mcps" class="tab-link {'active' if active_tab == 'mcps' else ''}">🔌 MCPs</a>
+                <a href="/?tab=teams" class="tab-link {'active' if active_tab == 'teams' else ''}">👥 Teams</a>
+                <a href="/?tab=roles" class="tab-link {'active' if active_tab == 'roles' else ''}">🎭 Roles</a>
                 <a href="/?tab=health" class="tab-link {'active' if active_tab == 'health' else ''}">🏥 Health Panel</a>
             </div>
     """)
@@ -1938,6 +1991,270 @@ def generate_dashboard_html(query_params: dict[str, list[str]]) -> str:
         html_out.append("""
                 <div style="color:#475569; padding:40px 0; text-align:center; font-style:italic; border:1px dashed rgba(255,255,255,0.05); border-radius:8px;">
                     No MCPs match the current filters.
+                </div>
+        """)
+
+    html_out.append("""
+            </div>
+    """)
+
+    # ==========================================
+    # TAB PANEL: TEAMS
+    # ==========================================
+    all_teams = []
+    if teams_registry and isinstance(teams_registry.get("teams"), list):
+        all_teams = [t for t in teams_registry["teams"] if isinstance(t, dict)]
+
+    filtered_teams = all_teams
+    if team_filter_status:
+        filtered_teams = [t for t in filtered_teams if str(t.get("status", "")).lower() == team_filter_status.lower()]
+    if team_filter_agent:
+        agent_lower = team_filter_agent.lower()
+        filtered_teams = [
+            t for t in filtered_teams
+            if any(
+                agent_lower == str(m.get("agent", "")).lower()
+                for m in t.get("members", [])
+                if isinstance(m, dict)
+            )
+            or (
+                isinstance(t.get("orchestrator"), dict)
+                and agent_lower == str(t["orchestrator"].get("agent", "")).lower()
+            )
+        ]
+    if team_filter_skill:
+        skill_lower = team_filter_skill.lower()
+        filtered_teams = [
+            t for t in filtered_teams
+            if skill_lower in [str(s).lower() for s in t.get("required_skills", [])]
+            or skill_lower in [str(s).lower() for s in t.get("optional_skills", [])]
+        ]
+
+    active_task_options = []
+    active_tasks_dir = ROOT_DIR / "tasks" / "active"
+    if active_tasks_dir.exists():
+        for task_file in sorted(active_tasks_dir.glob("*.yaml")):
+            if task_file.name == "EXAMPLE.yaml":
+                continue
+            active_task_options.append(task_file.stem)
+
+    team_suggestions = []
+    if suggest_task_id:
+        safe_task_id = Path(suggest_task_id).name
+        task_path = None
+        tasks_root = (ROOT_DIR / "tasks").resolve()
+        for folder in ("active", "done", "blocked"):
+            candidate = (ROOT_DIR / "tasks" / folder / f"{safe_task_id}.yaml").resolve()
+            try:
+                candidate.relative_to(tasks_root)
+            except ValueError:
+                continue
+            if candidate.exists():
+                task_path = candidate
+                break
+        if task_path and task_path.exists():
+            scripts_dir = str(ROOT_DIR / "scripts")
+            if scripts_dir not in sys.path:
+                sys.path.insert(0, scripts_dir)
+            try:
+                from suggest_team import suggest_teams
+                team_suggestions = suggest_teams(ROOT_DIR, task_path=task_path, limit=5)
+            except Exception:
+                team_suggestions = []
+
+    html_out.append(f"""
+            <div class="tab-panel {'active' if active_tab == 'teams' else ''}">
+                <h3>👥 Teams Registry</h3>
+                <p style="font-size:12px; color:#94a3b8; margin-bottom:16px;">
+                    Read-only view of <code>teams/registry.yaml</code>. Phase 2.2 does not assign tasks automatically.
+                </p>
+                <form class="filter-form" action="/" method="GET">
+                    <input type="hidden" name="tab" value="teams">
+                    <input type="text" name="team_status" class="filter-input" placeholder="Status" value="{escape(team_filter_status)}">
+                    <input type="text" name="team_agent" class="filter-input" placeholder="Agent" value="{escape(team_filter_agent)}">
+                    <input type="text" name="team_skill" class="filter-input" placeholder="Skill" value="{escape(team_filter_skill)}">
+                    <button type="submit" class="filter-button">Apply</button>
+                </form>
+                <div style="font-size:12px; color:#64748b; margin-bottom:16px;">
+                    Showing <b>{escape(len(filtered_teams))}</b> of <b>{escape(len(all_teams))}</b> teams.
+                </div>
+                <div style="background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.05); border-radius:8px; padding:16px; margin-bottom:20px;">
+                    <div class="inspector-section-title" style="border:none; margin-bottom:10px;">Team Suggestion (read-only)</div>
+                    <form class="filter-form" action="/" method="GET" style="margin-bottom:0;">
+                        <input type="hidden" name="tab" value="teams">
+                        <select name="suggest_task" class="filter-input" style="min-width:220px;">
+                            <option value="">Select task...</option>
+                            {''.join(f'<option value="{escape(tid)}" {"selected" if tid == suggest_task_id else ""}>{escape(tid)}</option>' for tid in active_task_options)}
+                        </select>
+                        <button type="submit" class="filter-button">Suggest Team</button>
+                    </form>
+    """)
+
+    if suggest_task_id and team_suggestions:
+        html_out.append("""
+                    <table class="tools-table" style="margin-top:12px;">
+                        <thead><tr><th>Team</th><th>Score</th><th>Reviewer</th><th>Matching Skills</th><th>Notes</th></tr></thead>
+                        <tbody>
+        """)
+        for sug in team_suggestions:
+            html_out.append(f"""
+                        <tr>
+                            <td><b>{escape(sug.get('team_name', ''))}</b><br/><code style="font-size:10px;">{escape(sug.get('team_id', ''))}</code></td>
+                            <td>{escape(sug.get('score', ''))}</td>
+                            <td>{escape(sug.get('recommended_reviewer') or '—')}</td>
+                            <td style="font-size:11px;">{escape(', '.join(sug.get('matching_skills', [])) or '—')}</td>
+                            <td style="font-size:11px; color:#94a3b8;">{escape(sug.get('notes', ''))}</td>
+                        </tr>
+            """)
+        html_out.append("</tbody></table>")
+    elif suggest_task_id:
+        html_out.append('<div style="font-size:12px; color:#64748b; margin-top:10px;">No suggestions for selected task.</div>')
+
+    html_out.append("</div>")
+
+    if teams_registry_errors:
+        for err in teams_registry_errors:
+            html_out.append(f'<div class="event-type-warn">{escape(err)}</div>')
+    elif filtered_teams:
+        html_out.append("""
+                <table class="tools-table">
+                    <thead>
+                        <tr>
+                            <th>Team</th>
+                            <th>Status</th>
+                            <th>Orchestrator</th>
+                            <th>Reviewer</th>
+                            <th>Members</th>
+                            <th>Required Skills</th>
+                            <th>MCPs</th>
+                            <th>Approval</th>
+                            <th>Notes</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        """)
+        for team in filtered_teams:
+            orch = team.get("orchestrator", {})
+            rev = team.get("default_reviewer", {})
+            orch_agent = orch.get("agent", "—") if isinstance(orch, dict) else "—"
+            rev_agent = rev.get("agent", "—") if isinstance(rev, dict) else "—"
+            members_txt = ", ".join(
+                f"{m.get('agent')}({m.get('role')})"
+                for m in team.get("members", [])
+                if isinstance(m, dict)
+            )
+            policy = team.get("approval_policy", {})
+            approval_txt = policy.get("default_level", "—") if isinstance(policy, dict) else "—"
+            html_out.append(f"""
+                        <tr>
+                            <td><b>{escape(team.get('name', ''))}</b><br/><code style="font-size:10px; color:#64748b;">{escape(team.get('id', ''))}</code></td>
+                            <td>{escape(team.get('status', '—'))}</td>
+                            <td>{escape(orch_agent)}</td>
+                            <td>{escape(rev_agent)}</td>
+                            <td style="font-size:11px;">{escape(members_txt or '—')}</td>
+                            <td style="font-size:11px;">{escape(', '.join(team.get('required_skills', [])) or '—')}</td>
+                            <td style="font-size:11px;">{escape(', '.join(team.get('allowed_mcps', [])) or '—')}</td>
+                            <td>{escape(approval_txt)}</td>
+                            <td style="font-size:11px; color:#94a3b8;">{escape(team.get('notes', '—'))}</td>
+                        </tr>
+            """)
+        html_out.append("</tbody></table>")
+    else:
+        html_out.append("""
+                <div style="color:#475569; padding:40px 0; text-align:center; font-style:italic; border:1px dashed rgba(255,255,255,0.05); border-radius:8px;">
+                    No teams match the current filters.
+                </div>
+        """)
+
+    html_out.append("""
+            </div>
+    """)
+
+    # ==========================================
+    # TAB PANEL: ROLES
+    # ==========================================
+    all_roles = []
+    if roles_registry and isinstance(roles_registry.get("roles"), list):
+        all_roles = [r for r in roles_registry["roles"] if isinstance(r, dict)]
+
+    filtered_roles = all_roles
+    if role_filter_agent:
+        agent_lower = role_filter_agent.lower()
+        filtered_roles = [
+            r for r in filtered_roles
+            if any(agent_lower == str(a).lower() for a in r.get("allowed_agents", []))
+        ]
+    if role_filter_risk:
+        filtered_roles = [r for r in filtered_roles if str(r.get("risk_level", "")).lower() == role_filter_risk.lower()]
+    if role_filter_approval:
+        filtered_roles = [r for r in filtered_roles if str(r.get("approval_level", "")).lower() == role_filter_approval.lower()]
+    if role_filter_can_execute:
+        want = role_filter_can_execute.lower() == "true"
+        filtered_roles = [r for r in filtered_roles if bool(r.get("can_execute")) == want]
+    if role_filter_can_review:
+        want = role_filter_can_review.lower() == "true"
+        filtered_roles = [r for r in filtered_roles if bool(r.get("can_review")) == want]
+
+    html_out.append(f"""
+            <div class="tab-panel {'active' if active_tab == 'roles' else ''}">
+                <h3>🎭 Roles Registry</h3>
+                <p style="font-size:12px; color:#94a3b8; margin-bottom:16px;">
+                    Read-only view of <code>roles/registry.yaml</code>.
+                </p>
+                <form class="filter-form" action="/" method="GET">
+                    <input type="hidden" name="tab" value="roles">
+                    <input type="text" name="role_agent" class="filter-input" placeholder="Agent" value="{escape(role_filter_agent)}">
+                    <input type="text" name="role_risk" class="filter-input" placeholder="Risk" value="{escape(role_filter_risk)}">
+                    <input type="text" name="role_approval" class="filter-input" placeholder="Approval" value="{escape(role_filter_approval)}">
+                    <input type="text" name="role_can_execute" class="filter-input" placeholder="can_execute true/false" value="{escape(role_filter_can_execute)}">
+                    <input type="text" name="role_can_review" class="filter-input" placeholder="can_review true/false" value="{escape(role_filter_can_review)}">
+                    <button type="submit" class="filter-button">Apply</button>
+                </form>
+                <div style="font-size:12px; color:#64748b; margin-bottom:16px;">
+                    Showing <b>{escape(len(filtered_roles))}</b> of <b>{escape(len(all_roles))}</b> roles.
+                </div>
+    """)
+
+    if roles_registry_errors:
+        for err in roles_registry_errors:
+            html_out.append(f'<div class="event-type-warn">{escape(err)}</div>')
+    elif filtered_roles:
+        html_out.append("""
+                <table class="tools-table">
+                    <thead>
+                        <tr>
+                            <th>Role</th>
+                            <th>Agents</th>
+                            <th>Required Skills</th>
+                            <th>MCPs</th>
+                            <th>Risk</th>
+                            <th>Approval</th>
+                            <th>Delegate</th>
+                            <th>Review</th>
+                            <th>Execute</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        """)
+        for role in filtered_roles:
+            html_out.append(f"""
+                        <tr>
+                            <td><b>{escape(role.get('name', ''))}</b><br/><code style="font-size:10px; color:#64748b;">{escape(role.get('id', ''))}</code></td>
+                            <td style="font-size:11px;">{escape(', '.join(role.get('allowed_agents', [])) or '—')}</td>
+                            <td style="font-size:11px;">{escape(', '.join(role.get('required_skills', [])) or '—')}</td>
+                            <td style="font-size:11px;">{escape(', '.join(role.get('allowed_mcps', [])) or '—')}</td>
+                            <td>{escape(role.get('risk_level', '—'))}</td>
+                            <td>{escape(role.get('approval_level', '—'))}</td>
+                            <td>{escape(role.get('can_delegate', '—'))}</td>
+                            <td>{escape(role.get('can_review', '—'))}</td>
+                            <td>{escape(role.get('can_execute', '—'))}</td>
+                        </tr>
+            """)
+        html_out.append("</tbody></table>")
+    else:
+        html_out.append("""
+                <div style="color:#475569; padding:40px 0; text-align:center; font-style:italic; border:1px dashed rgba(255,255,255,0.05); border-radius:8px;">
+                    No roles match the current filters.
                 </div>
         """)
 

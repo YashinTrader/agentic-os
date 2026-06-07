@@ -1,0 +1,68 @@
+id: dashboard-team
+name: Dashboard Team
+description: Builds and improves local dashboard and control-plane UX.
+purpose: Build and improve local dashboard features.
+orchestrator:
+  agent: gemini
+  external: false
+members:
+  - agent: gemini
+    role: builder
+    skills:
+      - build-streamlit-dashboard
+    mcps: []
+    priority: 1
+    notes: Primary dashboard builder.
+  - agent: composer
+    role: builder
+    skills:
+      - build-streamlit-dashboard
+      - implement-python-cli
+    mcps: []
+    priority: 2
+    notes: Integrator and dashboard polish.
+  - agent: codex
+    role: builder
+    skills:
+      - implement-python-cli
+      - build-streamlit-dashboard
+    mcps: []
+    priority: 3
+    notes: Also acts as fixer/tester for dashboard regressions.
+  - agent: claude
+    role: reviewer
+    skills:
+      - review-protocol-change
+    mcps: []
+    priority: 1
+    notes: Default architecture and protocol reviewer.
+default_reviewer:
+  agent: claude
+  external: false
+required_skills:
+  - build-streamlit-dashboard
+  - implement-python-cli
+optional_skills:
+  - review-protocol-change
+allowed_mcps: []
+approval_policy:
+  default_level: reviewer
+  requires_human_for_high_risk: true
+  notes: Reviewer approval by default; human for high-risk dashboard write paths.
+task_suitability:
+  labels:
+    - dashboard
+    - ui
+    - kanban
+  keywords:
+    - dashboard
+    - streamlit
+    - kanban
+    - control plane
+  skills:
+    - build-streamlit-dashboard
+  risk_levels:
+    - low
+    - medium
+status: active
+notes: Primary team for dashboard/app.py and read-write UX surfaces. Example team entry. Canonical source is teams/registry.yaml.

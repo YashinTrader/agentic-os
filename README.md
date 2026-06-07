@@ -27,6 +27,8 @@ decisions, logs — is a structured file.
 | `runtime/`     | Machine-readable daemon inventory and status.         |
 | `skills/`      | Phase 2.1 skill registry (capability metadata).     |
 | `mcps/`        | Phase 2.1 MCP registry (planned/configured servers).|
+| `teams/`       | Phase 2.2 team registry (agent rosters and policies).|
+| `roles/`       | Phase 2.2 role registry (responsibilities and flags).|
 
 ## Start Here (Humans)
 1. Read `docs/ARCHITECTURE.md` — the big picture.
@@ -95,8 +97,22 @@ python dashboard/app.py
 Dashboard tabs: **Skills** (`/?tab=skills`), **MCPs** (`/?tab=mcps`).  
 See `docs/SKILLS_AND_MCPS.md`.
 
+## Phase 2.2 — Teams + Roles Registry
+Maps agents to teams, roles, skills, MCP access, and approval policies.
+Configuration and suggestion only — no agent launching.
+
+```powershell
+python scripts/list_teams.py --status active
+python scripts/list_roles.py --agent claude
+python scripts/suggest_team.py --skill build-streamlit-dashboard
+python dashboard/app.py
+```
+
+Dashboard tabs: **Teams** (`/?tab=teams`), **Roles** (`/?tab=roles`).  
+See `docs/TEAMS_AND_ROLES.md`.
+
 ## Phase 2 (Later)
-- Phase 2.2 — Team Registry + Role Assignment.
+- Phase 2.3 — Obsidian Vault Sync.
 - Unified semantic memory (Cognee or Mem0) via MCP.
 - Hermes summarizes the event log nightly.
 - Token/usage monitoring per agent.
