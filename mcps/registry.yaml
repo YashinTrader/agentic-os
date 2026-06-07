@@ -1,0 +1,73 @@
+schema_version: "1.0"
+updated_at: 2026-06-07T14:00:00Z
+description: >
+  MCP server registry for Agentic OS. Configuration and capability metadata only.
+  Phase 2.1 does not execute MCP servers.
+mcps:
+  - id: obsidian-local-rest
+    name: Obsidian Local REST
+    description: Future bridge to Obsidian vault memory via local REST integration.
+    status: planned
+    transport: unknown
+    command: null
+    args: []
+    endpoint: null
+    env_vars_required: []
+    requires_secret: false
+    allowed_agents:
+      - claude
+      - composer
+      - hermes
+    capabilities:
+      - vault_read
+      - note_search
+    risk_level: medium
+    approval_level: reviewer
+    notes: >
+      Planned only. No Obsidian sync or REST calls in Phase 2.1. Transport TBD when configured.
+
+  - id: filesystem
+    name: Filesystem MCP
+    description: Controlled local filesystem access for agent tooling (future, gated).
+    status: planned
+    transport: stdio
+    command: null
+    args: []
+    endpoint: null
+    env_vars_required: []
+    requires_secret: false
+    allowed_agents:
+      - codex
+      - composer
+      - cursor
+    capabilities:
+      - read_file
+      - list_directory
+    risk_level: high
+    approval_level: human
+    notes: >
+      High risk surface. Human approval required before any future execution enablement.
+
+  - id: github
+    name: GitHub MCP
+    description: Future GitHub repository and pull request access for agent workflows.
+    status: planned
+    transport: streamable_http
+    command: null
+    args: []
+    endpoint: null
+    env_vars_required:
+      - GITHUB_TOKEN
+    requires_secret: true
+    allowed_agents:
+      - codex
+      - composer
+      - claude
+    capabilities:
+      - repo_read
+      - pr_read
+      - issue_read
+    risk_level: high
+    approval_level: human
+    notes: >
+      Planned only. No GitHub API calls in Phase 2.1. Never store tokens in this registry.

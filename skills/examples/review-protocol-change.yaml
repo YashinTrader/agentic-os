@@ -1,0 +1,26 @@
+id: review-protocol-change
+name: Review Protocol Change
+version: "1.0"
+description: Review proposed changes to protocol, task schema, handoff schema, or governance.
+category: governance
+allowed_agents:
+  - claude
+  - gemini
+  - composer
+required_clis: []
+required_mcps: []
+required_files:
+  - docs/AGENT_PROTOCOL.md
+  - docs/TASK_SCHEMA.md
+  - docs/HANDOFF_PROTOCOL.md
+  - decisions/
+outputs:
+  - decisions/ADR-*.md
+  - handoffs/
+risk_level: medium
+approval_level: reviewer
+tags:
+  - governance
+  - protocol
+status: active
+notes: Example skill entry. Canonical source is skills/registry.yaml.

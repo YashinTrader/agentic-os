@@ -1,0 +1,22 @@
+id: github
+name: GitHub MCP
+description: Future GitHub repository and pull request access for agent workflows.
+status: planned
+transport: streamable_http
+command: null
+args: []
+endpoint: null
+env_vars_required:
+  - GITHUB_TOKEN
+requires_secret: true
+allowed_agents:
+  - codex
+  - composer
+  - claude
+capabilities:
+  - repo_read
+  - pr_read
+  - issue_read
+risk_level: high
+approval_level: human
+notes: Example MCP entry. Canonical source is mcps/registry.yaml. Never store API keys here.

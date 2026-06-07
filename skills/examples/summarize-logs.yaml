@@ -1,0 +1,25 @@
+id: summarize-logs
+name: Summarize Logs
+version: "1.0"
+description: Read logs and handoffs and create status summaries for humans and reviewers.
+category: analysis
+allowed_agents:
+  - gemini
+  - hermes
+  - claude
+  - composer
+required_clis: []
+required_mcps: []
+required_files:
+  - logs/agent-events.jsonl
+  - handoffs/
+outputs:
+  - handoffs/
+  - logs/agent-events.jsonl
+risk_level: low
+approval_level: none
+tags:
+  - logs
+  - handoffs
+status: active
+notes: Example skill entry. Canonical source is skills/registry.yaml.

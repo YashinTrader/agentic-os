@@ -1,0 +1,69 @@
+id: T-SKILLS-MCPS-001
+title: Skills and MCP registry — schemas, validation, dashboard, CLI
+owner: composer
+reviewer: claude
+created_by: composer
+status: review
+phase: "2.1"
+created_at: 2026-06-07T14:00:00Z
+updated_at: 2026-06-07T14:00:00Z
+priority: high
+risk_level: low
+requires_human_approval: false
+human_approval_checklist: []
+objective: >
+  Create local-first skills and MCP registries with validation, CLI listing
+  helpers, and read-only dashboard tabs. Observe/configuration only — no MCP
+  execution, no agent launching, no external APIs.
+context: |
+  Phase 2.0 added CLI discovery. Phase 2.1 extends the runtime layer with
+  structured capability metadata so the OS knows what skills exist, which agents
+  may use them, what MCPs are planned, and what risk/approval applies.
+goals:
+  - Define skills/registry.yaml with four canonical skills and required fields
+  - Define mcps/registry.yaml with three example MCPs (planned, no secrets)
+  - Add list_skills.py and list_mcps.py CLI helpers with filters and JSON output
+  - Extend scripts/validate.py for registry schema validation
+  - Add dashboard Skills and MCPs tabs with simple filters
+  - Document protocol in docs/SKILLS_AND_MCPS.md
+non_goals:
+  - MCP execution or installation
+  - Agent launching or autonomous routing
+  - LangGraph, database, Obsidian sync
+  - Dashboard registry editing
+  - Storing secrets or API keys in registry files
+inputs:
+  - skills/registry.yaml (to create)
+  - mcps/registry.yaml (to create)
+  - dashboard/app.py
+  - scripts/validate.py
+  - docs/DAEMON_DISCOVERY.md
+outputs:
+  - skills/registry.yaml
+  - skills/README.md
+  - skills/examples/
+  - mcps/registry.yaml
+  - mcps/README.md
+  - mcps/examples/
+  - scripts/list_skills.py
+  - scripts/list_mcps.py
+  - docs/SKILLS_AND_MCPS.md
+  - tests/test_skills_registry.py
+  - tests/test_mcps_registry.py
+  - dashboard/app.py
+  - tasks/active/T-SKILLS-MCPS-001.yaml
+  - handoffs/T-SKILLS-MCPS-001__composer__to__claude.md
+constraints:
+  - No MCP execution, no external API calls, no secrets in repo
+  - Planned MCP status must pass validation without local servers
+  - PyYAML only; no new dependencies
+  - Dashboard read-only for registries
+acceptance:
+  - skills/registry.yaml and mcps/registry.yaml validate via scripts/validate.py
+  - list_skills.py and list_mcps.py support documented filters
+  - Dashboard Skills and MCPs tabs render registry data with filters
+  - tests/test_skills_registry.py and tests/test_mcps_registry.py pass
+  - python -m unittest and python scripts/validate.py pass
+notes: >
+  Hand off to claude for Phase 2 governance review. Next milestone after merge:
+  Phase 2.2 — Team Registry + Role Assignment.

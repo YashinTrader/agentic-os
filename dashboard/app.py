@@ -160,6 +160,46 @@ def load_cli_inventory(root_dir: Path) -> tuple[dict | None, list[str]]:
         return None, [f"runtime/registry/cli_inventory.yaml: failed to parse: {exc}"]
 
 
+def load_skills_registry(root_dir: Path) -> tuple[dict | None, list[str]]:
+    """Load skills/registry.yaml for the Skills dashboard tab."""
+    errors: list[str] = []
+    registry_path = root_dir / "skills" / "registry.yaml"
+    if not registry_path.exists():
+        return None, ["skills/registry.yaml: file does not exist"]
+    try:
+        data = yaml.safe_load(registry_path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            errors.append("skills/registry.yaml: root must be a YAML mapping")
+            return None, errors
+        skills = data.get("skills", [])
+        if not isinstance(skills, list):
+            errors.append("skills/registry.yaml: skills must be a list")
+            return None, errors
+        return data, errors
+    except Exception as exc:
+        return None, [f"skills/registry.yaml: failed to parse: {exc}"]
+
+
+def load_mcps_registry(root_dir: Path) -> tuple[dict | None, list[str]]:
+    """Load mcps/registry.yaml for the MCPs dashboard tab."""
+    errors: list[str] = []
+    registry_path = root_dir / "mcps" / "registry.yaml"
+    if not registry_path.exists():
+        return None, ["mcps/registry.yaml: file does not exist"]
+    try:
+        data = yaml.safe_load(registry_path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            errors.append("mcps/registry.yaml: root must be a YAML mapping")
+            return None, errors
+        mcps = data.get("mcps", [])
+        if not isinstance(mcps, list):
+            errors.append("mcps/registry.yaml: mcps must be a list")
+            return None, errors
+        return data, errors
+    except Exception as exc:
+        return None, [f"mcps/registry.yaml: failed to parse: {exc}"]
+
+
 def load_daemon_status(root_dir: Path) -> tuple[dict | None, list[str]]:
     """Load runtime/status/daemon_status.json written by the discovery daemon."""
     errors: list[str] = []
@@ -442,11 +482,19 @@ def generate_dashboard_html(query_params: dict[str, list[str]]) -> str:
     events, _ = load_events(ROOT_DIR)
     cli_inventory, cli_inventory_errors = load_cli_inventory(ROOT_DIR)
     daemon_status, daemon_status_errors = load_daemon_status(ROOT_DIR)
+    skills_registry, skills_registry_errors = load_skills_registry(ROOT_DIR)
+    mcps_registry, mcps_registry_errors = load_mcps_registry(ROOT_DIR)
     
     # 1. State extraction
     selected_task_id = query_params.get("task_id", [None])[0]
     filter_agent = query_params.get("agent", [""])[0].strip()
     filter_task = query_params.get("task", [""])[0].strip()
+    skill_filter_agent = query_params.get("skill_agent", [""])[0].strip()
+    skill_filter_risk = query_params.get("skill_risk", [""])[0].strip()
+    skill_filter_approval = query_params.get("skill_approval", [""])[0].strip()
+    skill_filter_category = query_params.get("skill_category", [""])[0].strip()
+    mcp_filter_agent = query_params.get("mcp_agent", [""])[0].strip()
+    mcp_filter_status = query_params.get("mcp_status", [""])[0].strip()
     read_file_path = query_params.get("read_file", [None])[0]
     success_alert = query_params.get("success", [None])[0]
     error_alert = query_params.get("error", [None])[0]
@@ -1132,6 +1180,8 @@ def generate_dashboard_html(query_params: dict[str, list[str]]) -> str:
                 <a href="/?tab=events" class="tab-link {'active' if active_tab == 'events' else ''}">📜 System Events</a>
                 <a href="/?tab=handoffs" class="tab-link {'active' if active_tab == 'handoffs' else ''}">📑 Handoffs & ADRs</a>
                 <a href="/?tab=agents_tools" class="tab-link {'active' if active_tab == 'agents_tools' else ''}">🤖 Agents / Tools</a>
+                <a href="/?tab=skills" class="tab-link {'active' if active_tab == 'skills' else ''}">🧩 Skills</a>
+                <a href="/?tab=mcps" class="tab-link {'active' if active_tab == 'mcps' else ''}">🔌 MCPs</a>
                 <a href="/?tab=health" class="tab-link {'active' if active_tab == 'health' else ''}">🏥 Health Panel</a>
             </div>
     """)
@@ -1714,6 +1764,180 @@ def generate_dashboard_html(query_params: dict[str, list[str]]) -> str:
         html_out.append("""
                 <div style="color:#475569; padding:40px 0; text-align:center; font-style:italic; border:1px dashed rgba(255,255,255,0.05); border-radius:8px;">
                     No CLI inventory found yet. Run <code>python -m daemon.daemon --once</code> to populate runtime/registry/cli_inventory.yaml.
+                </div>
+        """)
+
+    html_out.append("""
+            </div>
+    """)
+
+    # ==========================================
+    # TAB PANEL: SKILLS
+    # ==========================================
+    all_skills = []
+    if skills_registry and isinstance(skills_registry.get("skills"), list):
+        all_skills = [s for s in skills_registry["skills"] if isinstance(s, dict)]
+
+    filtered_skills = all_skills
+    if skill_filter_agent:
+        filtered_skills = [
+            s for s in filtered_skills
+            if skill_filter_agent.lower() in [str(a).lower() for a in s.get("allowed_agents", [])]
+        ]
+    if skill_filter_risk:
+        filtered_skills = [s for s in filtered_skills if str(s.get("risk_level", "")).lower() == skill_filter_risk.lower()]
+    if skill_filter_approval:
+        filtered_skills = [s for s in filtered_skills if str(s.get("approval_level", "")).lower() == skill_filter_approval.lower()]
+    if skill_filter_category:
+        filtered_skills = [s for s in filtered_skills if str(s.get("category", "")).lower() == skill_filter_category.lower()]
+
+    html_out.append(f"""
+            <div class="tab-panel {'active' if active_tab == 'skills' else ''}">
+                <h3>🧩 Skills Registry</h3>
+                <p style="font-size:12px; color:#94a3b8; margin-bottom:16px;">
+                    Read-only view of <code>skills/registry.yaml</code>. Phase 2.1 does not execute skills.
+                </p>
+                <form class="filter-form" action="/" method="GET">
+                    <input type="hidden" name="tab" value="skills">
+                    <input type="text" name="skill_agent" class="filter-input" placeholder="Filter by agent" value="{escape(skill_filter_agent)}">
+                    <input type="text" name="skill_risk" class="filter-input" placeholder="Risk (low/medium/high)" value="{escape(skill_filter_risk)}">
+                    <input type="text" name="skill_approval" class="filter-input" placeholder="Approval" value="{escape(skill_filter_approval)}">
+                    <input type="text" name="skill_category" class="filter-input" placeholder="Category" value="{escape(skill_filter_category)}">
+                    <button type="submit" class="filter-button">Apply</button>
+                    {(f'<a href="/?tab=skills" class="clear-link">Clear</a>' if skill_filter_agent or skill_filter_risk or skill_filter_approval or skill_filter_category else '')}
+                </form>
+                <div style="font-size:12px; color:#64748b; margin-bottom:16px;">
+                    Showing <b>{escape(len(filtered_skills))}</b> of <b>{escape(len(all_skills))}</b> skills.
+                </div>
+    """)
+
+    if skills_registry_errors:
+        for err in skills_registry_errors:
+            html_out.append(f'<div class="event-type-warn">{escape(err)}</div>')
+    elif filtered_skills:
+        html_out.append("""
+                <table class="tools-table">
+                    <thead>
+                        <tr>
+                            <th>Skill</th>
+                            <th>Category</th>
+                            <th>Agents</th>
+                            <th>CLIs</th>
+                            <th>MCPs</th>
+                            <th>Risk</th>
+                            <th>Approval</th>
+                            <th>Status</th>
+                            <th>Notes</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        """)
+        for skill in filtered_skills:
+            html_out.append(f"""
+                        <tr>
+                            <td><b>{escape(skill.get('name', ''))}</b><br/><code style="font-size:10px; color:#64748b;">{escape(skill.get('id', ''))}</code></td>
+                            <td>{escape(skill.get('category', '—'))}</td>
+                            <td style="font-size:11px;">{escape(', '.join(skill.get('allowed_agents', [])) or '—')}</td>
+                            <td style="font-size:11px;">{escape(', '.join(skill.get('required_clis', [])) or '—')}</td>
+                            <td style="font-size:11px;">{escape(', '.join(skill.get('required_mcps', [])) or '—')}</td>
+                            <td>{escape(skill.get('risk_level', '—'))}</td>
+                            <td>{escape(skill.get('approval_level', '—'))}</td>
+                            <td>{escape(skill.get('status', '—'))}</td>
+                            <td style="font-size:11px; color:#94a3b8;">{escape(skill.get('notes', '—'))}</td>
+                        </tr>
+            """)
+        html_out.append("""
+                    </tbody>
+                </table>
+        """)
+    else:
+        html_out.append("""
+                <div style="color:#475569; padding:40px 0; text-align:center; font-style:italic; border:1px dashed rgba(255,255,255,0.05); border-radius:8px;">
+                    No skills match the current filters.
+                </div>
+        """)
+
+    html_out.append("""
+            </div>
+    """)
+
+    # ==========================================
+    # TAB PANEL: MCPS
+    # ==========================================
+    all_mcps = []
+    if mcps_registry and isinstance(mcps_registry.get("mcps"), list):
+        all_mcps = [m for m in mcps_registry["mcps"] if isinstance(m, dict)]
+
+    filtered_mcps = all_mcps
+    if mcp_filter_agent:
+        filtered_mcps = [
+            m for m in filtered_mcps
+            if mcp_filter_agent.lower() in [str(a).lower() for a in m.get("allowed_agents", [])]
+        ]
+    if mcp_filter_status:
+        filtered_mcps = [m for m in filtered_mcps if str(m.get("status", "")).lower() == mcp_filter_status.lower()]
+
+    html_out.append(f"""
+            <div class="tab-panel {'active' if active_tab == 'mcps' else ''}">
+                <h3>🔌 MCP Registry</h3>
+                <p style="font-size:12px; color:#94a3b8; margin-bottom:16px;">
+                    Read-only view of <code>mcps/registry.yaml</code>. Phase 2.1 does not execute MCP servers.
+                </p>
+                <form class="filter-form" action="/" method="GET">
+                    <input type="hidden" name="tab" value="mcps">
+                    <input type="text" name="mcp_agent" class="filter-input" placeholder="Filter by agent" value="{escape(mcp_filter_agent)}">
+                    <input type="text" name="mcp_status" class="filter-input" placeholder="Status (planned/...)" value="{escape(mcp_filter_status)}">
+                    <button type="submit" class="filter-button">Apply</button>
+                    {(f'<a href="/?tab=mcps" class="clear-link">Clear</a>' if mcp_filter_agent or mcp_filter_status else '')}
+                </form>
+                <div style="font-size:12px; color:#64748b; margin-bottom:16px;">
+                    Showing <b>{escape(len(filtered_mcps))}</b> of <b>{escape(len(all_mcps))}</b> MCPs.
+                </div>
+    """)
+
+    if mcps_registry_errors:
+        for err in mcps_registry_errors:
+            html_out.append(f'<div class="event-type-warn">{escape(err)}</div>')
+    elif filtered_mcps:
+        html_out.append("""
+                <table class="tools-table">
+                    <thead>
+                        <tr>
+                            <th>MCP</th>
+                            <th>Status</th>
+                            <th>Transport</th>
+                            <th>Agents</th>
+                            <th>Capabilities</th>
+                            <th>Secret?</th>
+                            <th>Risk</th>
+                            <th>Approval</th>
+                            <th>Notes</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        """)
+        for mcp in filtered_mcps:
+            html_out.append(f"""
+                        <tr>
+                            <td><b>{escape(mcp.get('name', ''))}</b><br/><code style="font-size:10px; color:#64748b;">{escape(mcp.get('id', ''))}</code></td>
+                            <td>{escape(mcp.get('status', '—'))}</td>
+                            <td>{escape(mcp.get('transport', '—'))}</td>
+                            <td style="font-size:11px;">{escape(', '.join(mcp.get('allowed_agents', [])) or '—')}</td>
+                            <td style="font-size:11px;">{escape(', '.join(mcp.get('capabilities', [])) or '—')}</td>
+                            <td>{escape(mcp.get('requires_secret', '—'))}</td>
+                            <td>{escape(mcp.get('risk_level', '—'))}</td>
+                            <td>{escape(mcp.get('approval_level', '—'))}</td>
+                            <td style="font-size:11px; color:#94a3b8;">{escape(mcp.get('notes', '—'))}</td>
+                        </tr>
+            """)
+        html_out.append("""
+                    </tbody>
+                </table>
+        """)
+    else:
+        html_out.append("""
+                <div style="color:#475569; padding:40px 0; text-align:center; font-style:italic; border:1px dashed rgba(255,255,255,0.05); border-radius:8px;">
+                    No MCPs match the current filters.
                 </div>
         """)
 

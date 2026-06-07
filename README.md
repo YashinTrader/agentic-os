@@ -25,6 +25,8 @@ decisions, logs — is a structured file.
 | `scripts/`     | Local validation tooling for Phase 1 files.           |
 | `daemon/`      | Phase 2.0 runtime CLI discovery (observe-only).       |
 | `runtime/`     | Machine-readable daemon inventory and status.         |
+| `skills/`      | Phase 2.1 skill registry (capability metadata).     |
+| `mcps/`        | Phase 2.1 MCP registry (planned/configured servers).|
 
 ## Start Here (Humans)
 1. Read `docs/ARCHITECTURE.md` — the big picture.
@@ -80,8 +82,21 @@ python dashboard/app.py
 
 See `docs/DAEMON_DISCOVERY.md` for safety guarantees and limitations.
 
+## Phase 2.1 — Skills + MCP Registry
+Local-first registries describe reusable skills and planned MCP servers —
+agent eligibility, dependencies, risk, and approval levels. Observe-only.
+
+```powershell
+python scripts/list_skills.py
+python scripts/list_mcps.py --status planned
+python dashboard/app.py
+```
+
+Dashboard tabs: **Skills** (`/?tab=skills`), **MCPs** (`/?tab=mcps`).  
+See `docs/SKILLS_AND_MCPS.md`.
+
 ## Phase 2 (Later)
-- Phase 2.1 — Skills + MCP Registry (read-only inventory extension).
+- Phase 2.2 — Team Registry + Role Assignment.
 - Unified semantic memory (Cognee or Mem0) via MCP.
 - Hermes summarizes the event log nightly.
 - Token/usage monitoring per agent.
