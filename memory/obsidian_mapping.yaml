@@ -1,0 +1,50 @@
+schema_version: "1.0"
+updated_at: 2026-06-07T18:00:00Z
+description: >
+  Obsidian vault sync configuration for Agentic OS. One-way mirror from repo to vault.
+  Repo remains source of truth. Set vault_path locally; never commit personal paths.
+
+vault_path: null
+project_name: agentic-os
+sync_enabled: false
+dry_run_default: true
+vault_root_folder: AgenticOS
+
+output_folders:
+  project_root: "01_Projects/agentic-os"
+  tasks_active: "02_Tasks/active"
+  tasks_done: "02_Tasks/done"
+  tasks_blocked: "02_Tasks/blocked"
+  handoffs: "06_Handoffs"
+  decisions: "01_Projects/agentic-os/Decisions"
+  logs: "07_Logs"
+  agents: "03_Agents"
+  skills: "04_Skills"
+  mcps: "05_MCPs"
+  teams: "03_Teams"
+  roles: "03_Roles"
+  memory: "08_Memory"
+  reviews: "09_Reviews"
+  sync_reports: ".sync"
+
+include_sections:
+  - tasks
+  - handoffs
+  - decisions
+  - logs
+  - skills
+  - mcps
+  - teams
+  - roles
+  - current_state
+  - index
+
+exclude_patterns:
+  - ".env"
+  - ".env.*"
+  - "**/.env"
+  - "**/secrets/**"
+  - "**/*.pem"
+  - "**/*.key"
+
+last_sync_file: "AgenticOS/.sync/last_sync_report.json"

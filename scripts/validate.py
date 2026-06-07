@@ -683,6 +683,56 @@ def validate_teams_registry(
             errors.append(f"{prefix} ({team_id}): approval_policy must be a mapping")
 
 
+OBSIDIAN_MAPPING_REQUIRED_FIELDS = {
+    "vault_path",
+    "project_name",
+    "sync_enabled",
+    "dry_run_default",
+    "vault_root_folder",
+    "output_folders",
+    "include_sections",
+    "exclude_patterns",
+    "last_sync_file",
+}
+
+
+def validate_obsidian_mapping(errors: list[str]) -> None:
+    path = ROOT / "memory" / "obsidian_mapping.yaml"
+    rel = path.relative_to(ROOT)
+    if not path.exists():
+        errors.append(f"{rel}: file does not exist")
+        return
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        errors.append(f"{rel}: invalid YAML: {exc}")
+        return
+    if not isinstance(data, dict):
+        errors.append(f"{rel}: root must be a YAML mapping")
+        return
+    missing = sorted(OBSIDIAN_MAPPING_REQUIRED_FIELDS - set(data))
+    if missing:
+        errors.append(f"{rel}: missing required fields: {', '.join(missing)}")
+    if not isinstance(data.get("output_folders"), dict):
+        errors.append(f"{rel}: output_folders must be a mapping")
+    if not isinstance(data.get("include_sections"), list):
+        errors.append(f"{rel}: include_sections must be a list")
+    if not isinstance(data.get("exclude_patterns"), list):
+        errors.append(f"{rel}: exclude_patterns must be a list")
+    if not isinstance(data.get("sync_enabled"), bool):
+        errors.append(f"{rel}: sync_enabled must be a boolean")
+    if not isinstance(data.get("dry_run_default"), bool):
+        errors.append(f"{rel}: dry_run_default must be a boolean")
+    root_folder = data.get("vault_root_folder")
+    if isinstance(root_folder, str) and ".." in Path(root_folder).parts:
+        errors.append(f"{rel}: vault_root_folder must not contain '..' segments")
+    output_folders = data.get("output_folders", {})
+    if isinstance(output_folders, dict):
+        for key, value in output_folders.items():
+            if isinstance(value, str) and ".." in Path(value).parts:
+                errors.append(f"{rel}: output_folders.{key} must not contain '..' segments")
+
+
 def validate_skill_mcp_references(errors: list[str]) -> None:
     skills_path = ROOT / "skills" / "registry.yaml"
     mcps_path = ROOT / "mcps" / "registry.yaml"
@@ -726,6 +776,7 @@ def main() -> int:
     mcp_ids = _load_registry_ids(ROOT / "mcps" / "registry.yaml", "mcps")
     role_ids = validate_roles_registry(errors, skill_ids, mcp_ids)
     validate_teams_registry(errors, skill_ids, mcp_ids, role_ids)
+    validate_obsidian_mapping(errors)
 
     for warning in warnings:
         print(f"Warning: {warning}", file=sys.stderr)
