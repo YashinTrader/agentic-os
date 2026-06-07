@@ -1,0 +1,60 @@
+id: T-OBSIDIAN-001
+title: Obsidian vault sync MVP — one-way repo mirror
+owner: composer
+reviewer: claude
+created_by: composer
+status: review
+phase: "2.3"
+created_at: 2026-06-07T18:00:00Z
+updated_at: 2026-06-07T18:00:00Z
+priority: high
+risk_level: low
+requires_human_approval: false
+human_approval_checklist: []
+objective: >
+  Create a safe, local-first, one-way sync from the Agentic OS repo into an
+  Obsidian vault using direct filesystem writes. Repo remains source of truth.
+context: |
+  Phase 2.2 added teams and roles registries. Phase 2.3 prepares human-readable
+  memory mirroring for operators without bidirectional sync, MCP execution, or
+  Obsidian API requirements.
+goals:
+  - Define memory/obsidian_mapping.yaml configuration
+  - Implement integrations/obsidian sync modules with safety guardrails
+  - Add scripts/sync_obsidian.py CLI with dry-run and vault modes
+  - Add dashboard Obsidian Sync read-only tab
+  - Document protocol in docs/OBSIDIAN_SYNC.md
+non_goals:
+  - Bidirectional sync or vault-to-repo instructions
+  - LangGraph, database, agent/MCP execution
+  - Obsidian API or plugin requirement
+  - Automatic dashboard-triggered sync
+inputs:
+  - tasks/, handoffs/, decisions/, logs/
+  - skills/registry.yaml, mcps/registry.yaml
+  - teams/registry.yaml, roles/registry.yaml
+  - memory/obsidian_mapping.yaml
+outputs:
+  - integrations/obsidian/
+  - memory/obsidian_mapping.yaml
+  - scripts/sync_obsidian.py
+  - docs/OBSIDIAN_SYNC.md
+  - tests/test_obsidian_sync.py
+  - dashboard/app.py
+  - tasks/active/T-OBSIDIAN-001.yaml
+  - handoffs/T-OBSIDIAN-001__composer__to__claude.md
+constraints:
+  - Never delete vault files; never write outside vault
+  - Default dry-run when vault_path unset
+  - No .env or secrets synced
+  - PyYAML only; no new dependencies
+acceptance:
+  - dry-run writes no files
+  - real sync writes only under AgenticOS/
+  - unrelated vault files are preserved
+  - path traversal blocked
+  - dashboard tab shows config and CLI hints
+  - python -m unittest and python scripts/validate.py pass
+notes: >
+  Hand off to claude for end-of-Phase-2 review. Next milestone: Phase 2.4
+  LangGraph Orchestrator MVP.

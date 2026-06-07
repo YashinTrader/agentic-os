@@ -200,6 +200,75 @@ def load_teams_registry(root_dir: Path) -> tuple[dict | None, list[str]]:
         return None, [f"teams/registry.yaml: failed to parse: {exc}"]
 
 
+def load_obsidian_mapping(root_dir: Path) -> tuple[dict | None, list[str]]:
+    """Load memory/obsidian_mapping.yaml for the Obsidian Sync dashboard tab."""
+    errors: list[str] = []
+    mapping_path = root_dir / "memory" / "obsidian_mapping.yaml"
+    if not mapping_path.exists():
+        return None, ["memory/obsidian_mapping.yaml: file does not exist"]
+    try:
+        data = yaml.safe_load(mapping_path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            errors.append("memory/obsidian_mapping.yaml: root must be a YAML mapping")
+            return None, errors
+        return data, errors
+    except Exception as exc:
+        return None, [f"memory/obsidian_mapping.yaml: failed to parse: {exc}"]
+
+
+def load_obsidian_last_sync_report(root_dir: Path, mapping: dict | None) -> tuple[dict | None, list[str]]:
+    """Load last sync report from configured vault path when available."""
+    errors: list[str] = []
+    if not mapping:
+        return None, errors
+    vault_path = mapping.get("vault_path")
+    last_sync_file = mapping.get("last_sync_file")
+    if not vault_path or not last_sync_file:
+        return None, errors
+    try:
+        vault_root = str(mapping.get("vault_root_folder", "AgenticOS"))
+        report_rel = str(last_sync_file)
+        if report_rel.startswith(f"{vault_root}/"):
+            report_rel = report_rel[len(vault_root) + 1 :]
+        if ".." in Path(report_rel).parts:
+            errors.append("last_sync_file must not contain '..' segments")
+            return None, errors
+        if str(root_dir) not in sys.path:
+            sys.path.insert(0, str(root_dir))
+        from integrations.obsidian.vault_writer import safe_join
+
+        report_path = safe_join(
+            Path(str(vault_path)).expanduser().resolve(),
+            vault_root,
+            report_rel,
+        )
+        if not report_path.exists():
+            return None, errors
+        import json
+
+        data = json.loads(report_path.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            return data, errors
+        errors.append("last sync report is not a JSON object")
+        return None, errors
+    except Exception as exc:
+        errors.append(f"failed to read last sync report: {exc}")
+        return None, errors
+
+
+def count_obsidian_notes_planned(root_dir: Path) -> int | None:
+    """Count notes that a dry-run sync would generate."""
+    try:
+        if str(root_dir) not in sys.path:
+            sys.path.insert(0, str(root_dir))
+        from integrations.obsidian.sync_to_vault import collect_notes
+
+        notes, _ = collect_notes(root_dir)
+        return len(notes)
+    except Exception:
+        return None
+
+
 def load_roles_registry(root_dir: Path) -> tuple[dict | None, list[str]]:
     """Load roles/registry.yaml for the Roles dashboard tab."""
     errors: list[str] = []
@@ -526,6 +595,9 @@ def generate_dashboard_html(query_params: dict[str, list[str]]) -> str:
     mcps_registry, mcps_registry_errors = load_mcps_registry(ROOT_DIR)
     teams_registry, teams_registry_errors = load_teams_registry(ROOT_DIR)
     roles_registry, roles_registry_errors = load_roles_registry(ROOT_DIR)
+    obsidian_mapping, obsidian_mapping_errors = load_obsidian_mapping(ROOT_DIR)
+    obsidian_last_sync, obsidian_sync_errors = load_obsidian_last_sync_report(ROOT_DIR, obsidian_mapping)
+    obsidian_notes_planned = count_obsidian_notes_planned(ROOT_DIR)
     
     # 1. State extraction
     selected_task_id = query_params.get("task_id", [None])[0]
@@ -1235,6 +1307,7 @@ def generate_dashboard_html(query_params: dict[str, list[str]]) -> str:
                 <a href="/?tab=mcps" class="tab-link {'active' if active_tab == 'mcps' else ''}">🔌 MCPs</a>
                 <a href="/?tab=teams" class="tab-link {'active' if active_tab == 'teams' else ''}">👥 Teams</a>
                 <a href="/?tab=roles" class="tab-link {'active' if active_tab == 'roles' else ''}">🎭 Roles</a>
+                <a href="/?tab=obsidian" class="tab-link {'active' if active_tab == 'obsidian' else ''}">📓 Obsidian Sync</a>
                 <a href="/?tab=health" class="tab-link {'active' if active_tab == 'health' else ''}">🏥 Health Panel</a>
             </div>
     """)
@@ -2257,6 +2330,53 @@ def generate_dashboard_html(query_params: dict[str, list[str]]) -> str:
                     No roles match the current filters.
                 </div>
         """)
+
+    html_out.append("""
+            </div>
+    """)
+
+    # ==========================================
+    # TAB PANEL: OBSIDIAN SYNC
+    # ==========================================
+    obs_vault = obsidian_mapping.get("vault_path") if obsidian_mapping else None
+    obs_enabled = obsidian_mapping.get("sync_enabled") if obsidian_mapping else None
+    obs_dry_default = obsidian_mapping.get("dry_run_default") if obsidian_mapping else None
+    obs_root_folder = obsidian_mapping.get("vault_root_folder", "AgenticOS") if obsidian_mapping else "AgenticOS"
+
+    html_out.append(f"""
+            <div class="tab-panel {'active' if active_tab == 'obsidian' else ''}">
+                <h3>📓 Obsidian Vault Sync</h3>
+                <p style="font-size:12px; color:#94a3b8; margin-bottom:16px;">
+                    Read-only status for one-way repo → vault sync. Dashboard does not trigger sync in Phase 2.3.
+                </p>
+    """)
+
+    if obsidian_mapping_errors:
+        for err in obsidian_mapping_errors:
+            html_out.append(f'<div class="event-type-warn">{escape(err)}</div>')
+    elif obsidian_mapping:
+        last_synced = obsidian_last_sync.get("synced_at", "—") if obsidian_last_sync else "—"
+        last_written = obsidian_last_sync.get("notes_written", "—") if obsidian_last_sync else "—"
+        html_out.append(f"""
+                <div style="background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.05); border-radius:8px; padding:16px; margin-bottom:16px;">
+                    <div class="inspector-section-title" style="border:none; margin-bottom:10px;">Configuration</div>
+                    <div class="inspector-meta-row"><span class="inspector-meta-label">Vault path</span><span class="inspector-meta-val">{escape(str(obs_vault) if obs_vault else '(not configured)')}</span></div>
+                    <div class="inspector-meta-row"><span class="inspector-meta-label">sync_enabled</span><span class="inspector-meta-val">{escape(str(obs_enabled))}</span></div>
+                    <div class="inspector-meta-row"><span class="inspector-meta-label">dry_run_default</span><span class="inspector-meta-val">{escape(str(obs_dry_default))}</span></div>
+                    <div class="inspector-meta-row"><span class="inspector-meta-label">Vault folder</span><span class="inspector-meta-val">{escape(str(obs_root_folder))}</span></div>
+                    <div class="inspector-meta-row"><span class="inspector-meta-label">Notes planned (dry-run)</span><span class="inspector-meta-val">{escape(str(obsidian_notes_planned) if obsidian_notes_planned is not None else '—')}</span></div>
+                    <div class="inspector-meta-row"><span class="inspector-meta-label">Last sync</span><span class="inspector-meta-val">{escape(str(last_synced))}</span></div>
+                    <div class="inspector-meta-row"><span class="inspector-meta-label">Last notes written</span><span class="inspector-meta-val">{escape(str(last_written))}</span></div>
+                </div>
+                <div style="background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.05); border-radius:8px; padding:16px;">
+                    <div class="inspector-section-title" style="border:none; margin-bottom:10px;">CLI Commands</div>
+                    <pre style="font-size:12px; color:#cbd5e1; white-space:pre-wrap;">python scripts/sync_obsidian.py --dry-run
+python scripts/sync_obsidian.py --vault "&lt;path-to-vault&gt;"</pre>
+                </div>
+        """)
+        if obsidian_sync_errors:
+            for err in obsidian_sync_errors:
+                html_out.append(f'<div class="event-type-warn" style="margin-top:12px;">{escape(err)}</div>')
 
     html_out.append("""
             </div>

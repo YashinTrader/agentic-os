@@ -21,7 +21,8 @@ decisions, logs — is a structured file.
 | `handoffs/`    | One markdown file per agent-to-agent transition.     |
 | `decisions/`   | ADRs (architectural decision records).               |
 | `logs/`        | Append-only event log (`agent-events.jsonl`).        |
-| `memory/`      | Reserved for Phase 2 (unified semantic memory).      |
+| `memory/`      | Obsidian sync config (`obsidian_mapping.yaml`).      |
+| `integrations/`| Phase 2.3 Obsidian vault sync modules.               |
 | `scripts/`     | Local validation tooling for Phase 1 files.           |
 | `daemon/`      | Phase 2.0 runtime CLI discovery (observe-only).       |
 | `runtime/`     | Machine-readable daemon inventory and status.         |
@@ -111,8 +112,20 @@ python dashboard/app.py
 Dashboard tabs: **Teams** (`/?tab=teams`), **Roles** (`/?tab=roles`).  
 See `docs/TEAMS_AND_ROLES.md`.
 
+## Phase 2.3 — Obsidian Vault Sync
+One-way mirror from repo to a local Obsidian vault. Repo remains source of truth.
+
+```powershell
+python scripts/sync_obsidian.py --dry-run
+python scripts/sync_obsidian.py --vault "C:\path\to\vault"
+python dashboard/app.py
+```
+
+Dashboard tab: **Obsidian Sync** (`/?tab=obsidian`).  
+See `docs/OBSIDIAN_SYNC.md`.
+
 ## Phase 2 (Later)
-- Phase 2.3 — Obsidian Vault Sync.
+- Phase 2.4 — LangGraph Orchestrator MVP.
 - Unified semantic memory (Cognee or Mem0) via MCP.
 - Hermes summarizes the event log nightly.
 - Token/usage monitoring per agent.
