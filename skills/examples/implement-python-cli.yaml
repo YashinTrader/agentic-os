@@ -1,0 +1,26 @@
+id: implement-python-cli
+name: Implement Python CLI
+version: "1.0"
+description: Build or improve Python CLI utilities under scripts/ using the file-based protocol.
+category: engineering
+allowed_agents:
+  - codex
+  - composer
+  - cursor
+  - gemini
+required_clis:
+  - python
+required_mcps: []
+required_files:
+  - scripts/
+  - docs/AGENT_PROTOCOL.md
+outputs:
+  - scripts/*.py
+  - tests/test_*.py
+risk_level: medium
+approval_level: reviewer
+tags:
+  - python
+  - cli
+status: active
+notes: Example skill entry. Canonical source is skills/registry.yaml.

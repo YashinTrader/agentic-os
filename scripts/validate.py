@@ -89,6 +89,49 @@ REQUIRED_ADR_SECTIONS = [
     "## Consequences",
 ]
 
+SKILL_REQUIRED_FIELDS = {
+    "id",
+    "name",
+    "version",
+    "description",
+    "category",
+    "allowed_agents",
+    "required_clis",
+    "required_mcps",
+    "required_files",
+    "outputs",
+    "risk_level",
+    "approval_level",
+    "tags",
+    "status",
+    "notes",
+}
+ALLOWED_SKILL_APPROVAL_LEVELS = {"none", "reviewer", "human", "blocked"}
+ALLOWED_SKILL_STATUSES = {"active", "planned", "deprecated", "disabled"}
+SKILL_LIST_FIELDS = {"allowed_agents", "required_clis", "required_mcps", "required_files", "outputs", "tags"}
+
+MCP_REQUIRED_FIELDS = {
+    "id",
+    "name",
+    "description",
+    "status",
+    "transport",
+    "command",
+    "args",
+    "endpoint",
+    "env_vars_required",
+    "requires_secret",
+    "allowed_agents",
+    "capabilities",
+    "risk_level",
+    "approval_level",
+    "notes",
+}
+ALLOWED_MCP_STATUSES = {"planned", "configured", "available", "disabled", "error"}
+ALLOWED_MCP_TRANSPORTS = {"stdio", "streamable_http", "sse", "unknown"}
+ALLOWED_MCP_APPROVAL_LEVELS = {"none", "reviewer", "human", "blocked"}
+MCP_LIST_FIELDS = {"args", "env_vars_required", "allowed_agents", "capabilities"}
+
 
 def task_files() -> list[Path]:
     paths: list[Path] = []
@@ -243,6 +286,161 @@ def validate_adrs(errors: list[str]) -> None:
                 errors.append(f"{rel}: missing required section {section}")
 
 
+def validate_skills_registry(errors: list[str]) -> None:
+    path = ROOT / "skills" / "registry.yaml"
+    rel = path.relative_to(ROOT)
+    if not path.exists():
+        errors.append(f"{rel}: file does not exist")
+        return
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        errors.append(f"{rel}: invalid YAML: {exc}")
+        return
+    if not isinstance(data, dict):
+        errors.append(f"{rel}: root must be a YAML mapping")
+        return
+    skills = data.get("skills")
+    if not isinstance(skills, list):
+        errors.append(f"{rel}: skills must be a list")
+        return
+    if not skills:
+        errors.append(f"{rel}: skills must contain at least one entry")
+        return
+
+    seen_ids: set[str] = set()
+    for index, skill in enumerate(skills, start=1):
+        prefix = f"{rel}:skills[{index}]"
+        if not isinstance(skill, dict):
+            errors.append(f"{prefix}: skill entry must be a mapping")
+            continue
+        skill_id = skill.get("id")
+        if not isinstance(skill_id, str) or not skill_id.strip():
+            errors.append(f"{prefix}: id must be a non-empty string")
+        elif skill_id in seen_ids:
+            errors.append(f"{prefix}: duplicate skill id {skill_id!r}")
+        else:
+            seen_ids.add(skill_id)
+
+        missing = sorted(SKILL_REQUIRED_FIELDS - set(skill))
+        if missing:
+            errors.append(f"{prefix} ({skill_id or 'unknown'}): missing required fields: {', '.join(missing)}")
+
+        risk_level = skill.get("risk_level")
+        if risk_level not in ALLOWED_RISK_LEVELS:
+            errors.append(f"{prefix} ({skill_id}): invalid risk_level {risk_level!r}")
+
+        approval_level = skill.get("approval_level")
+        if approval_level not in ALLOWED_SKILL_APPROVAL_LEVELS:
+            errors.append(f"{prefix} ({skill_id}): invalid approval_level {approval_level!r}")
+
+        skill_status = skill.get("status")
+        if skill_status not in ALLOWED_SKILL_STATUSES:
+            errors.append(f"{prefix} ({skill_id}): invalid status {skill_status!r}")
+
+        for list_field in SKILL_LIST_FIELDS:
+            if list_field in skill and not isinstance(skill[list_field], list):
+                errors.append(f"{prefix} ({skill_id}): {list_field} must be a list")
+
+
+def validate_mcps_registry(errors: list[str]) -> None:
+    path = ROOT / "mcps" / "registry.yaml"
+    rel = path.relative_to(ROOT)
+    if not path.exists():
+        errors.append(f"{rel}: file does not exist")
+        return
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        errors.append(f"{rel}: invalid YAML: {exc}")
+        return
+    if not isinstance(data, dict):
+        errors.append(f"{rel}: root must be a YAML mapping")
+        return
+    mcps = data.get("mcps")
+    if not isinstance(mcps, list):
+        errors.append(f"{rel}: mcps must be a list")
+        return
+    if not mcps:
+        errors.append(f"{rel}: mcps must contain at least one entry")
+        return
+
+    seen_ids: set[str] = set()
+    for index, mcp in enumerate(mcps, start=1):
+        prefix = f"{rel}:mcps[{index}]"
+        if not isinstance(mcp, dict):
+            errors.append(f"{prefix}: MCP entry must be a mapping")
+            continue
+        mcp_id = mcp.get("id")
+        if not isinstance(mcp_id, str) or not mcp_id.strip():
+            errors.append(f"{prefix}: id must be a non-empty string")
+        elif mcp_id in seen_ids:
+            errors.append(f"{prefix}: duplicate MCP id {mcp_id!r}")
+        else:
+            seen_ids.add(mcp_id)
+
+        missing = sorted(MCP_REQUIRED_FIELDS - set(mcp))
+        if missing:
+            errors.append(f"{prefix} ({mcp_id or 'unknown'}): missing required fields: {', '.join(missing)}")
+
+        status = mcp.get("status")
+        if status not in ALLOWED_MCP_STATUSES:
+            errors.append(f"{prefix} ({mcp_id}): invalid status {status!r}")
+
+        transport = mcp.get("transport")
+        if transport not in ALLOWED_MCP_TRANSPORTS:
+            errors.append(f"{prefix} ({mcp_id}): invalid transport {transport!r}")
+
+        if not isinstance(mcp.get("requires_secret"), bool):
+            errors.append(f"{prefix} ({mcp_id}): requires_secret must be a boolean")
+
+        risk_level = mcp.get("risk_level")
+        if risk_level not in ALLOWED_RISK_LEVELS:
+            errors.append(f"{prefix} ({mcp_id}): invalid risk_level {risk_level!r}")
+
+        approval_level = mcp.get("approval_level")
+        if approval_level not in ALLOWED_MCP_APPROVAL_LEVELS:
+            errors.append(f"{prefix} ({mcp_id}): invalid approval_level {approval_level!r}")
+
+        for list_field in MCP_LIST_FIELDS:
+            if list_field in mcp and not isinstance(mcp[list_field], list):
+                errors.append(f"{prefix} ({mcp_id}): {list_field} must be a list")
+
+        if status == "planned" and mcp.get("command") is not None:
+            errors.append(f"{prefix} ({mcp_id}): planned MCPs must have command: null")
+        if status == "planned" and mcp.get("endpoint") is not None:
+            errors.append(f"{prefix} ({mcp_id}): planned MCPs must have endpoint: null")
+
+
+def validate_skill_mcp_references(errors: list[str]) -> None:
+    skills_path = ROOT / "skills" / "registry.yaml"
+    mcps_path = ROOT / "mcps" / "registry.yaml"
+    if not skills_path.exists() or not mcps_path.exists():
+        return
+    try:
+        skills_data = yaml.safe_load(skills_path.read_text(encoding="utf-8"))
+        mcps_data = yaml.safe_load(mcps_path.read_text(encoding="utf-8"))
+    except Exception:
+        return
+    if not isinstance(skills_data, dict) or not isinstance(mcps_data, dict):
+        return
+    mcp_ids = {
+        m.get("id")
+        for m in mcps_data.get("mcps", [])
+        if isinstance(m, dict) and isinstance(m.get("id"), str)
+    }
+    for index, skill in enumerate(skills_data.get("skills", []), start=1):
+        if not isinstance(skill, dict):
+            continue
+        skill_id = skill.get("id", "unknown")
+        for ref in skill.get("required_mcps", []):
+            if isinstance(ref, str) and ref not in mcp_ids:
+                errors.append(
+                    f"skills/registry.yaml:skills[{index}] ({skill_id}): "
+                    f"required_mcps references unknown MCP id {ref!r}"
+                )
+
+
 def main() -> int:
     errors: list[str] = []
     warnings: list[str] = []
@@ -250,6 +448,9 @@ def main() -> int:
     validate_logs(errors, warnings)
     validate_handoffs(errors)
     validate_adrs(errors)
+    validate_skills_registry(errors)
+    validate_mcps_registry(errors)
+    validate_skill_mcp_references(errors)
 
     for warning in warnings:
         print(f"Warning: {warning}", file=sys.stderr)

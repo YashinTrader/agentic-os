@@ -1,0 +1,118 @@
+schema_version: "1.0"
+updated_at: 2026-06-07T14:00:00Z
+description: >
+  Canonical skill registry for Agentic OS. Skills describe reusable capabilities,
+  agent eligibility, dependencies, and governance (risk/approval). Observe-only in Phase 2.1.
+skills:
+  - id: implement-python-cli
+    name: Implement Python CLI
+    version: "1.0"
+    description: Build or improve Python CLI utilities under scripts/ using the file-based protocol.
+    category: engineering
+    allowed_agents:
+      - codex
+      - composer
+      - cursor
+      - gemini
+    required_clis:
+      - python
+    required_mcps: []
+    required_files:
+      - scripts/
+      - docs/AGENT_PROTOCOL.md
+    outputs:
+      - scripts/*.py
+      - tests/test_*.py
+    risk_level: medium
+    approval_level: reviewer
+    tags:
+      - python
+      - cli
+      - phase-2.1
+    status: active
+    notes: >
+      Does not execute agents automatically. Skill metadata only until orchestration lands.
+
+  - id: build-streamlit-dashboard
+    name: Build Streamlit Dashboard
+    version: "1.0"
+    description: Build or improve local dashboard views that read the file-based control plane.
+    category: frontend
+    allowed_agents:
+      - gemini
+      - composer
+      - codex
+    required_clis:
+      - python
+      - streamlit
+    required_mcps: []
+    required_files:
+      - dashboard/
+      - runtime/
+    outputs:
+      - dashboard/app.py
+      - tests/test_dashboard*.py
+    risk_level: medium
+    approval_level: reviewer
+    tags:
+      - dashboard
+      - streamlit
+      - ui
+    status: active
+    notes: >
+      Dashboard remains read-only for registry surfaces in Phase 2.1.
+
+  - id: summarize-logs
+    name: Summarize Logs
+    version: "1.0"
+    description: Read logs and handoffs and create status summaries for humans and reviewers.
+    category: analysis
+    allowed_agents:
+      - gemini
+      - hermes
+      - claude
+      - composer
+    required_clis: []
+    required_mcps: []
+    required_files:
+      - logs/agent-events.jsonl
+      - handoffs/
+    outputs:
+      - handoffs/
+      - logs/agent-events.jsonl
+    risk_level: low
+    approval_level: none
+    tags:
+      - logs
+      - handoffs
+      - summary
+    status: active
+    notes: Read-only analysis skill. No external API calls in Phase 2.1.
+
+  - id: review-protocol-change
+    name: Review Protocol Change
+    version: "1.0"
+    description: Review proposed changes to protocol, task schema, handoff schema, or governance.
+    category: governance
+    allowed_agents:
+      - claude
+      - gemini
+      - composer
+    required_clis: []
+    required_mcps: []
+    required_files:
+      - docs/AGENT_PROTOCOL.md
+      - docs/TASK_SCHEMA.md
+      - docs/HANDOFF_PROTOCOL.md
+      - decisions/
+    outputs:
+      - decisions/ADR-*.md
+      - handoffs/
+    risk_level: medium
+    approval_level: reviewer
+    tags:
+      - governance
+      - protocol
+      - adr
+    status: active
+    notes: High-impact protocol edits may still require human approval via task fields.

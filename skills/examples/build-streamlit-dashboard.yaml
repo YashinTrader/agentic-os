@@ -1,0 +1,26 @@
+id: build-streamlit-dashboard
+name: Build Streamlit Dashboard
+version: "1.0"
+description: Build or improve local dashboard views that read the file-based control plane.
+category: frontend
+allowed_agents:
+  - gemini
+  - composer
+  - codex
+required_clis:
+  - python
+  - streamlit
+required_mcps: []
+required_files:
+  - dashboard/
+  - runtime/
+outputs:
+  - dashboard/app.py
+  - tests/test_dashboard*.py
+risk_level: medium
+approval_level: reviewer
+tags:
+  - dashboard
+  - streamlit
+status: active
+notes: Example skill entry. Canonical source is skills/registry.yaml.

@@ -1,0 +1,20 @@
+id: obsidian-local-rest
+name: Obsidian Local REST
+description: Future bridge to Obsidian vault memory via local REST integration.
+status: planned
+transport: unknown
+command: null
+args: []
+endpoint: null
+env_vars_required: []
+requires_secret: false
+allowed_agents:
+  - claude
+  - composer
+  - hermes
+capabilities:
+  - vault_read
+  - note_search
+risk_level: medium
+approval_level: reviewer
+notes: Example MCP entry. Canonical source is mcps/registry.yaml. No secrets.

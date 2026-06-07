@@ -1,0 +1,20 @@
+id: filesystem
+name: Filesystem MCP
+description: Controlled local filesystem access for agent tooling (future, gated).
+status: planned
+transport: stdio
+command: null
+args: []
+endpoint: null
+env_vars_required: []
+requires_secret: false
+allowed_agents:
+  - codex
+  - composer
+  - cursor
+capabilities:
+  - read_file
+  - list_directory
+risk_level: high
+approval_level: human
+notes: Example MCP entry. Canonical source is mcps/registry.yaml. Human approval required before execution.
