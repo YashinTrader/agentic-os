@@ -1,0 +1,8 @@
+schema_version: "1.0"
+generated_at: null
+discovery_method: local_path_and_read_only_version_probe
+summary:
+  total: 0
+  available: 0
+  missing: 0
+tools: []

@@ -1,0 +1,67 @@
+id: T-DAEMON-001
+title: Runtime daemon — CLI discovery and dashboard integration
+owner: composer
+reviewer: claude
+created_by: composer
+status: review
+phase: "2.0"
+created_at: 2026-06-07T12:00:00Z
+updated_at: 2026-06-07T12:00:00Z
+priority: high
+risk_level: low
+requires_human_approval: false
+human_approval_checklist: []
+objective: >
+  Build a local runtime discovery daemon that detects installed CLIs and agent
+  tools, writes machine-readable inventory files, and exposes the inventory in
+  the dashboard without launching or controlling agents.
+context: |
+  Phase 2.0 adds the first runtime layer to Agentic OS. The file-based protocol
+  remains the source of truth for tasks and handoffs. The daemon observes and
+  reports only — it must not execute agents, call APIs, or replace Git-as-bus.
+goals:
+  - Implement safe CLI discovery using shutil.which and bounded subprocess probes
+  - Write runtime/registry/cli_inventory.yaml and runtime/status/daemon_status.json
+  - Support python -m daemon.daemon --once and optional --watch mode
+  - Add Agents / Tools dashboard tab reading runtime artifacts
+  - Document safety guarantees and known limitations
+non_goals:
+  - Agent launching or autonomous control
+  - Database, LangGraph, Obsidian sync, or MCP execution
+  - Replacing the file-based task/handoff protocol
+  - Paid API calls or secret access
+inputs:
+  - docs/ARCHITECTURE.md
+  - docs/TASK_SCHEMA.md
+  - dashboard/app.py
+  - scripts/append_log.py
+  - requirements.txt
+outputs:
+  - daemon/__init__.py
+  - daemon/daemon.py
+  - daemon/cli_discovery.py
+  - daemon/registry_writer.py
+  - daemon/README.md
+  - runtime/registry/cli_inventory.yaml
+  - runtime/status/daemon_status.json
+  - docs/DAEMON_DISCOVERY.md
+  - tests/test_cli_discovery.py
+  - dashboard/app.py
+  - tasks/active/T-DAEMON-001.yaml
+  - handoffs/T-DAEMON-001__composer__to__claude.md
+constraints:
+  - Use Python standard library as much as possible; PyYAML only for YAML writes
+  - No shell=True unless absolutely necessary
+  - No network calls, authentication, or agent execution
+  - Missing CLIs must not crash discovery
+  - Do not change task schema unless absolutely necessary
+acceptance:
+  - python -m daemon.daemon --once writes inventory and status files
+  - Discovery records required fields for each tracked CLI
+  - Dashboard Agents / Tools tab renders inventory and health summary
+  - docs/DAEMON_DISCOVERY.md documents usage, safety, and limitations
+  - tests/test_cli_discovery.py passes without requiring specific CLIs installed
+  - python -m unittest and python scripts/validate.py pass
+notes: >
+  Hand off to claude for architecture and safety review. Recommended next
+  milestone after merge is Phase 2.1 — Skills + MCP Registry.
