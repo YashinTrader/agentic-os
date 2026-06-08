@@ -1,0 +1,52 @@
+id: T-PHASE3-0-PREVIEW
+title: Phase 3.0 — Agent dispatch dry-run preview
+owner: composer
+reviewer: claude
+created_by: composer
+status: ready
+phase: "3.0"
+created_at: 2026-06-08T00:00:00Z
+updated_at: 2026-06-08T00:00:00Z
+priority: high
+risk_level: low
+requires_human_approval: false
+human_approval_checklist: []
+objective: >
+  Implement Phase 3.0 dispatch preview layer only — adapter registry, preview module,
+  CLI, dashboard tab, tests. No live agent execution.
+context: >
+  Follow docs/PHASE_3_DESIGN_SPEC.md and docs/PHASE_3_READINESS_CRITERIA.md.
+  Respect ADR-0012 gates E2–E6 as blockers for execution.
+goals:
+  - agents/adapter_registry.yaml with required adapter fields
+  - dispatch/preview.py dry-run preview builder
+  - scripts/preview_dispatch.py CLI
+  - Dashboard read-only Dispatch Preview tab
+  - Tests for registry, allowlist, risk gate, shape, no execution
+non_goals:
+  - execute_dispatch.py or subprocess agent launch
+  - MCP invocation or paid APIs
+  - Dashboard execute buttons
+  - Task owner/status auto-mutation
+inputs:
+  - docs/PHASE_3_DESIGN_SPEC.md
+  - docs/PHASE_3_READINESS_CRITERIA.md
+  - decisions/ADR-0012-phase-3-agent-dispatch-gates.md
+  - orchestrator/risk.py
+outputs:
+  - agents/adapter_registry.yaml
+  - dispatch/preview.py
+  - scripts/preview_dispatch.py
+  - tests/test_dispatch_preview.py
+  - handoffs/T-PHASE3-0-PREVIEW__composer__to__claude.md
+  - docs/PHASE_3_0_BLOCKERS.md
+constraints:
+  - No subprocess execution for agent commands
+  - No MCP invocation
+  - Mutations limited to runtime/dispatch previews and logs
+acceptance:
+  - Full unittest suite passes
+  - scripts/validate.py passes
+  - Preview JSON includes command, cwd, timeout, approval, rollback metadata
+  - Dashboard shows preview without execute controls
+notes: Handoff targets Claude review before Phase 3.1 execute path.

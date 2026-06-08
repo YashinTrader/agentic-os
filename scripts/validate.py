@@ -783,6 +783,110 @@ def validate_obsidian_mapping(errors: list[str]) -> None:
                 errors.append(f"{rel}: output_folders.{key} must not contain '..' segments")
 
 
+ADAPTER_REQUIRED_FIELDS = {
+    "id",
+    "display_name",
+    "agent_id",
+    "adapter_type",
+    "status",
+    "command_template",
+    "allowed_commands",
+    "forbidden_args",
+    "required_clis",
+    "env_vars_required",
+    "secrets_required",
+    "timeout_seconds",
+    "working_directory_policy",
+    "supports_dry_run",
+    "supports_streaming",
+    "writes_files",
+    "approval_level",
+    "risk_level",
+    "notes",
+}
+ALLOWED_ADAPTER_TYPES = {"cli", "mcp", "http"}
+ALLOWED_ADAPTER_STATUSES = {"active", "disabled", "planned"}
+ALLOWED_WD_POLICIES = {"repo_root", "worktree", "task_subdir"}
+ADAPTER_LIST_FIELDS = {"allowed_commands", "forbidden_args", "required_clis", "env_vars_required"}
+
+
+def validate_adapter_registry(errors: list[str]) -> None:
+    path = ROOT / "agents" / "adapter_registry.yaml"
+    rel = path.relative_to(ROOT)
+    if not path.exists():
+        errors.append(f"{rel}: file does not exist")
+        return
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        errors.append(f"{rel}: invalid YAML: {exc}")
+        return
+    if not isinstance(data, dict):
+        errors.append(f"{rel}: root must be a YAML mapping")
+        return
+    adapters = data.get("adapters")
+    if not isinstance(adapters, list):
+        errors.append(f"{rel}: adapters must be a list")
+        return
+    if not adapters:
+        errors.append(f"{rel}: adapters must contain at least one entry")
+        return
+
+    seen_ids: set[str] = set()
+    active_count = 0
+    for index, adapter in enumerate(adapters, start=1):
+        prefix = f"{rel}:adapters[{index}]"
+        if not isinstance(adapter, dict):
+            errors.append(f"{prefix}: adapter entry must be a mapping")
+            continue
+        adapter_id = adapter.get("id")
+        if not isinstance(adapter_id, str) or not adapter_id.strip():
+            errors.append(f"{prefix}: id must be a non-empty string")
+        elif adapter_id in seen_ids:
+            errors.append(f"{prefix}: duplicate adapter id {adapter_id!r}")
+        else:
+            seen_ids.add(adapter_id)
+
+        missing = sorted(ADAPTER_REQUIRED_FIELDS - set(adapter))
+        if missing:
+            errors.append(f"{prefix} ({adapter_id or 'unknown'}): missing required fields: {', '.join(missing)}")
+
+        if adapter.get("adapter_type") not in ALLOWED_ADAPTER_TYPES:
+            errors.append(f"{prefix} ({adapter_id}): invalid adapter_type {adapter.get('adapter_type')!r}")
+
+        if adapter.get("status") not in ALLOWED_ADAPTER_STATUSES:
+            errors.append(f"{prefix} ({adapter_id}): invalid status {adapter.get('status')!r}")
+
+        if adapter.get("status") == "active":
+            active_count += 1
+            if not adapter.get("supports_dry_run"):
+                errors.append(f"{prefix} ({adapter_id}): active adapters must have supports_dry_run: true in Phase 3.0")
+
+        if adapter.get("working_directory_policy") not in ALLOWED_WD_POLICIES:
+            errors.append(
+                f"{prefix} ({adapter_id}): invalid working_directory_policy "
+                f"{adapter.get('working_directory_policy')!r}"
+            )
+
+        if not isinstance(adapter.get("secrets_required"), bool):
+            errors.append(f"{prefix} ({adapter_id}): secrets_required must be a boolean")
+
+        risk_level = adapter.get("risk_level")
+        if risk_level not in ALLOWED_RISK_LEVELS:
+            errors.append(f"{prefix} ({adapter_id}): invalid risk_level {risk_level!r}")
+
+        approval_level = adapter.get("approval_level")
+        if approval_level not in ALLOWED_SKILL_APPROVAL_LEVELS:
+            errors.append(f"{prefix} ({adapter_id}): invalid approval_level {approval_level!r}")
+
+        for list_field in ADAPTER_LIST_FIELDS:
+            if list_field in adapter and not isinstance(adapter[list_field], list):
+                errors.append(f"{prefix} ({adapter_id}): {list_field} must be a list")
+
+    if active_count == 0:
+        errors.append(f"{rel}: at least one active adapter is required for Phase 3.0 preview")
+
+
 def validate_skill_mcp_references(errors: list[str]) -> None:
     skills_path = ROOT / "skills" / "registry.yaml"
     mcps_path = ROOT / "mcps" / "registry.yaml"
@@ -827,6 +931,7 @@ def main() -> int:
     role_ids = validate_roles_registry(errors, skill_ids, mcp_ids)
     validate_teams_registry(errors, skill_ids, mcp_ids, role_ids)
     validate_obsidian_mapping(errors)
+    validate_adapter_registry(errors)
     validate_phase2_review_docs(errors)
     validate_phase2_hardening_adrs(errors)
 

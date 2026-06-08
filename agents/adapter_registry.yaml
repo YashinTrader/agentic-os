@@ -1,0 +1,127 @@
+schema_version: "1.0"
+updated_at: 2026-06-07T23:59:00Z
+description: >
+  Agent dispatch adapter registry for Phase 3.0 dry-run command preview only.
+  No adapter in this registry may execute agents in Phase 3.0 — preview metadata only.
+adapters:
+  - id: composer-cli-preview
+    display_name: Composer CLI (dry-run preview)
+    agent_id: composer
+    adapter_type: cli
+    status: active
+    command_template: "composer agent run --dry-run --task-id {task_id} --plan {plan_path}"
+    allowed_commands:
+      - composer
+    forbidden_args:
+      - "--execute"
+      - "--apply"
+      - "--force"
+      - "--no-dry-run"
+    required_clis:
+      - composer
+    env_vars_required: []
+    secrets_required: false
+    timeout_seconds: 300
+    working_directory_policy: repo_root
+    supports_dry_run: true
+    supports_streaming: false
+    writes_files: false
+    approval_level: reviewer
+    risk_level: medium
+    notes: Preview only. Maps to Composer integrator workflows.
+
+  - id: codex-cli-preview
+    display_name: Codex CLI (dry-run preview)
+    agent_id: codex
+    adapter_type: cli
+    status: active
+    command_template: "codex run --dry-run --task {task_id} --context {context_pack_path}"
+    allowed_commands:
+      - codex
+    forbidden_args:
+      - "--execute"
+      - "--apply"
+      - "--force"
+    required_clis:
+      - codex
+    env_vars_required: []
+    secrets_required: false
+    timeout_seconds: 600
+    working_directory_policy: repo_root
+    supports_dry_run: true
+    supports_streaming: false
+    writes_files: true
+    approval_level: reviewer
+    risk_level: medium
+    notes: Preview only. File-writing adapter requires rollback in Phase 3.2+.
+
+  - id: claude-cli-preview
+    display_name: Claude Code CLI (dry-run preview)
+    agent_id: claude
+    adapter_type: cli
+    status: active
+    command_template: "claude -p --dry-run --task {task_id}"
+    allowed_commands:
+      - claude
+    forbidden_args:
+      - "--dangerously-skip-permissions"
+      - "--execute"
+    required_clis:
+      - claude
+    env_vars_required: []
+    secrets_required: false
+    timeout_seconds: 300
+    working_directory_policy: repo_root
+    supports_dry_run: true
+    supports_streaming: false
+    writes_files: false
+    approval_level: reviewer
+    risk_level: low
+    notes: Preview only. Reviewer-focused adapter.
+
+  - id: cursor-cli-preview
+    display_name: Cursor CLI (dry-run preview)
+    agent_id: cursor
+    adapter_type: cli
+    status: active
+    command_template: "cursor agent --dry-run --task {task_id}"
+    allowed_commands:
+      - cursor
+    forbidden_args:
+      - "--execute"
+      - "--force"
+    required_clis:
+      - cursor
+    env_vars_required: []
+    secrets_required: false
+    timeout_seconds: 300
+    working_directory_policy: repo_root
+    supports_dry_run: true
+    supports_streaming: false
+    writes_files: true
+    approval_level: reviewer
+    risk_level: medium
+    notes: Preview only. Planned for IDE-integrated dispatch.
+
+  - id: blocked-mcp-preview
+    display_name: MCP adapter (blocked — preview placeholder)
+    agent_id: mcp
+    adapter_type: mcp
+    status: disabled
+    command_template: "mcp invoke --dry-run --server {mcp_id} --tool {tool_name}"
+    allowed_commands:
+      - mcp
+    forbidden_args:
+      - "--invoke"
+      - "--call"
+    required_clis: []
+    env_vars_required: []
+    secrets_required: true
+    timeout_seconds: 60
+    working_directory_policy: repo_root
+    supports_dry_run: false
+    supports_streaming: false
+    writes_files: false
+    approval_level: human
+    risk_level: high
+    notes: MCP execution blocked in Phase 3.0. Registry entry documents future shape.
