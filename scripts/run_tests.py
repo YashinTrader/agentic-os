@@ -11,7 +11,24 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 REQUIREMENTS = REPO_ROOT / "requirements.txt"
 
 
+def _git_head() -> str:
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except Exception:
+        pass
+    return "unknown"
+
+
 def main() -> int:
+    print(f"run_tests: repo={REPO_ROOT} commit={_git_head()}")
     if REQUIREMENTS.exists():
         install = subprocess.run(
             [sys.executable, "-m", "pip", "install", "-r", str(REQUIREMENTS), "-q"],
