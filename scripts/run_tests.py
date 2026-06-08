@@ -5,10 +5,12 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 REQUIREMENTS = REPO_ROOT / "requirements.txt"
+RESULT_PATH = REPO_ROOT / "runtime" / "unittest_last_run.txt"
 
 
 def _git_head() -> str:
@@ -27,16 +29,36 @@ def _git_head() -> str:
     return "unknown"
 
 
+def _write_result(exit_code: int, output: str) -> None:
+    RESULT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    tail = "\n".join(output.strip().splitlines()[-25:])
+    RESULT_PATH.write_text(
+        f"timestamp: {stamp}\n"
+        f"commit: {_git_head()}\n"
+        f"python: {sys.executable}\n"
+        f"exit_code: {exit_code}\n"
+        f"--- tail ---\n"
+        f"{tail}\n",
+        encoding="utf-8",
+    )
+
+
 def main() -> int:
-    print(f"run_tests: repo={REPO_ROOT} commit={_git_head()}")
+    commit = _git_head()
+    print(f"run_tests: repo={REPO_ROOT} commit={commit}")
     if REQUIREMENTS.exists():
         install = subprocess.run(
             [sys.executable, "-m", "pip", "install", "-r", str(REQUIREMENTS), "-q"],
             cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
             check=False,
         )
         if install.returncode != 0:
-            print("pip install -r requirements.txt failed", file=sys.stderr)
+            msg = install.stderr or install.stdout or "pip install failed"
+            print(msg, file=sys.stderr)
+            _write_result(install.returncode, msg)
             return install.returncode
 
     tests = subprocess.run(
@@ -52,8 +74,17 @@ def main() -> int:
             "-v",
         ],
         cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
         check=False,
     )
+    combined = tests.stdout + tests.stderr
+    if tests.stdout:
+        print(tests.stdout, end="")
+    if tests.stderr:
+        print(tests.stderr, end="", file=sys.stderr)
+    _write_result(tests.returncode, combined)
+    print(f"run_tests: wrote {RESULT_PATH.relative_to(REPO_ROOT)} exit={tests.returncode}")
     return tests.returncode
 
 
