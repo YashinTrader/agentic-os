@@ -13,11 +13,12 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
-from orchestrator.graph import run_orchestration
 from orchestrator.loaders import safe_task_path
 from orchestrator.nodes import classify_task, load_task, suggest_team
+from tests.support import import_run_orchestration, skip_without_langgraph
 
 
+@skip_without_langgraph
 class OrchestratorGraphTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
@@ -76,7 +77,7 @@ class OrchestratorGraphTests(unittest.TestCase):
                 "risk_level": "medium",
             },
         )
-        state = run_orchestration(self.root, str(path.relative_to(self.root)), dry_run=True, no_log=True)
+        state = import_run_orchestration()(self.root, str(path.relative_to(self.root)), dry_run=True, no_log=True)
         self.assertEqual(state.selected_team, "dashboard-team")
 
     def test_suggest_team_cli_task(self) -> None:
@@ -92,7 +93,7 @@ class OrchestratorGraphTests(unittest.TestCase):
                 "risk_level": "medium",
             },
         )
-        state = run_orchestration(self.root, str(path.relative_to(self.root)), dry_run=True, no_log=True)
+        state = import_run_orchestration()(self.root, str(path.relative_to(self.root)), dry_run=True, no_log=True)
         self.assertIn(state.selected_team, {"coding-team", "dashboard-team"})
 
     def test_graph_end_to_end_writes_outputs(self) -> None:
@@ -107,7 +108,7 @@ class OrchestratorGraphTests(unittest.TestCase):
                 "risk_level": "low",
             },
         )
-        state = run_orchestration(self.root, str(path.relative_to(self.root)), dry_run=False, no_log=True)
+        state = import_run_orchestration()(self.root, str(path.relative_to(self.root)), dry_run=False, no_log=True)
         self.assertFalse(state.errors)
         plan_path = Path(state.plan_path)
         ctx_path = Path(state.context_pack_path)

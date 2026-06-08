@@ -12,10 +12,10 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
-from orchestrator.graph import run_orchestration  # noqa: E402
 from protocol.event_types import ALLOWED_EVENT_TYPES  # noqa: E402
 from scripts.orchestrate_task import resolve_output_dir  # noqa: E402
 from scripts.validate import validate_logs  # noqa: E402
+from tests.support import import_run_orchestration, langgraph_available, LANGGRAPH_SKIP_REASON  # noqa: E402
 
 
 class Phase2HardeningTests(unittest.TestCase):
@@ -39,12 +39,13 @@ class Phase2HardeningTests(unittest.TestCase):
                 resolve_output_dir(root, str(outside))
             self.assertIn("inside repository", str(ctx.exception))
 
+    @unittest.skipUnless(langgraph_available(), LANGGRAPH_SKIP_REASON)
     def test_missing_task_does_not_generate_plan(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "tasks" / "active").mkdir(parents=True)
             (root / "runtime" / "orchestrator").mkdir(parents=True)
-            state = run_orchestration(
+            state = import_run_orchestration()(
                 root,
                 "tasks/active/MISSING-TASK.yaml",
                 dry_run=False,
@@ -60,6 +61,7 @@ class Phase2HardeningTests(unittest.TestCase):
             self.assertIsNone(payload.get("plan_path"))
             self.assertFalse((root / "runtime" / "orchestrator" / "latest_plan.json").exists())
 
+    @unittest.skipUnless(langgraph_available(), LANGGRAPH_SKIP_REASON)
     def test_invalid_yaml_does_not_generate_plan(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -68,7 +70,7 @@ class Phase2HardeningTests(unittest.TestCase):
             (root / "runtime" / "orchestrator").mkdir(parents=True)
             bad = task_dir / "T-BAD.yaml"
             bad.write_text("id: [not: valid: yaml", encoding="utf-8")
-            state = run_orchestration(root, "tasks/active/T-BAD.yaml", dry_run=False, no_log=True)
+            state = import_run_orchestration()(root, "tasks/active/T-BAD.yaml", dry_run=False, no_log=True)
             self.assertTrue(state.errors)
             self.assertEqual(state.next_action, "fix_task_input")
             self.assertFalse(state.plan_path)
