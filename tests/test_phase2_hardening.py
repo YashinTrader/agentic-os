@@ -13,7 +13,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
 from protocol.event_types import ALLOWED_EVENT_TYPES  # noqa: E402
-from scripts.orchestrate_task import resolve_output_dir  # noqa: E402
+from orchestrator.paths import resolve_output_dir  # noqa: E402
 from scripts.validate import validate_logs  # noqa: E402
 from tests.support import import_run_orchestration, langgraph_available, LANGGRAPH_SKIP_REASON  # noqa: E402
 
