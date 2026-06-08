@@ -33,8 +33,7 @@
 
 ## How to Verify My Work
 ```bash
-pip install -r requirements.txt
-python -m unittest discover -s tests -p "test_*.py" -v
+python scripts/run_tests.py
 python scripts/validate.py
 python scripts/orchestrate_task.py --task tasks/active/T-PHASE3-0-PREVIEW.yaml
 python scripts/preview_dispatch.py --json
