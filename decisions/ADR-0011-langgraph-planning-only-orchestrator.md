@@ -55,4 +55,4 @@ Dashboard Orchestrator tab is **read-only** — displays `latest_state.json` / `
 ## Sign-off
 
 - [x] composer (proposer/implementer)
-- [ ] claude (reviewer — pending end-of-Phase-2 review)
+- [x] claude (reviewer — Phase 2 end review 2026-06-08)

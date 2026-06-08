@@ -52,6 +52,17 @@ def new_dispatch_run_id() -> str:
     return f"dispatch-{stamp}-{uuid4().hex[:8]}"
 
 
+def command_tokens(command: str) -> tuple[list[str], list[str]]:
+    """Parse command into tokens. Returns (tokens, warnings) without executing."""
+    warnings: list[str] = []
+    try:
+        parts = shlex.split(command, posix=False)
+    except ValueError as exc:
+        warnings.append(f"command shlex parse warning: {exc}; using whitespace split fallback")
+        parts = command.split()
+    return parts, warnings
+
+
 def load_adapter_registry(repo_root: Path) -> dict[str, Any]:
     path = repo_root / "agents" / "adapter_registry.yaml"
     if not path.exists():
@@ -124,10 +135,7 @@ def expand_command_template(template: str, context: dict[str, str]) -> str:
 
 
 def _command_root(command: str) -> str:
-    try:
-        parts = shlex.split(command, posix=False)
-    except ValueError:
-        parts = command.split()
+    parts, _ = command_tokens(command)
     if not parts:
         return ""
     root = Path(parts[0]).name.lower()
@@ -148,10 +156,21 @@ def validate_command_allowlist(adapter: dict[str, Any], command: str) -> list[st
     if allowed and root not in allowed:
         errors.append(f"command root {root!r} not in allowed_commands {sorted(allowed)}")
 
-    cmd_lower = command.lower()
+    tokens, token_warnings = command_tokens(command)
+    for warning in token_warnings:
+        errors.append(warning)
+
+    def _normalize_token(token: str) -> str:
+        stripped = token.strip()
+        if len(stripped) >= 2 and stripped[0] == stripped[-1] and stripped[0] in {'"', "'"}:
+            return stripped[1:-1].lower()
+        return stripped.lower()
+
+    token_set = {_normalize_token(token) for token in tokens}
     for forbidden in adapter.get("forbidden_args", []):
-        if str(forbidden).lower() in cmd_lower:
-            errors.append(f"forbidden argument present: {forbidden!r}")
+        forbidden_token = str(forbidden).lower()
+        if forbidden_token in token_set:
+            errors.append(f"forbidden argument token present: {forbidden!r}")
 
     return errors
 
@@ -172,6 +191,15 @@ def stricter_approval_level(a: str, b: str) -> str:
     return a_norm if APPROVAL_PRECEDENCE[a_norm] >= APPROVAL_PRECEDENCE[b_norm] else b_norm
 
 
+def blocked_approval_gate(reason: str) -> dict[str, Any]:
+    return {
+        "approval_level": "blocked",
+        "approval_required": True,
+        "approval_status": "blocked",
+        "approval_reason": reason,
+    }
+
+
 def merge_approval_gate(risk_result: dict[str, Any], adapter: dict[str, Any]) -> dict[str, Any]:
     adapter_level = str(adapter.get("approval_level", "reviewer"))
     risk_level = str(risk_result.get("approval_level", "none"))
@@ -182,7 +210,6 @@ def merge_approval_gate(risk_result: dict[str, Any], adapter: dict[str, Any]) ->
         reasons.append(str(risk_result["approval_reason"]))
     if adapter_level != "none" and adapter_level != risk_level:
         reasons.append(f"Adapter default approval_level: {adapter_level}")
-    status = "pending"
     if merged == "blocked":
         status = "blocked"
     elif merged == "none":
@@ -197,6 +224,25 @@ def merge_approval_gate(risk_result: dict[str, Any], adapter: dict[str, Any]) ->
         "approval_status": status,
         "approval_reason": " | ".join(reasons) if reasons else "Routine preview.",
     }
+
+
+def resolve_approval_gate(
+    risk_result: dict[str, Any],
+    adapter: dict[str, Any] | None,
+    *,
+    agent_id: str = "",
+) -> dict[str, Any]:
+    if adapter is None:
+        return blocked_approval_gate(
+            f"No active allowlisted adapter selected for agent {agent_id!r}. "
+            "Register or enable an active adapter in agents/adapter_registry.yaml."
+        )
+    if adapter.get("status") != "active":
+        return blocked_approval_gate(
+            f"Adapter {adapter.get('id')!r} is not active (status={adapter.get('status')!r}). "
+            "Inactive adapters cannot be previewed for dispatch."
+        )
+    return merge_approval_gate(risk_result, adapter)
 
 
 def _scope_paths(repo_root: Path, plan: dict[str, Any], task: dict[str, Any]) -> list[str]:
@@ -285,16 +331,7 @@ def build_dispatch_preview(
         allowlist_errors = validate_command_allowlist(adapter, command)
         errors.extend(allowlist_errors)
 
-    approval = (
-        merge_approval_gate(risk_result, adapter)
-        if adapter
-        else {
-            "approval_level": risk_result.get("approval_level", "blocked"),
-            "approval_required": True,
-            "approval_status": "blocked",
-            "approval_reason": risk_result.get("approval_reason", "No adapter selected."),
-        }
-    )
+    approval = resolve_approval_gate(risk_result, adapter, agent_id=agent_id)
 
     dispatch_allowed = (
         not errors
@@ -308,7 +345,7 @@ def build_dispatch_preview(
     working_directory = resolve_working_directory(repo_root, wd_policy)
 
     handoff_path = f"handoffs/{task_id}__{agent_id}__to__{plan.get('recommended_reviewer', 'claude')}.md"
-    log_path = f"logs/dispatch-{run_id}.jsonl"
+    log_path = f"logs/{run_id}.jsonl"
 
     preview: dict[str, Any] = {
         "schema_version": "1.0",

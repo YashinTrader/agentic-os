@@ -13,3 +13,4 @@
 | ADR-0010 | Phase 2 file-based runtime registries                   | accepted | 2026-06-07 |
 | ADR-0011 | LangGraph planning-only orchestrator                      | accepted | 2026-06-07 |
 | ADR-0012 | Phase 3 agent dispatch gates                              | accepted | 2026-06-07 |
+| ADR-0013 | Adapter registry schema and Phase 3.0 preview contract    | accepted | 2026-06-08 |

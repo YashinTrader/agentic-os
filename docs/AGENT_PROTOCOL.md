@@ -90,6 +90,16 @@ Example (current):
 {"ts":"2026-06-07T12:00:00Z","agent":"orchestrator","task_id":"T-LANGGRAPH-001","type":"orchestration_planned","detail":"plan generated","ref":"runtime/orchestrator/runs/run-..."}
 ```
 
+### 6.0.1 Dispatch run log stream (Phase 3.0+)
+
+Dispatch preview writes a **second**, per-run structured log:
+
+- Path pattern: `logs/dispatch-<timestamp>_<id>.jsonl` (via preview `run_id`)
+- Append-only JSON lines with `run_id`, `mode`, `dispatch_allowed`, `adapter_id`
+- **Not** validated by `scripts/validate.py` (run artifact, not canonical vocabulary)
+- Canonical dispatch events (`dispatch_preview_created`, `dispatch_blocked`) still
+  go to `logs/agent-events.jsonl` via `protocol/emit_event`
+
 ## 6.1 Task Schema v2 Migration Map
 
 ADR-0005 renames the task schema fields below. During the Phase 1.5 to Phase

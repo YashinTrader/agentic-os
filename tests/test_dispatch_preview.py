@@ -16,6 +16,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from dispatch.preview import (  # noqa: E402
     build_dispatch_preview,
+    command_tokens,
     load_adapter_registry,
     persist_preview,
     validate_command_allowlist,
@@ -123,7 +124,28 @@ class DispatchPreviewTests(unittest.TestCase):
         adapter = next(a for a in registry["adapters"] if a["id"] == "composer-cli-preview")
         cmd = "composer agent run --execute --task-id T-1"
         errors = validate_command_allowlist(adapter, cmd)
-        self.assertTrue(any("forbidden" in e.lower() for e in errors))
+        self.assertTrue(any("forbidden argument token" in e for e in errors))
+
+    def test_forbidden_args_token_level_not_substring_false_positive(self) -> None:
+        registry = load_adapter_registry(self.root)
+        adapter = next(a for a in registry["adapters"] if a["id"] == "composer-cli-preview")
+        cmd = "composer agent run --dry-run --task-id T-not--execute-safe-path"
+        errors = validate_command_allowlist(adapter, cmd)
+        self.assertFalse(any("forbidden" in e.lower() for e in errors))
+
+    def test_forbidden_args_token_level_matches_exact_token(self) -> None:
+        registry = load_adapter_registry(self.root)
+        adapter = next(a for a in registry["adapters"] if a["id"] == "composer-cli-preview")
+        cmd = 'composer agent run --dry-run --task-id "T-1" --execute'
+        errors = validate_command_allowlist(adapter, cmd)
+        self.assertTrue(any("forbidden argument token" in e for e in errors))
+
+    def test_command_tokens_handle_quoted_args(self) -> None:
+        tokens, warnings = command_tokens('composer run --task-id "T-abc" --dry-run')
+        self.assertIn("--dry-run", tokens)
+        normalized = {t.strip('"').strip("'") for t in tokens}
+        self.assertIn("T-abc", normalized)
+        self.assertEqual(warnings, [])
 
     def test_allowlist_rejects_disallowed_command_root(self) -> None:
         registry = load_adapter_registry(self.root)
@@ -191,12 +213,40 @@ class DispatchPreviewTests(unittest.TestCase):
         preview = build_dispatch_preview(self.root)
         self.assertFalse(preview["dispatch_allowed"])
         self.assertTrue(any("no active adapter" in e for e in preview["errors"]))
+        self.assertEqual(preview["approval_gate"]["approval_level"], "blocked")
+        self.assertEqual(preview["approval_gate"]["approval_status"], "blocked")
+        self.assertIn("No active allowlisted adapter", preview["approval_gate"]["approval_reason"])
 
     def test_explicit_blocked_adapter_via_forbidden_supports_dry_run_false(self) -> None:
         self._seed_plan_task()
         preview = build_dispatch_preview(self.root, adapter_id="blocked-mcp-preview")
         self.assertFalse(preview["dispatch_allowed"])
         self.assertTrue(preview["errors"])
+        self.assertEqual(preview["approval_gate"]["approval_level"], "blocked")
+        self.assertEqual(preview["approval_gate"]["approval_status"], "blocked")
+        self.assertIn("not active", preview["approval_gate"]["approval_reason"].lower())
+
+    def test_log_path_has_no_double_dispatch_prefix(self) -> None:
+        self._seed_plan_task()
+        preview = build_dispatch_preview(self.root)
+        run_id = preview["run_id"]
+        self.assertTrue(run_id.startswith("dispatch-"))
+        self.assertEqual(preview["logs_path"], f"logs/{run_id}.jsonl")
+        self.assertNotIn("dispatch-dispatch-", preview["logs_path"])
+
+    def test_gitignore_excludes_dispatch_artifacts(self) -> None:
+        gitignore = (REPO_ROOT / ".gitignore").read_text(encoding="utf-8")
+        self.assertIn("runtime/dispatch/**", gitignore)
+        self.assertIn("logs/dispatch-*.jsonl", gitignore)
+
+    def test_adr_0013_exists_with_required_sections(self) -> None:
+        path = REPO_ROOT / "decisions" / "ADR-0013-adapter-registry-schema.md"
+        self.assertTrue(path.exists())
+        text = path.read_text(encoding="utf-8")
+        for section in ("## Context", "## Decision", "## Consequences"):
+            self.assertIn(section, text, f"missing {section}")
+        self.assertIn("forbidden_args", text)
+        self.assertIn("token-level", text.lower())
 
     def test_requires_human_approval_in_preview_gate(self) -> None:
         self._seed_plan_task(requires_human=True, objective="Add unit tests")

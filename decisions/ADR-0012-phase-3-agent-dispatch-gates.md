@@ -50,8 +50,12 @@ Until gates pass:
 **Neutral**
 
 - Planning orchestrator remains available; only execution is gated.
+- Phase 3.0 (merged 2026-06-08) implements preview-level gates E2/E3/E4 via
+  `agents/adapter_registry.yaml`, `dispatch/preview.py`, and
+  `scripts/preview_dispatch.py`. Gates E5/E6 (timeout enforcement, runtime log
+  capture) remain partial until Phase 3.1 executor ADR is accepted.
 
 ## Sign-off
 
 - [x] composer (proposer/implementer)
-- [ ] claude (reviewer — pending end-of-Phase-2 review)
+- [x] claude (reviewer — Phase 3.0 review 2026-06-08)

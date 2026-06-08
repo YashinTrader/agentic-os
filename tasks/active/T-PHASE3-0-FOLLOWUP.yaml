@@ -1,0 +1,70 @@
+id: T-PHASE3-0-FOLLOWUP
+title: Phase 3.0.1 — Adapter ADR + cleanup before Phase 3.1 design
+owner: composer
+reviewer: claude
+created_by: claude
+status: review
+phase: "3.0"
+created_at: 2026-06-08T01:00:00Z
+updated_at: 2026-06-08T12:00:00Z
+priority: medium
+risk_level: low
+requires_human_approval: false
+human_approval_checklist: []
+objective: >
+  Apply Claude Phase 3.0 review follow-ups (M1–M4, L1–L5) — gitignore, token-level
+  forbidden_args, approval gate coherence, ADR-0013, docs. No execution code.
+context: |
+  Claude Phase 3.0 review verdict: APPROVE.
+  Phase 3 readiness: READY FOR PHASE 3.1 DESIGN ONLY.
+  See docs/REVIEW_CLAUDE_PHASE_3_0.md.
+goals:
+  - M1 gitignore for runtime/dispatch/** and logs/dispatch-*.jsonl
+  - M2 token-level forbidden_args with regression tests
+  - M3 blocked approval gate when adapter missing/inactive
+  - M4 ADR-0013 adapter registry schema
+  - L1–L5 docs, log filename fix, dead code removal, ADR sign-offs
+non_goals:
+  - Phase 3.1 execute_dispatch.py or subprocess execution
+  - Approval recording UI/workflow
+  - CLI availability cross-check (Phase 3.1 design)
+inputs:
+  - docs/REVIEW_CLAUDE_PHASE_3_0.md
+  - agents/adapter_registry.yaml
+  - dispatch/preview.py
+  - .gitignore
+outputs:
+  - decisions/ADR-0013-adapter-registry-schema.md
+  - decisions/INDEX.md
+  - dispatch/preview.py
+  - .gitignore
+  - docs/PHASE_3_DESIGN_SPEC.md
+  - docs/PHASE_3_READINESS_CRITERIA.md
+  - docs/AGENT_PROTOCOL.md
+  - decisions/ADR-0010-phase-2-runtime-registries.md
+  - decisions/ADR-0011-langgraph-planning-only-orchestrator.md
+  - decisions/ADR-0012-phase-3-agent-dispatch-gates.md
+  - tests/test_dispatch_preview.py
+  - handoffs/T-PHASE3-0-FOLLOWUP__composer__to__claude.md
+constraints:
+  - No subprocess execution code
+  - No new execution event emitters
+  - Validator must pass
+acceptance:
+  - ADR-0013 with Context/Decision/Consequences
+  - Token-level forbidden_args tests pass
+  - Missing/inactive adapter => approval_level and status blocked
+  - Log path logs/{run_id}.jsonl without double dispatch- prefix
+  - python scripts/run_tests.py exit 0
+  - python scripts/validate.py exit 0
+notes: Handoff targets Claude re-review. Phase 3.1 design ADR is next milestone.
+labels:
+  - phase-3.0
+  - dispatch-preview
+  - review-fixes
+  - adr
+related_decisions:
+  - ADR-0010
+  - ADR-0011
+  - ADR-0012
+  - ADR-0013
