@@ -13,10 +13,11 @@ PHASE_1_EVENT_TYPES = frozenset(
         "decision_recorded",
         "blocked",
         "note",
+        "error",
     }
 )
 
-# Phase 2 operational events (ADR-0010 extension)
+# Phase 2 operational events — only types with active emitters (ADR-0010 extension)
 PHASE_2_EVENT_TYPES = frozenset(
     {
         "discovery_completed",
@@ -24,6 +25,12 @@ PHASE_2_EVENT_TYPES = frozenset(
         "vault_sync_planned",
         "vault_sync_completed",
         "orchestration_planned",
+    }
+)
+
+# Reserved for future use (documented, not validated as emitted until implemented)
+RESERVED_EVENT_TYPES = frozenset(
+    {
         "validation_passed",
         "review_packet_created",
     }

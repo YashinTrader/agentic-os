@@ -44,7 +44,7 @@ def run_once(root: Path) -> int:
             started_at=started_at,
             finished_at=inventory.get("generated_at"),
         )
-        append_discovery_event(root, inventory, mode="once")
+        append_discovery_event(root, inventory, mode="once", errors=errors or None)
     except Exception as exc:
         print(f"failed to write daemon artifacts: {exc}", file=sys.stderr)
         return 1

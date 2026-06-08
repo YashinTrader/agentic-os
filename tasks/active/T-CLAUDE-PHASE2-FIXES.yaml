@@ -1,0 +1,113 @@
+id: T-CLAUDE-PHASE2-FIXES
+title: Phase 2.6 — Claude review fixes (risk-gate, event vocabulary, cleanups)
+owner: composer
+reviewer: claude
+created_by: claude
+status: review
+phase: "2.6"
+created_at: 2026-06-07T23:30:00Z
+updated_at: 2026-06-07T23:45:00Z
+priority: high
+risk_level: medium
+requires_human_approval: false
+human_approval_checklist: []
+objective: >
+  Apply the High and Medium priority fixes from the Claude end-of-Phase-2
+  review (docs/REVIEW_CLAUDE_PHASE_2.md) so the Phase 2 foundation is safe
+  to extend into Phase 3 design and (later) implementation. Planning-only;
+  no agent execution, no LLM/MCP calls, no new feature scope.
+context: |
+  Claude end-of-Phase-2 review verdict: APPROVE WITH CHANGES,
+  Phase 3 readiness: READY FOR PHASE 3 DESIGN ONLY.
+
+  Two High-priority issues must be fixed before Phase 3 dispatch work can
+  even start: (H1) risk-gate keyword precedence and ignored
+  requires_human_approval flag, and (H2) event-vocabulary drift between
+  protocol/event_types.py and the actual emitters.
+
+  Medium-priority items (M1-M5) close test gaps, documentation drift, and
+  a package-boundary issue. Low-priority items (L1-L6) are optional cleanup
+  and can be deferred.
+
+  This task does NOT start Phase 3. Phase 3 implementation remains blocked
+  by ADR-0012 and docs/PHASE_3_READINESS_CRITERIA.md.
+goals:
+  - Fix risk-gate precedence (H1) with new tests
+  - Wire emitters to the canonical Phase 2 event vocabulary (H2)
+  - Add risk-gate precedence test cases (M1)
+  - Soften OBSIDIAN_SYNC Safety Rules §3 to match implementation (M2)
+  - Extract score_team/load_teams_registry into an importable module (M3)
+  - Consolidate the human-approval list into a single canonical doc (M4)
+  - Clarify runtime-artifact handling for empty inventory/status files (M5)
+non_goals:
+  - Phase 3 agent execution, dispatch adapters, or autonomous runners
+  - LLM API calls, MCP execution, paid APIs, database, network calls
+  - Bidirectional Obsidian sync or vault content reading
+  - New dashboard write/execute surfaces
+  - Restructuring the planning graph beyond minimal import cleanup
+inputs:
+  - docs/REVIEW_CLAUDE_PHASE_2.md
+  - orchestrator/risk.py
+  - orchestrator/nodes.py
+  - tests/test_risk_gate.py
+  - daemon/registry_writer.py
+  - scripts/sync_obsidian.py
+  - scripts/suggest_team.py
+  - integrations/obsidian/sync_to_vault.py
+  - protocol/event_types.py
+  - docs/OBSIDIAN_SYNC.md
+  - docs/AGENT_PROTOCOL.md
+  - decisions/ADR-0012-phase-3-agent-dispatch-gates.md
+  - docs/PHASE_3_READINESS_CRITERIA.md
+  - runtime/registry/cli_inventory.yaml
+  - runtime/status/daemon_status.json
+outputs:
+  - orchestrator/risk.py
+  - tests/test_risk_gate.py
+  - tests/test_phase2_6_events.py
+  - daemon/registry_writer.py
+  - scripts/sync_obsidian.py
+  - protocol/emit_event.py
+  - protocol/event_types.py
+  - docs/PHASE_3_DESIGN_SPEC.md
+  - docs/PHASE_2_6_FIX_REPORT.md
+  - docs/AGENT_PROTOCOL.md
+  - decisions/ADR-0004-event-vocabulary.md
+  - tasks/active/T-CLAUDE-PHASE2-FIXES.yaml
+  - handoffs/T-CLAUDE-PHASE2-FIXES__composer__to__claude.md
+constraints:
+  - No agent execution, MCP execution, or LLM APIs in this task
+  - Validator must still pass without requiring vault, CLIs, or MCP servers
+  - All new tests must run under python -m unittest with no extra setup
+  - ADR-0013 approval level reviewer; no human approval required
+  - Risk-gate behavior change must be covered by regression tests
+  - Event-vocabulary changes must keep historical v1 lines warning-only
+acceptance:
+  - orchestrator/risk.py treats requires_human_approval=true as authoritative
+  - orchestrator/risk.py applies precedence human > reviewer > read-only
+  - tests/test_risk_gate.py covers the three precedence failure modes from review
+  - daemon/registry_writer.py emits type=discovery_completed (or canonical type is pruned)
+  - scripts/sync_obsidian.py emits vault_sync_planned (dry-run) and vault_sync_completed (real)
+  - orchestrator/nodes.py imports team scoring without sys.path mutation
+  - docs/OBSIDIAN_SYNC.md Safety Rules §3 matches actual write behavior
+  - Single canonical human-approval list with cross-doc links
+  - Runtime artifacts (cli_inventory.yaml, daemon_status.json) handled per chosen policy
+  - python -m unittest passes (target 160+ tests after additions)
+  - python scripts/validate.py passes (warnings only for historical v1 events)
+notes: >
+  Required fixes from docs/REVIEW_CLAUDE_PHASE_2.md. After this lands, open a
+  separate task for Phase 3 design (dispatch adapter contract ADR, allowlist
+  scheme, dry-run runner spec, command-preview spec, timeout/log-capture spec,
+  worktree-isolation spec, approval-enforcement spec). Phase 3 implementation
+  remains blocked by ADR-0012 and PHASE_3_READINESS_CRITERIA.md until those
+  design ADRs are accepted and gates E2-E6 are implemented with tests.
+labels:
+  - phase-2.6
+  - review-fixes
+  - risk-gate
+  - event-vocabulary
+  - claude-review
+related_decisions:
+  - ADR-0010
+  - ADR-0011
+  - ADR-0012

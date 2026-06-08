@@ -17,6 +17,7 @@ from integrations.obsidian.mapping import (  # noqa: E402
     resolve_vault_path,
 )
 from integrations.obsidian.sync_to_vault import run_sync  # noqa: E402
+from protocol.emit_event import append_event  # noqa: E402
 
 
 def parser() -> argparse.ArgumentParser:
@@ -66,8 +67,49 @@ def main() -> int:
     try:
         report = run_sync(root, vault_path, dry_run=dry_run, mapping=mapping)
     except Exception as exc:
+        try:
+            append_event(
+                root,
+                agent="obsidian-sync",
+                event_type="error",
+                task_id="T-OBSIDIAN-001",
+                detail=f"Obsidian sync failed: {exc}",
+            )
+        except Exception:
+            pass
         print(str(exc), file=sys.stderr)
         return 1
+
+    try:
+        if report.errors:
+            append_event(
+                root,
+                agent="obsidian-sync",
+                event_type="error",
+                task_id="T-OBSIDIAN-001",
+                detail=f"Obsidian sync errors: {'; '.join(report.errors)}",
+                ref=report.report_path or "",
+            )
+        elif report.dry_run:
+            append_event(
+                root,
+                agent="obsidian-sync",
+                event_type="vault_sync_planned",
+                task_id="T-OBSIDIAN-001",
+                detail=f"Obsidian dry-run planned {report.notes_planned} notes",
+                ref=report.report_path or "",
+            )
+        else:
+            append_event(
+                root,
+                agent="obsidian-sync",
+                event_type="vault_sync_completed",
+                task_id="T-OBSIDIAN-001",
+                detail=f"Obsidian sync wrote {report.notes_written} notes",
+                ref=report.report_path or "",
+            )
+    except Exception:
+        pass
 
     if args.json:
         print(json.dumps(report.to_dict(), indent=2, ensure_ascii=False))

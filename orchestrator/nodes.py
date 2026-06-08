@@ -227,9 +227,15 @@ def compile_context(state: dict[str, Any]) -> dict[str, Any]:
 
 def risk_gate(state: dict[str, Any]) -> dict[str, Any]:
     result = evaluate_risk(state.get("task_data", {}), state)
-    next_action = "await_human_approval" if result["approval_level"] == "human" else (
-        "request_reviewer_signoff" if result["approval_required"] else "dispatch_to_primary_agent_when_execution_enabled"
-    )
+    level = result["approval_level"]
+    if level == "blocked":
+        next_action = "blocked_do_not_dispatch"
+    elif level == "human":
+        next_action = "await_human_approval"
+    elif result["approval_required"]:
+        next_action = "request_reviewer_signoff"
+    else:
+        next_action = "dispatch_to_primary_agent_when_execution_enabled"
     return {
         "approval_required": result["approval_required"],
         "approval_level": result["approval_level"],
