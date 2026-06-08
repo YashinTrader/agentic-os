@@ -1290,7 +1290,7 @@ def generate_dashboard_html(query_params: dict[str, list[str]]) -> str:
         <div style="flex-grow: 1;"></div>
         
         <div style="font-size: 10px; color: #475569; text-align: center; border-top: 1px solid rgba(255, 255, 255, 0.05); padding-top: 12px;">
-            Antigravity Dashboard • Phase 2.5 (hardened)
+            Antigravity Dashboard • Phase 2.6
         </div>
     </div>
     """)
@@ -2484,12 +2484,12 @@ python scripts/orchestrate_task.py --task tasks/active/&lt;task-id&gt;.yaml --js
             <div class="tab-panel {'active' if active_tab == 'health' else ''}">
                 <h3>🏥 System Diagnostic Log</h3>
                 <div style="background:rgba(59,130,246,0.08); border-left:4px solid #3b82f6; border-radius:6px; padding:14px; margin-bottom:16px;">
-                    <div style="font-size:12px; color:#93c5fd; font-weight:600; margin-bottom:6px;">Phase 2 status (2.5 hardened)</div>
+                    <div style="font-size:12px; color:#93c5fd; font-weight:600; margin-bottom:6px;">Phase 2 status (2.6 — Claude review fixes)</div>
                     <div style="font-size:11px; color:#cbd5e1; line-height:1.5;">
-                        2.0 Daemon discovery • 2.1 Skills/MCP registries • 2.2 Teams/Roles •
-                        2.3 Obsidian one-way sync • 2.4 LangGraph planning-only orchestrator.
-                        No agent execution, MCP calls, or LLM APIs. Review packet:
-                        <code>docs/PHASE_2_REVIEW_PACKET.md</code>
+                        2.0 Daemon • 2.1 Skills/MCP • 2.2 Teams/Roles • 2.3 Obsidian one-way •
+                        2.4 LangGraph planning • 2.5 Hardening • 2.6 Risk-gate + event fixes.
+                        No agent dispatch. Phase 3 design:
+                        <code>docs/PHASE_3_DESIGN_SPEC.md</code>
                     </div>
                 </div>
     """)

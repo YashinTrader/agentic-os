@@ -73,8 +73,11 @@ Canonical vocabulary: `protocol/event_types.py` (ADR-0004 + Phase 2 extension in
 **Phase 1 types (`type` field):** `task_created`, `task_assigned`, `status_changed`,
 `handoff_written`, `reviewed`, `decision_recorded`, `blocked`, `note`.
 
-**Phase 2 types:** `discovery_completed`, `registry_updated`, `vault_sync_planned`,
-`vault_sync_completed`, `orchestration_planned`, `validation_passed`, `review_packet_created`.
+**Phase 2 types (active emitters):** `discovery_completed`, `vault_sync_planned`,
+`vault_sync_completed`, `orchestration_planned`, `error`.
+
+**Reserved (not in validator until emitted):** `registry_updated`, `validation_passed`,
+`review_packet_created`.
 
 **Optional fields:** `task_id` (or legacy `task`), `detail`, `text`, `ref`.
 

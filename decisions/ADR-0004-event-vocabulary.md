@@ -99,13 +99,14 @@ Additional closed `type` values for Phase 2 operational events:
 
 | type | when |
 |------|------|
-| `discovery_completed` | daemon CLI discovery finished |
-| `registry_updated` | skills/MCP/teams/roles registry changed |
-| `vault_sync_planned` | Obsidian dry-run or plan step |
+| `discovery_completed` | daemon CLI discovery finished successfully |
+| `vault_sync_planned` | Obsidian dry-run planned notes |
 | `vault_sync_completed` | Obsidian one-way sync finished |
 | `orchestration_planned` | LangGraph finalize wrote plan (no execution) |
-| `validation_passed` | `scripts/validate.py` succeeded |
-| `review_packet_created` | Phase review docs landed |
+| `error` | operational failure (daemon, sync, etc.) |
+
+Reserved (documented, not validated until an emitter exists):
+`registry_updated`, `validation_passed`, `review_packet_created`.
 
 Implemented in `protocol/event_types.py`. Validator errors on unknown `type` values.
 

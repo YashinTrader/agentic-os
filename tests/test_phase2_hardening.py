@@ -76,12 +76,10 @@ class Phase2HardeningTests(unittest.TestCase):
     def test_phase2_event_types_documented(self) -> None:
         for event_type in (
             "discovery_completed",
-            "registry_updated",
             "vault_sync_planned",
             "vault_sync_completed",
             "orchestration_planned",
-            "validation_passed",
-            "review_packet_created",
+            "error",
         ):
             self.assertIn(event_type, ALLOWED_EVENT_TYPES)
 

@@ -3,11 +3,16 @@
 from __future__ import annotations
 
 import json
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 import yaml
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT))
+from protocol.emit_event import append_event  # noqa: E402
 
 
 def utc_now() -> str:
@@ -71,28 +76,37 @@ def append_discovery_event(
     inventory: dict[str, Any],
     *,
     mode: str,
+    errors: list[str] | None = None,
     task_id: str = "T-DAEMON-001",
 ) -> Path:
-    """Append a note event describing the discovery run."""
-    log_path = root / "logs" / "agent-events.jsonl"
-    log_path.parent.mkdir(parents=True, exist_ok=True)
+    """Append discovery_completed or error event for a daemon run."""
     summary = inventory.get("summary", {})
-    event = {
-        "ts": inventory.get("generated_at") or utc_now(),
-        "agent": "daemon",
-        "type": "note",
-        "task_id": task_id,
-        "detail": (
+    ts = inventory.get("generated_at") or utc_now()
+    if errors:
+        return append_event(
+            root,
+            agent="daemon",
+            event_type="error",
+            task_id=task_id,
+            detail=f"CLI discovery run ({mode}) failed: {'; '.join(errors)}",
+            ref="runtime/status/daemon_status.json",
+            ts=ts,
+        )
+
+    return append_event(
+        root,
+        agent="daemon",
+        event_type="discovery_completed",
+        task_id=task_id,
+        detail=(
             f"CLI discovery run ({mode}): "
             f"{summary.get('available', 0)}/{summary.get('total', 0)} tools available"
         ),
-        "text": (
+        text=(
             "Runtime daemon completed CLI inventory refresh. "
             f"Available={summary.get('available', 0)}, "
             f"Missing={summary.get('missing', 0)}."
         ),
-        "ref": "runtime/registry/cli_inventory.yaml",
-    }
-    with log_path.open("a", encoding="utf-8", newline="\n") as handle:
-        handle.write(json.dumps(event, separators=(",", ":"), ensure_ascii=False) + "\n")
-    return log_path
+        ref="runtime/registry/cli_inventory.yaml",
+        ts=ts,
+    )

@@ -2,63 +2,74 @@
 
 from __future__ import annotations
 
-import re
 from typing import Any
 
-HUMAN_KEYWORDS = {
-    "deploy",
-    "deployment",
-    "production",
-    "prod",
-    "secret",
-    "secrets",
-    "api key",
-    "apikey",
-    "credential",
-    "password",
-    "token",
-    "merge to main",
-    "merge main",
-    "ci/cd",
-    "pipeline",
-    "paid api",
-    "billing",
-    "destructive",
-    "delete",
-    "drop table",
-    "database migration",
-    "permission model",
-    "security model",
-    "autonomous",
-    "execute agent",
-    "launch agent",
-}
+# Precedence: blocked > human > reviewer > none
+# Read-only/dry-run wording must NOT override human-risk indicators.
 
-REVIEWER_KEYWORDS = {
-    "adr",
-    "registry",
-    "validator",
-    "dashboard",
-    "protocol",
-    "schema",
-    "handoff",
+HUMAN_KEYWORDS: tuple[str, ...] = (
+    "production db",
+    "github actions",
+    "merge to main",
+    "push to main",
+    "external side effect",
+    "remove files",
+    "paid api",
+    "api key",
+    "rm -rf",
+    "deployment",
+    "destructive",
+    "credential",
+    "execute mcp",
+    "launch agent",
+    "send email",
+    "production",
+    "database",
+    "secrets",
+    "billing",
+    "password",
+    "secret",
+    "deploy",
+    "delete",
+    "spend",
+    "token",
+    "ci/cd",
+    "call api",
+    "prod",
+)
+
+REVIEWER_KEYWORDS: tuple[str, ...] = (
     "orchestrator",
     "langgraph",
-}
+    "validator",
+    "protocol",
+    "registry",
+    "handoff",
+    "dashboard",
+    "schema",
+    "adr",
+)
 
-READ_ONLY_KEYWORDS = {
+READ_ONLY_KEYWORDS: tuple[str, ...] = (
     "dry-run",
     "dry run",
     "read-only",
     "read only",
-    "planning",
-    "suggest",
-    "summary",
-    "summarize",
     "observe-only",
     "observe only",
+    "planning",
+    "summarize",
+    "summary",
+    "suggest",
     "metadata",
-}
+)
+
+BLOCKED_KEYWORDS: tuple[str, ...] = (
+    "do not execute",
+    "do not proceed",
+    "halt work",
+    "stop work",
+)
 
 
 def _combined_text(task: dict[str, Any], state: dict[str, Any]) -> str:
@@ -75,45 +86,86 @@ def _combined_text(task: dict[str, Any], state: dict[str, Any]) -> str:
     return " ".join(parts).lower()
 
 
+def _first_keyword_match(text: str, keywords: tuple[str, ...]) -> str | None:
+    for keyword in sorted(keywords, key=len, reverse=True):
+        if keyword in text:
+            return keyword
+    return None
+
+
 def evaluate_risk(task: dict[str, Any], state: dict[str, Any]) -> dict[str, Any]:
     text = _combined_text(task, state)
     risk_level = str(task.get("risk_level", state.get("risk_level", "medium"))).lower()
     requires_human_flag = bool(task.get("requires_human_approval"))
+    status = str(task.get("status", "")).lower()
 
-    for keyword in READ_ONLY_KEYWORDS:
-        if keyword in text:
-            return {
-                "approval_required": False,
-                "approval_level": "none",
-                "approval_reason": f"Read-only/planning task ({keyword}) — no human approval required.",
-            }
+    # 1. blocked
+    if status == "blocked":
+        return {
+            "approval_required": True,
+            "approval_level": "blocked",
+            "approval_reason": "Task status is blocked — dispatch must not proceed.",
+        }
+    blocked_kw = _first_keyword_match(text, BLOCKED_KEYWORDS)
+    if blocked_kw:
+        return {
+            "approval_required": True,
+            "approval_level": "blocked",
+            "approval_reason": f"Blocked indicator detected: '{blocked_kw}'.",
+        }
 
-    for keyword in HUMAN_KEYWORDS:
-        if keyword in text:
-            return {
-                "approval_required": True,
-                "approval_level": "human",
-                "approval_reason": f"High-risk indicator detected: '{keyword}'.",
-            }
+    # 2. human — flag and high risk are authoritative; keywords beat read-only wording
+    if requires_human_flag:
+        return {
+            "approval_required": True,
+            "approval_level": "human",
+            "approval_reason": "requires_human_approval is true — human approval required.",
+        }
 
-    if requires_human_flag or risk_level == "high":
-        if re.search(r"\b(deploy|secret|merge|production|destructive|database)\b", text):
-            return {
-                "approval_required": True,
-                "approval_level": "human",
-                "approval_reason": "High risk_level or requires_human_approval with risky scope.",
-            }
+    if risk_level == "high":
+        return {
+            "approval_required": True,
+            "approval_level": "human",
+            "approval_reason": "risk_level is high — human approval required.",
+        }
 
-    for keyword in REVIEWER_KEYWORDS:
-        if keyword in text:
-            return {
-                "approval_required": True,
-                "approval_level": "reviewer",
-                "approval_reason": f"Protocol/registry change — reviewer approval sufficient ('{keyword}').",
-            }
+    human_kw = _first_keyword_match(text, HUMAN_KEYWORDS)
+    if human_kw:
+        return {
+            "approval_required": True,
+            "approval_level": "human",
+            "approval_reason": f"High-risk indicator detected: '{human_kw}'.",
+        }
+
+    # 3. reviewer
+    reviewer_kw = _first_keyword_match(text, REVIEWER_KEYWORDS)
+    if reviewer_kw:
+        return {
+            "approval_required": True,
+            "approval_level": "reviewer",
+            "approval_reason": (
+                f"Protocol/registry change — reviewer approval sufficient ('{reviewer_kw}')."
+            ),
+        }
+
+    if risk_level == "medium":
+        return {
+            "approval_required": True,
+            "approval_level": "reviewer",
+            "approval_reason": "Medium risk_level — reviewer sign-off recommended.",
+        }
+
+    # 4. none — read-only/planning tasks with no higher indicators
+    read_only_kw = _first_keyword_match(text, READ_ONLY_KEYWORDS)
+    if read_only_kw:
+        return {
+            "approval_required": False,
+            "approval_level": "none",
+            "approval_reason": f"Read-only/planning task ('{read_only_kw}') — no approval required.",
+        }
 
     return {
-        "approval_required": risk_level in {"medium", "high"},
-        "approval_level": "reviewer" if risk_level != "low" else "none",
-        "approval_reason": "Routine implementation — reviewer sign-off recommended." if risk_level != "low" else "Low-risk planning task.",
+        "approval_required": False,
+        "approval_level": "none",
+        "approval_reason": "Low-risk planning task.",
     }
