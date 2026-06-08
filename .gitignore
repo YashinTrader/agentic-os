@@ -21,9 +21,8 @@ memory/candidates/
 runtime/orchestrator/runs/**
 !runtime/orchestrator/runs/.gitkeep
 runtime/orchestrator/latest_*.json
-runtime/dispatch/*
+runtime/dispatch/**
 !runtime/dispatch/.gitkeep
-runtime/dispatch/previews/*
 !runtime/dispatch/previews/.gitkeep
 runtime/unittest_last_run.txt
 runtime/unittest_result.txt
