@@ -144,6 +144,50 @@ def _command_root(command: str) -> str:
     return root
 
 
+def _normalize_token(token: str) -> str:
+    stripped = token.strip()
+    if len(stripped) >= 2 and stripped[0] == stripped[-1] and stripped[0] in {'"', "'"}:
+        return stripped[1:-1].lower()
+    return stripped.lower()
+
+
+def parse_key_value_token(token: str) -> tuple[str, str] | None:
+    """Parse KEY=VALUE from a single token. Returns None if not key=value form."""
+    normalized = _normalize_token(token)
+    if "=" not in normalized:
+        return None
+    key, _, value = normalized.partition("=")
+    key = key.strip()
+    if not key:
+        return None
+    return key, value
+
+
+def validate_key_value_forbidden_args(
+    adapter: dict[str, Any],
+    command: str,
+    *,
+    tokens: list[str] | None = None,
+) -> list[str]:
+    """Check KEY=VALUE tokens against forbidden keys (value ignored). Fail-safe on parse errors."""
+    errors: list[str] = []
+    if tokens is None:
+        tokens, token_warnings = command_tokens(command)
+        errors.extend(token_warnings)
+
+    forbidden_keys = {_normalize_token(str(item)) for item in adapter.get("forbidden_args", [])}
+
+    for token in tokens:
+        parsed = parse_key_value_token(token)
+        if parsed is None:
+            continue
+        key, _value = parsed
+        if key in forbidden_keys:
+            errors.append(f"forbidden argument key present: {key!r} (KEY=VALUE token {token!r})")
+
+    return errors
+
+
 def validate_command_allowlist(adapter: dict[str, Any], command: str) -> list[str]:
     errors: list[str] = []
     if not adapter.get("supports_dry_run"):
@@ -160,17 +204,13 @@ def validate_command_allowlist(adapter: dict[str, Any], command: str) -> list[st
     for warning in token_warnings:
         errors.append(warning)
 
-    def _normalize_token(token: str) -> str:
-        stripped = token.strip()
-        if len(stripped) >= 2 and stripped[0] == stripped[-1] and stripped[0] in {'"', "'"}:
-            return stripped[1:-1].lower()
-        return stripped.lower()
-
     token_set = {_normalize_token(token) for token in tokens}
     for forbidden in adapter.get("forbidden_args", []):
-        forbidden_token = str(forbidden).lower()
+        forbidden_token = _normalize_token(str(forbidden))
         if forbidden_token in token_set:
             errors.append(f"forbidden argument token present: {forbidden!r}")
+
+    errors.extend(validate_key_value_forbidden_args(adapter, command, tokens=tokens))
 
     return errors
 

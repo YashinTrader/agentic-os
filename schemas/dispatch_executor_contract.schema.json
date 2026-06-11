@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentic-os.local/schemas/dispatch_executor_contract.schema.json",
+  "title": "ExecutionRequest",
+  "type": "object",
+  "required": [
+    "run_id",
+    "task_id",
+    "plan_path",
+    "preview_path",
+    "adapter_id",
+    "selected_agent",
+    "command_preview",
+    "cwd",
+    "scope_paths",
+    "timeout_seconds",
+    "approval_level",
+    "approval_status",
+    "worktree_required",
+    "writes_files",
+    "secrets_required",
+    "network_required",
+    "mcp_required",
+    "executed",
+    "execution_allowed"
+  ],
+  "properties": {
+    "run_id": { "type": "string", "minLength": 1 },
+    "task_id": { "type": "string", "minLength": 1 },
+    "plan_path": { "type": "string", "minLength": 1 },
+    "preview_path": { "type": "string", "minLength": 1 },
+    "adapter_id": { "type": "string", "minLength": 1 },
+    "selected_agent": { "type": "string", "minLength": 1 },
+    "command_preview": { "type": "string", "minLength": 1 },
+    "cwd": { "type": "string", "minLength": 1 },
+    "scope_paths": { "type": "array", "items": { "type": "string" } },
+    "timeout_seconds": { "type": "integer", "minimum": 1 },
+    "approval_level": {
+      "type": "string",
+      "enum": ["none", "reviewer", "human", "blocked"]
+    },
+    "approval_status": {
+      "type": "string",
+      "enum": ["none", "pending_reviewer", "pending_human", "approved", "blocked", "expired", "revoked"]
+    },
+    "approval_record_path": { "type": ["string", "null"] },
+    "worktree_required": { "type": "boolean" },
+    "writes_files": { "type": "boolean" },
+    "secrets_required": { "type": "boolean" },
+    "network_required": { "type": "boolean" },
+    "mcp_required": { "type": "boolean" },
+    "executed": { "type": "boolean" },
+    "execution_allowed": { "type": "boolean" },
+    "blocked_reasons": { "type": "array", "items": { "type": "string" } },
+    "logs_path": { "type": "string" },
+    "handoff_path": { "type": "string" },
+    "rollback_notes": { "type": "string" }
+  },
+  "additionalProperties": false
+}

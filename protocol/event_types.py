@@ -36,18 +36,28 @@ PHASE_3_PREVIEW_EVENT_TYPES = frozenset(
     }
 )
 
-# Reserved for future use (documented, not validated as emitted until implemented)
+# Reserved for Phase 3.2+ execution (documented, not in ALLOWED until emitters exist)
+PHASE_3_2_EXECUTION_EVENT_TYPES = frozenset(
+    {
+        "dispatch_approval_recorded",
+        "dispatch_execution_requested",
+        "dispatch_started",
+        "dispatch_completed",
+        "dispatch_failed",
+        "dispatch_timed_out",
+        "rollback_required",
+        "handoff_required",
+    }
+)
+
+# Legacy / other reserved names (not emitted in Phase 3.1)
 RESERVED_EVENT_TYPES = frozenset(
     {
         "validation_passed",
         "review_packet_created",
         "dispatch_approved",
-        "dispatch_started",
-        "dispatch_completed",
-        "dispatch_failed",
-        "handoff_required",
     }
-)
+) | PHASE_3_2_EXECUTION_EVENT_TYPES
 
 ALLOWED_EVENT_TYPES = PHASE_1_EVENT_TYPES | PHASE_2_EVENT_TYPES | PHASE_3_PREVIEW_EVENT_TYPES
 

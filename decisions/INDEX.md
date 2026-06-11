@@ -14,3 +14,6 @@
 | ADR-0011 | LangGraph planning-only orchestrator                      | accepted | 2026-06-07 |
 | ADR-0012 | Phase 3 agent dispatch gates                              | accepted | 2026-06-07 |
 | ADR-0013 | Adapter registry schema and Phase 3.0 preview contract    | accepted | 2026-06-08 |
+| ADR-0014 | Phase 3.1 controlled executor contract (design only)      | accepted | 2026-06-11 |
+| ADR-0015 | Approval recording and preview freshness                  | accepted | 2026-06-11 |
+| ADR-0016 | Worktree sandbox before file-writing execution            | accepted | 2026-06-11 |

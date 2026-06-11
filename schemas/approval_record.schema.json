@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentic-os.local/schemas/approval_record.schema.json",
+  "title": "ApprovalRecord",
+  "type": "object",
+  "required": [
+    "approval_id",
+    "task_id",
+    "run_id",
+    "preview_hash",
+    "adapter_id",
+    "approval_level",
+    "approved_by",
+    "approver_type",
+    "approved_at",
+    "expires_at",
+    "scope",
+    "allowed_command_hash",
+    "allowed_cwd",
+    "allowed_scope_paths",
+    "revoked"
+  ],
+  "properties": {
+    "approval_id": { "type": "string", "minLength": 1 },
+    "task_id": { "type": "string", "minLength": 1 },
+    "run_id": { "type": "string", "minLength": 1 },
+    "preview_hash": { "type": "string", "minLength": 8 },
+    "adapter_id": { "type": "string", "minLength": 1 },
+    "approval_level": {
+      "type": "string",
+      "enum": ["none", "reviewer", "human", "blocked"]
+    },
+    "approved_by": { "type": "string", "minLength": 1 },
+    "approver_type": {
+      "type": "string",
+      "enum": ["human", "reviewer", "system"]
+    },
+    "approved_at": { "type": "string", "format": "date-time" },
+    "expires_at": { "type": "string", "format": "date-time" },
+    "scope": { "type": "string" },
+    "allowed_command_hash": { "type": "string", "minLength": 8 },
+    "allowed_cwd": { "type": "string", "minLength": 1 },
+    "allowed_scope_paths": { "type": "array", "items": { "type": "string" } },
+    "notes": { "type": "string" },
+    "revoked": { "type": "boolean" }
+  },
+  "additionalProperties": false
+}
