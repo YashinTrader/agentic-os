@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 
-from dispatch.approval_contract import ApprovalRecord, _parse_iso8601
+from dispatch.approval_contract import (
+    ApprovalRecord,
+    evaluate_approval_satisfaction,
+)
 
 
 def _canonical_json(payload: dict[str, Any]) -> str:
@@ -58,38 +61,21 @@ def compute_preview_hash(
     return digest
 
 
-def is_approval_fresh(preview_hash: str, approval_record: ApprovalRecord | dict[str, Any]) -> bool:
-    """True when approval matches preview hash, is not revoked, and not expired."""
-    if isinstance(approval_record, ApprovalRecord):
-        record = approval_record
-    else:
-        record = ApprovalRecord(
-            approval_id=str(approval_record.get("approval_id", "")),
-            task_id=str(approval_record.get("task_id", "")),
-            run_id=str(approval_record.get("run_id", "")),
-            preview_hash=str(approval_record.get("preview_hash", "")),
-            adapter_id=str(approval_record.get("adapter_id", "")),
-            approval_level=str(approval_record.get("approval_level", "")),
-            approved_by=str(approval_record.get("approved_by", "")),
-            approver_type=str(approval_record.get("approver_type", "")),
-            approved_at=str(approval_record.get("approved_at", "")),
-            expires_at=str(approval_record.get("expires_at", "")),
-            scope=str(approval_record.get("scope", "")),
-            allowed_command_hash=str(approval_record.get("allowed_command_hash", "")),
-            allowed_cwd=str(approval_record.get("allowed_cwd", "")),
-            allowed_scope_paths=tuple(approval_record.get("allowed_scope_paths") or []),
-            notes=str(approval_record.get("notes", "")),
-            revoked=bool(approval_record.get("revoked")),
-        )
-
-    if record.revoked:
-        return False
-    if record.preview_hash != preview_hash:
-        return False
-    expires = _parse_iso8601(record.expires_at)
-    if expires is None:
-        return False
-    return expires > datetime.now(timezone.utc)
+def is_approval_fresh(
+    preview_hash: str,
+    approval_record: ApprovalRecord | dict[str, Any],
+    *,
+    required_approval_level: str = "reviewer",
+    now: datetime | None = None,
+) -> bool:
+    """True when approval satisfies required level for the given preview hash."""
+    result = evaluate_approval_satisfaction(
+        approval_record,
+        preview_hash,
+        required_approval_level,
+        now=now,
+    )
+    return result.satisfied
 
 
 def is_preview_stale(

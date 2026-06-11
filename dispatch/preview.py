@@ -383,6 +383,8 @@ def build_dispatch_preview(
 
     wd_policy = str(adapter.get("working_directory_policy", "repo_root")) if adapter else "repo_root"
     working_directory = resolve_working_directory(repo_root, wd_policy)
+    adapter_writes = bool(adapter.get("writes_files")) if adapter else False
+    worktree_required_advisory = adapter_writes or wd_policy == "worktree"
 
     handoff_path = f"handoffs/{task_id}__{agent_id}__to__{plan.get('recommended_reviewer', 'claude')}.md"
     log_path = f"logs/{run_id}.jsonl"
@@ -401,6 +403,7 @@ def build_dispatch_preview(
         "agent_id": agent_id,
         "command": command,
         "working_directory": working_directory,
+        "worktree_required": worktree_required_advisory,
         "scope_paths": _scope_paths(repo_root, plan, task) if task else [],
         "timeout_seconds": adapter.get("timeout_seconds") if adapter else None,
         "env_vars_required": list(adapter.get("env_vars_required", [])) if adapter else [],

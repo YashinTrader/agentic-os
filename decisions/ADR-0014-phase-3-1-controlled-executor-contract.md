@@ -35,6 +35,12 @@ execution:
 Phase 3.2 may implement an executor **only after** separate review of ADR-0014/0015/0016
 and an explicit implementation task.
 
+**Phase 3.1 cleanup clarifications:**
+
+- CLI inventory gate enforced at Phase 3.2 executor only (not preview).
+- `mcp_required` derived from `adapter_type`, not `adapter_id` suffix.
+- Preview `worktree_required` is advisory; executor enforces ADR-0016 hard block.
+
 ## Consequences
 
 **Positive**
@@ -53,4 +59,4 @@ and an explicit implementation task.
 ## Sign-off
 
 - [x] composer (proposer/implementer)
-- [ ] claude (reviewer)
+- [x] claude (reviewer — Phase 3.1 design review 2026-06-11)

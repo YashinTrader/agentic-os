@@ -39,6 +39,34 @@
 6. **Expiry required** — Human and reviewer approvals must include `expires_at` in the
    future at validation time.
 7. **Revocation** — `revoked: true` invalidates immediately.
+8. **Default TTL** — Human approvals default to **30 minutes**; reviewer approvals default
+   to **60 minutes** (`DEFAULT_HUMAN_APPROVAL_TTL_MINUTES` /
+   `DEFAULT_REVIEWER_APPROVAL_TTL_MINUTES` in `dispatch/approval_contract.py`). Adapters
+   may override per-registry in Phase 3.2.
+
+## Validation API (Phase 3.1 cleanup)
+
+Two separate concepts (do not mix shape and satisfaction):
+
+| Function | Purpose |
+|----------|---------|
+| `validate_approval_record_shape(record)` | Required fields, types, ISO-8601 expiry format |
+| `evaluate_approval_satisfaction(record, preview_hash, required_level, now)` | Whether execution approval is satisfied |
+
+`evaluate_approval_satisfaction` returns:
+
+- `satisfied: bool`
+- `status`: `none` \| `pending` \| `approved` \| `blocked` \| `stale` \| `expired` \| `revoked` \| `invalid`
+- `reasons: list[str]`
+
+Rules:
+
+- `required_approval_level: none` — no record required (`status: none`, `satisfied: true`).
+- `blocked` — never satisfied.
+- `human` required — only `approver_type: human` satisfies.
+- `reviewer` required — `reviewer` or `human` satisfies.
+- `preview_hash` mismatch — `status: stale`.
+- Expired / revoked / malformed — `expired` / `revoked` / `invalid` respectively.
 
 ## Storage (Phase 3.2)
 
@@ -50,7 +78,7 @@ approval UI.
 ## Freshness helpers
 
 - `compute_preview_hash(preview)` — canonical JSON SHA-256
-- `is_approval_fresh(preview_hash, approval_record)` — hash + expiry + revoke check
+- `is_approval_fresh(preview_hash, approval_record, required_approval_level)` — delegates to `evaluate_approval_satisfaction`
 - `is_preview_stale(preview, current_adapter, current_task, current_plan)` — live drift
 
 See `dispatch/freshness.py`.

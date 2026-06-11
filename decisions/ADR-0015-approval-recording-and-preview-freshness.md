@@ -26,6 +26,12 @@ Approvals must be explicit, expiring, and bound to the exact preview the operato
 5. **Approver rules** — System cannot approve human-level execution; reviewer approval
    suffices for reviewer-level gates.
 6. **Preview-only** — Phase 3.0 `dry_run_preview` does not require approval records.
+7. **Default TTL** — Human approvals: **30 minutes**; reviewer approvals: **60 minutes**
+   (constants in `dispatch/approval_contract.py`; adapters may override in Phase 3.2).
+8. **Split validation API** (Phase 3.1 cleanup) — `validate_approval_record_shape` checks
+   well-formed records; `evaluate_approval_satisfaction` checks execution approval with
+   structured `status` (`none`, `pending`, `approved`, `blocked`, `stale`, `expired`,
+   `revoked`, `invalid`).
 
 Phase 3.1 implements validation helpers only — no signing, auth service, or approval UI.
 
@@ -43,4 +49,4 @@ Phase 3.1 implements validation helpers only — no signing, auth service, or ap
 ## Sign-off
 
 - [x] composer (proposer/implementer)
-- [ ] claude (reviewer)
+- [x] claude (reviewer — Phase 3.1 design review 2026-06-11)

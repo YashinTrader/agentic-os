@@ -169,8 +169,11 @@ def validate_cli_inventory_gate(
     return errors
 
 
-def _missing_required_fields(request: ExecutionRequest) -> list[str]:
+def _classify_required_field_issues(request: ExecutionRequest) -> tuple[list[str], list[str]]:
+    """Return (missing_fields, invalid_fields) with distinct semantics."""
     missing: list[str] = []
+    invalid: list[str] = []
+
     if not request.run_id:
         missing.append("run_id")
     if not request.task_id:
@@ -187,13 +190,35 @@ def _missing_required_fields(request: ExecutionRequest) -> list[str]:
         missing.append("command_preview")
     if not request.cwd:
         missing.append("cwd")
+
     if request.timeout_seconds <= 0:
-        missing.append("timeout_seconds")
+        invalid.append("timeout_seconds")
+
     if request.approval_level not in APPROVAL_LEVELS:
-        missing.append("approval_level")
+        invalid.append("approval_level")
     if request.approval_status not in APPROVAL_STATUSES:
-        missing.append("approval_status")
-    return missing
+        invalid.append("approval_status")
+
+    return missing, invalid
+
+
+def _format_field_issues(missing: list[str], invalid: list[str]) -> list[str]:
+    messages: list[str] = []
+    if missing:
+        messages.append(f"missing: {', '.join(missing)}")
+    if invalid:
+        messages.append(f"invalid: {', '.join(invalid)}")
+    return messages
+
+
+def resolve_mcp_required(adapter: dict[str, Any] | None) -> bool:
+    """Derive mcp_required from adapter registry metadata, not adapter_id suffix."""
+    if not adapter:
+        return False
+    adapter_type = str(adapter.get("adapter_type", "")).lower()
+    if adapter_type == "mcp":
+        return True
+    return False
 
 
 def validate_execution_request_contract(
@@ -206,9 +231,8 @@ def validate_execution_request_contract(
     blocked: list[str] = []
     warnings: list[str] = []
 
-    missing = _missing_required_fields(request)
-    if missing:
-        blocked.append(f"missing required fields: {', '.join(missing)}")
+    missing, invalid = _classify_required_field_issues(request)
+    blocked.extend(_format_field_issues(missing, invalid))
 
     if request.executed:
         blocked.append("executed must be false at request validation time (Phase 3.1 design)")
@@ -256,7 +280,7 @@ def validate_execution_request_contract(
 
     execution_allowed = len(blocked) == 0
     return ExecutionValidationResult(
-        valid=len(missing) == 0,
+        valid=len(missing) == 0 and len(invalid) == 0,
         execution_allowed=execution_allowed,
         blocked_reasons=blocked,
         warnings=warnings,
@@ -275,6 +299,12 @@ def build_execution_request_from_preview(
     adapter_writes = bool(adapter.get("writes_files")) if adapter else False
     wd_policy = str(adapter.get("working_directory_policy", "")) if adapter else ""
     inferred_worktree = wd_policy == "worktree" or adapter_writes
+    if worktree_required is None and preview.get("worktree_required") is not None:
+        resolved_worktree = bool(preview.get("worktree_required"))
+    elif worktree_required is None:
+        resolved_worktree = inferred_worktree
+    else:
+        resolved_worktree = worktree_required
 
     return ExecutionRequest(
         run_id=str(preview.get("run_id", "")),
@@ -290,11 +320,11 @@ def build_execution_request_from_preview(
         approval_level=str(approval_gate.get("approval_level", "blocked")),
         approval_status=str(approval_gate.get("approval_status", "blocked")),
         approval_record_path=approval_record_path,
-        worktree_required=inferred_worktree if worktree_required is None else worktree_required,
+        worktree_required=resolved_worktree,
         writes_files=adapter_writes,
         secrets_required=bool(preview.get("secrets_required")),
         network_required=False,
-        mcp_required=str(preview.get("adapter_id", "")).endswith("mcp"),
+        mcp_required=resolve_mcp_required(adapter),
         executed=bool(preview.get("executed")),
         execution_allowed=bool(preview.get("dispatch_allowed")),
         blocked_reasons=tuple(preview.get("errors") or []),

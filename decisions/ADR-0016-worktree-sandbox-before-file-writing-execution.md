@@ -40,4 +40,4 @@ Read-only adapters may use `repo_root` cwd when `writes_files: false`.
 ## Sign-off
 
 - [x] composer (proposer/implementer)
-- [ ] claude (reviewer)
+- [x] claude (reviewer — Phase 3.1 design review 2026-06-11)

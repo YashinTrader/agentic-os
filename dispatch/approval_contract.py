@@ -3,11 +3,26 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
-from typing import Any
+from datetime import datetime, timedelta, timezone
+from typing import Any, Literal
 
 APPROVER_TYPES = frozenset({"human", "reviewer", "system"})
 APPROVAL_LEVELS = frozenset({"none", "reviewer", "human", "blocked"})
+
+# Default TTLs (ADR-0015 / Phase 3.1 cleanup decisions)
+DEFAULT_HUMAN_APPROVAL_TTL_MINUTES = 30
+DEFAULT_REVIEWER_APPROVAL_TTL_MINUTES = 60
+
+ApprovalSatisfactionStatus = Literal[
+    "none",
+    "pending",
+    "approved",
+    "blocked",
+    "stale",
+    "expired",
+    "revoked",
+    "invalid",
+]
 
 
 @dataclass(frozen=True)
@@ -31,10 +46,20 @@ class ApprovalRecord:
 
 
 @dataclass
-class ApprovalValidationResult:
-    valid: bool
-    fresh: bool
-    blocked_reasons: list[str]
+class ApprovalShapeResult:
+    """Well-formed approval record — schema/required fields only."""
+
+    well_formed: bool
+    reasons: list[str]
+
+
+@dataclass
+class ApprovalSatisfactionResult:
+    """Whether approval satisfies execution requirements."""
+
+    satisfied: bool
+    status: ApprovalSatisfactionStatus
+    reasons: list[str]
 
 
 def _parse_iso8601(value: str) -> datetime | None:
@@ -53,14 +78,33 @@ def approval_record_to_dict(record: ApprovalRecord) -> dict[str, Any]:
     return data
 
 
-def validate_approval_record(record: ApprovalRecord | dict[str, Any]) -> ApprovalValidationResult:
-    """Validate approval record shape and policy invariants."""
-    blocked: list[str] = []
-
+def _normalize_record(record: ApprovalRecord | dict[str, Any]) -> dict[str, Any]:
     if isinstance(record, ApprovalRecord):
-        data = approval_record_to_dict(record)
+        return approval_record_to_dict(record)
+    return dict(record)
+
+
+def default_approval_expires_at(
+    approval_level: str,
+    *,
+    approved_at: datetime | None = None,
+) -> str:
+    """Compute default expiry ISO-8601 Z for human/reviewer approvals."""
+    base = approved_at or datetime.now(timezone.utc)
+    if approval_level == "human":
+        delta = timedelta(minutes=DEFAULT_HUMAN_APPROVAL_TTL_MINUTES)
+    elif approval_level == "reviewer":
+        delta = timedelta(minutes=DEFAULT_REVIEWER_APPROVAL_TTL_MINUTES)
     else:
-        data = dict(record)
+        delta = timedelta(minutes=0)
+    expires = base + delta
+    return expires.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def validate_approval_record_shape(record: ApprovalRecord | dict[str, Any]) -> ApprovalShapeResult:
+    """Check schema/required fields/types. Does not decide execution approval."""
+    reasons: list[str] = []
+    data = _normalize_record(record)
 
     required = (
         "approval_id",
@@ -79,59 +123,130 @@ def validate_approval_record(record: ApprovalRecord | dict[str, Any]) -> Approva
         "allowed_scope_paths",
     )
     for key in required:
-        if not data.get(key) and data.get(key) != False:
-            blocked.append(f"missing approval field: {key}")
+        if not data.get(key) and data.get(key) is not False:
+            reasons.append(f"missing: {key}")
 
     level = str(data.get("approval_level", ""))
     if level not in APPROVAL_LEVELS:
-        blocked.append(f"invalid approval_level: {level!r}")
+        reasons.append(f"invalid: approval_level ({level!r})")
 
     approver_type = str(data.get("approver_type", ""))
     if approver_type not in APPROVER_TYPES:
-        blocked.append(f"invalid approver_type: {approver_type!r}")
-
-    if data.get("revoked"):
-        blocked.append("approval record is revoked")
-
-    if level == "human" and approver_type == "system":
-        blocked.append("system cannot approve high-risk (human-level) execution")
-
-    if level in {"human", "reviewer"}:
-        if not data.get("expires_at"):
-            blocked.append("expires_at required for human/reviewer approvals")
-        else:
-            expires = _parse_iso8601(str(data["expires_at"]))
-            if expires is None:
-                blocked.append("expires_at is not valid ISO-8601")
-            else:
-                now = datetime.now(timezone.utc)
-                if expires <= now:
-                    blocked.append("approval has expired")
-
-    if level == "none":
-        blocked.append("approval_level none does not require an approval record for execution")
+        reasons.append(f"invalid: approver_type ({approver_type!r})")
 
     preview_hash = str(data.get("preview_hash", ""))
     if not preview_hash or len(preview_hash) < 8:
-        blocked.append("preview_hash must be a non-trivial digest")
+        reasons.append("invalid: preview_hash (must be non-trivial digest)")
 
-    fresh = "expired" not in " ".join(blocked).lower() and "revoked" not in blocked
+    if level in {"human", "reviewer"}:
+        if not data.get("expires_at"):
+            reasons.append("missing: expires_at")
+        else:
+            expires = _parse_iso8601(str(data["expires_at"]))
+            if expires is None:
+                reasons.append("invalid: expires_at (not valid ISO-8601)")
 
-    return ApprovalValidationResult(
-        valid=len(blocked) == 0 or (len(blocked) == 1 and "none does not require" in blocked[0]),
-        fresh=fresh and not data.get("revoked", False),
-        blocked_reasons=blocked,
-    )
+    if level == "human" and approver_type == "system":
+        reasons.append("invalid: approver_type (system cannot sign human-level records)")
+
+    return ApprovalShapeResult(well_formed=len(reasons) == 0, reasons=reasons)
+
+
+def evaluate_approval_satisfaction(
+    record: ApprovalRecord | dict[str, Any] | None,
+    preview_hash: str,
+    required_approval_level: str,
+    *,
+    now: datetime | None = None,
+) -> ApprovalSatisfactionResult:
+    """Check whether approval satisfies the required level for execution."""
+    if required_approval_level == "none":
+        return ApprovalSatisfactionResult(satisfied=True, status="none", reasons=[])
+
+    if required_approval_level == "blocked":
+        return ApprovalSatisfactionResult(
+            satisfied=False,
+            status="blocked",
+            reasons=["required approval level is blocked"],
+        )
+
+    if required_approval_level not in APPROVAL_LEVELS:
+        return ApprovalSatisfactionResult(
+            satisfied=False,
+            status="invalid",
+            reasons=[f"invalid: required_approval_level ({required_approval_level!r})"],
+        )
+
+    if record is None:
+        return ApprovalSatisfactionResult(
+            satisfied=False,
+            status="pending",
+            reasons=["approval record required but not provided"],
+        )
+
+    shape = validate_approval_record_shape(record)
+    if not shape.well_formed:
+        return ApprovalSatisfactionResult(
+            satisfied=False,
+            status="invalid",
+            reasons=list(shape.reasons),
+        )
+
+    data = _normalize_record(record)
+    reasons: list[str] = []
+
+    if data.get("revoked"):
+        return ApprovalSatisfactionResult(
+            satisfied=False,
+            status="revoked",
+            reasons=["approval record is revoked"],
+        )
+
+    record_hash = str(data.get("preview_hash", ""))
+    if record_hash != preview_hash:
+        return ApprovalSatisfactionResult(
+            satisfied=False,
+            status="stale",
+            reasons=["preview_hash mismatch — approval is stale"],
+        )
+
+    expires = _parse_iso8601(str(data.get("expires_at", "")))
+    current = now or datetime.now(timezone.utc)
+    if expires is None or expires <= current:
+        return ApprovalSatisfactionResult(
+            satisfied=False,
+            status="expired",
+            reasons=["approval has expired"],
+        )
+
+    approver_type = str(data.get("approver_type", ""))
+
+    if required_approval_level == "human":
+        if approver_type != "human":
+            reasons.append("human approval required; record approver_type is not human")
+            return ApprovalSatisfactionResult(
+                satisfied=False,
+                status="pending",
+                reasons=reasons,
+            )
+
+    if required_approval_level == "reviewer":
+        if approver_type not in {"human", "reviewer"}:
+            reasons.append("reviewer or human approval required")
+            return ApprovalSatisfactionResult(
+                satisfied=False,
+                status="pending",
+                reasons=reasons,
+            )
+
+    return ApprovalSatisfactionResult(satisfied=True, status="approved", reasons=[])
 
 
 def approval_satisfies_level(record: ApprovalRecord, required_level: str) -> bool:
-    """Check whether approver type can satisfy the required approval level."""
-    if required_level == "none":
-        return True
-    if required_level == "blocked":
-        return False
-    if required_level == "reviewer":
-        return record.approver_type in {"human", "reviewer"} and not record.revoked
-    if required_level == "human":
-        return record.approver_type == "human" and not record.revoked
-    return False
+    """Legacy helper — prefer evaluate_approval_satisfaction."""
+    result = evaluate_approval_satisfaction(
+        record,
+        record.preview_hash,
+        required_level,
+    )
+    return result.satisfied

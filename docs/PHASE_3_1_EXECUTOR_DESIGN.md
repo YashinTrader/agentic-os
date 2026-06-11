@@ -50,6 +50,10 @@ Before any Phase 3.2 execution, the executor **must** verify:
 Phase 3.1 provides `validate_cli_inventory_gate()` — read-only YAML load, no subprocess
 to probe CLIs at validation time.
 
+**Decision (Phase 3.1 cleanup):** CLI inventory is enforced at the **Phase 3.2 executor
+gate only**, not Phase 3.0/3.1 preview. Preview remains machine-agnostic so operators can
+inspect command shape on fresh machines without a daemon run.
+
 ## KEY=VALUE allowlist extension
 
 Token-level `forbidden_args` remains the default policy (ADR-0013). Phase 3.1 extends
@@ -64,6 +68,22 @@ preview validation:
 - Malformed templates or shlex errors fail safe (warnings + conservative blocking).
 
 See `validate_key_value_forbidden_args()` in `dispatch/preview.py`.
+
+**Decision (Phase 3.1 cleanup):** Keep `forbidden_args` dual-duty (exact token + KEY=VALUE
+forbidden key). Introduce separate `forbidden_keys` only if a real adapter needs
+key-specific blocks that are not also exact tokens.
+
+## Worktree advisory vs enforcement
+
+- **Preview** may set `worktree_required` as an **advisory hint** when
+  `writes_files: true` or `working_directory_policy: worktree`.
+- **Executor** enforces the hard block (`writes_files ∧ ¬worktree_required`) via
+  `validate_execution_request_contract` — never trust preview alone.
+
+## MCP metadata
+
+`mcp_required` on `ExecutionRequest` is derived from adapter registry `adapter_type == "mcp"`
+via `resolve_mcp_required()`. **Never** infer from `adapter_id` suffix.
 
 ## Approval and freshness
 

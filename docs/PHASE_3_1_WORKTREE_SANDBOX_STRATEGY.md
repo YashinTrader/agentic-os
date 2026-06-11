@@ -20,6 +20,12 @@
 7. **Rollback notes required** — `rollback_notes` / `rollback.md` mandatory when
    `writes_files: true`.
 
+## Preview advisory hint (Phase 3.1 cleanup)
+
+Phase 3.0 preview may include `worktree_required: true` when `writes_files: true` or
+`working_directory_policy: worktree`. This is **advisory only** — the executor must still
+enforce the hard block below.
+
 ## Validation (Phase 3.1)
 
 `validate_execution_request_contract` blocks when:
