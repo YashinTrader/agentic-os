@@ -160,15 +160,16 @@ class FreshnessTests(unittest.TestCase):
         parsed = parse_key_value_token("--execute=true")
         self.assertEqual(parsed, ("--execute", "true"))
 
-    def test_execution_events_not_in_allowed_yet(self) -> None:
-        from protocol.event_types import ALLOWED_EVENT_TYPES, PHASE_3_2_EXECUTION_EVENT_TYPES
+    def test_phase3_2_execution_events_in_allowed_with_emitters(self) -> None:
+        from protocol.event_types import ALLOWED_EVENT_TYPES, PHASE_3_2_EXECUTION_EVENT_TYPES, RESERVED_EVENT_TYPES
 
         for event in PHASE_3_2_EXECUTION_EVENT_TYPES:
-            self.assertNotIn(
+            self.assertIn(
                 event,
                 ALLOWED_EVENT_TYPES,
-                f"{event} must stay reserved until Phase 3.2 emitter exists",
+                f"{event} must be allowed once Phase 3.2 emitters exist",
             )
+        self.assertIn("dispatch_approval_recorded", RESERVED_EVENT_TYPES)
 
 
 if __name__ == "__main__":

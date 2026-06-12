@@ -100,6 +100,12 @@ Dispatch preview writes a **second**, per-run structured log:
 - Canonical dispatch events (`dispatch_preview_created`, `dispatch_blocked`) still
   go to `logs/agent-events.jsonl` via `protocol/emit_event`
 
+**Phase 3.2 executor events** (emitted only by `scripts/execute_dispatch.py` /
+`scripts/approve_dispatch.py` via operator command): `dispatch_requested`,
+`dispatch_dry_run_completed`, `dispatch_started`, `dispatch_completed`,
+`dispatch_failed`, `dispatch_timed_out`, `approval_record_created`,
+`handoff_required`. No dashboard or orchestrator may emit execution events.
+
 ## 6.1 Task Schema v2 Migration Map
 
 ADR-0005 renames the task schema fields below. During the Phase 1.5 to Phase

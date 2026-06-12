@@ -17,3 +17,6 @@
 | ADR-0014 | Phase 3.1 controlled executor contract (design only)      | accepted | 2026-06-11 |
 | ADR-0015 | Approval recording and preview freshness                  | accepted | 2026-06-11 |
 | ADR-0016 | Worktree sandbox before file-writing execution            | accepted | 2026-06-11 |
+| ADR-0017 | Phase 3.2 controlled executor MVP                         | accepted | 2026-06-12 |
+| ADR-0018 | Execution event vocabulary                                  | accepted | 2026-06-12 |
+| ADR-0019 | Operator-commanded execution only                           | accepted | 2026-06-12 |

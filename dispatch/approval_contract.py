@@ -123,6 +123,10 @@ def validate_approval_record_shape(record: ApprovalRecord | dict[str, Any]) -> A
         "allowed_scope_paths",
     )
     for key in required:
+        if key == "allowed_scope_paths":
+            if key not in data or data.get(key) is None:
+                reasons.append(f"missing: {key}")
+            continue
         if not data.get(key) and data.get(key) is not False:
             reasons.append(f"missing: {key}")
 

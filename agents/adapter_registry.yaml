@@ -1,9 +1,35 @@
 schema_version: "1.0"
-updated_at: 2026-06-07T23:59:00Z
+updated_at: 2026-06-12T12:00:00Z
 description: >
-  Agent dispatch adapter registry for Phase 3.0 dry-run command preview only.
-  No adapter in this registry may execute agents in Phase 3.0 — preview metadata only.
+  Agent dispatch adapter registry. Phase 3.0+ dry-run preview for all adapters.
+  Phase 3.2: only adapters with supports_execution=true may run via execute_dispatch.py --execute.
 adapters:
+  - id: local-python-exec-test
+    display_name: Local Python executor test (Phase 3.2 safe fixture)
+    agent_id: executor-test
+    adapter_type: cli
+    status: active
+    command_template: 'python -c "print(''agentic-os-executor-test'')"'
+    allowed_commands:
+      - python
+    forbidden_args:
+      - "--execute"
+      - "rm"
+    required_clis:
+      - python
+    env_vars_required: []
+    secrets_required: false
+    timeout_seconds: 30
+    working_directory_policy: repo_root
+    supports_dry_run: true
+    supports_streaming: false
+    supports_execution: true
+    writes_files: false
+    approval_level: none
+    risk_level: low
+    notes: >
+      Phase 3.2 controlled executor test fixture only. Harmless local python -c print.
+      Real agent adapters remain preview-only (supports_execution omitted/false).
   - id: composer-cli-preview
     display_name: Composer CLI (dry-run preview)
     agent_id: composer
