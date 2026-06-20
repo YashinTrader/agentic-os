@@ -58,15 +58,15 @@ Compare `runtime/unittest_last_run.txt` `commit_full` to `tests_commit_sha` belo
 repo_root: C:/Users/gabot/agentic-os
 branch: agent/composer/T-PHASE3-3-REVIEW-FIXES
 base_sha: b7a1239b4e429dd6c903433c6ed773ab71a03c95
-local_head_sha: da47c82547896cc0604819ae6a59c22cfe8b4520
-remote_head_sha: da47c82547896cc0604819ae6a59c22cfe8b4520
+local_head_sha: 97ee6883b8724b3366e5881f18d675083ff76bb6
+remote_head_sha: 97ee6883b8724b3366e5881f18d675083ff76bb6
 git_status_clean: false
 tests_commit_sha: 93fa5580977a5a54dd8a3a235eab1b419e274891
 test_count: 296
 test_exit_code: 0
 validator_exit_code: 0
-validator_commit_sha: da47c82547896cc0604819ae6a59c22cfe8b4520
-artifact_commit_sha: da47c82547896cc0604819ae6a59c22cfe8b4520
+validator_commit_sha: 97ee6883b8724b3366e5881f18d675083ff76bb6
+artifact_commit_sha: 97ee6883b8724b3366e5881f18d675083ff76bb6
 working_copy_path: C:/Users/gabot/agentic-os
 
 Note: `git_status_clean: false` due to untracked local scratch files under `runtime/` (not committed). Commits after `93fa558` are documentation/verification-only.
