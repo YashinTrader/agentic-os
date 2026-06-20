@@ -1,74 +1,41 @@
-# Handoff: Repository Integrity Recovery — Phase 3.2.1 + 3.3 Design
+# Handoff: T-REPO-INTEGRITY-RECOVERY
 
 **From:** composer (recovery agent)  
 **To:** claude (reviewer)  
-**Date:** 2026-06-20
+**Date:** 2026-06-20  
+**Task Status After Handoff:** review  
+**Branch:** `agent/composer/T-PHASE3-2-1-AND-3-3-DESIGN`  
+**HEAD:** `579c2b0aa15baf07422e92a44a302f4ec30f0548`  
+**Status:** ready for independent verification
 
-## What Happened
+## What I Did
 
-A prior handoff claimed Phase 3.2.1 + Phase 3.3 design was complete on branch `agent/composer/T-PHASE3-2-1-AND-3-3-DESIGN` with commits `ef39087`, `468bf99`, `3a26e1e`. Independent verification found:
+- Investigated repository integrity incident (missing remote branch/commits)
+- Identified two local clones: Codex workspace (Phase 3.0 base @ `3a26e1e`) and canonical Phase 3.2 clone @ `5579146`
+- Rebuilt Phase 3.2.1 hardening + Phase 3.3 design on canonical base `5579146`
+- Renumbered Phase 3.3 ADRs to ADR-0020–ADR-0024 (avoid collision with ADR-0014–0019)
+- Pushed branch `agent/composer/T-PHASE3-2-1-AND-3-3-DESIGN` to `origin`
+- Wrote `docs/REPOSITORY_INTEGRITY_INCIDENT_PHASE_3_3.md`
 
-- Branch and commits absent from `origin`
-- Work isolated in `C:\Users\gabot\Documents\Codex\agentic-os` on a **Phase 3.0 base**, not Phase 3.2 `5579146`
-- ADR numbering collision (0014–0018 already used for Phase 3.1/3.2)
-- Test count regression claim (220 vs 262)
+## What Remains
 
-## Root Cause
+- Claude independent verification of pushed branch and artifacts
+- Claude review of Phase 3.3 design packet (no Phase 3.4 implementation until sign-off)
+- Optional: retire or mark stale the Codex clone @ `3a26e1e` to prevent future confusion
 
-Wrong working copy + no `git push` + handoff stated remote-verifiable artifacts that were local-only.
+## Decisions Made
 
-## What Was Recovered or Rebuilt
+- **Classification A:** work existed locally, never pushed; handoff was inaccurate about remote state
+- Recovery = **rebuild on canonical base**, not cherry-pick of `ef39087`/`468bf99`/`3a26e1e`
+- M2 freshness: block on `--execute` when verification fails; warn on `--dry-run`
+- Phase 3.3 ADRs: ADR-0020 worktree, ADR-0021 approval authenticity, ADR-0022 no autonomous execution, ADR-0023 adapter promotion, ADR-0024 concurrency
 
-**Rebuilt** on canonical Phase 3.2 base `5579146` by porting real artifacts from the Codex clone:
+## Open Questions
 
-- Phase 3.2.1 hardening: `dispatch/path_containment.py`, pathlib-safe worktree policy, M2 execute-time freshness block, L1 `supports_execution` validator requirement, L3 `event_emit_errors`
-- Phase 3.3 design-only docs, schemas, tasks, ADR-0020–0024
-- Tests: `test_phase3_2_1_hardening.py`, `test_phase3_3_design.py`, `test_path_containment.py`; executor test fixture fix for orchestrator state
+- Should orchestrator `plan_path` prefer `plan.json` over `plan.md` at preview time to reduce execute-time blocks?
+- When to archive the stale Codex clone to prevent ADR/test-count confusion?
 
-This is **not** a replay of commits `ef39087`/`468bf99`/`3a26e1e`; those remain local-only in the Codex clone.
-
-## Repository Path Used
-
-`C:\Users\gabot\agentic-os`
-
-## Branch and Commit Verification
-
-See post-push section below — run verification commands after reading this handoff.
-
-## Remote Verification
-
-After push, confirm:
-
-```powershell
-git ls-remote --heads origin agent/composer/T-PHASE3-2-1-AND-3-3-DESIGN
-```
-
-Local and remote HEAD must match (full 40-char SHA).
-
-## Tests and Validator
-
-- **280 tests**, `exit_code: 0` (see `runtime/unittest_last_run.txt` after final commit)
-- `python scripts/validate.py` → **Validation passed**
-
-## ADR Number Corrections
-
-| Incorrect (Codex handoff) | Correct (canonical tree) |
-|---------------------------|--------------------------|
-| ADR-0014 worktree allocation | ADR-0020 |
-| ADR-0015 approval authenticity | ADR-0021 |
-| ADR-0016 no autonomous execution | ADR-0022 |
-| ADR-0017 adapter promotion | ADR-0023 |
-| ADR-0018 concurrency limits | ADR-0024 |
-
-Phase 3.1/3.2 ADR-0014–0019 unchanged.
-
-## Remaining Risks
-
-- Codex clone @ `3a26e1e` still exists locally with stale/conflicting ADR numbers — do not merge without discarding.
-- `runtime/unittest_last_run.txt` is gitignored; verify on checkout.
-- M2 freshness block on `--execute` when orchestrator `plan_path` points to non-JSON `plan.md` — intentional safety behavior.
-
-## How Claude Can Independently Verify
+## How to Verify My Work
 
 ```powershell
 cd C:\Users\gabot\agentic-os
@@ -87,6 +54,73 @@ git log -5 --oneline --decorate
 git diff origin/main...HEAD --stat
 ```
 
+Expected: HEAD = `579c2b0aa15baf07422e92a44a302f4ec30f0548`, 280 tests, validator passed, remote SHA matches local.
+
+## Risks / Caveats
+
+- Codex clone @ `3a26e1e` retains conflicting ADR-0014–0018 numbering — do not merge
+- `runtime/unittest_last_run.txt` is gitignored; regenerate after checkout
+- Prior commits `ef39087`/`468bf99`/`3a26e1e` are not on `origin`; only recovery commit is authoritative
+
+## Recommended Next Action for Receiver
+
+Verify remote branch and artifacts using commands above, then review `docs/PHASE_3_3_REVIEW_PACKET.md` and ADR-0020–0024. Approve Phase 3.3 design before any implementation work.
+
+---
+
+## What Happened
+
+Prior handoff claimed completion on `agent/composer/T-PHASE3-2-1-AND-3-3-DESIGN` with commits `ef39087`, `468bf99`, `3a26e1e`. Claude found branch/commits absent from `origin`, wrong base, ADR collisions, and test count regression.
+
+## Root Cause
+
+Wrong working copy (`C:\Users\gabot\Documents\Codex\agentic-os`), no `git push`, handoff claimed remote-verifiable state.
+
+## What Was Recovered or Rebuilt
+
+Rebuilt on `5579146` by porting real Codex-clone artifacts. Not a replay of original commit chain.
+
+## Repository Path Used
+
+`C:\Users\gabot\agentic-os`
+
+## Branch and Commit Verification
+
+| Item | Value |
+|------|-------|
+| Branch | `agent/composer/T-PHASE3-2-1-AND-3-3-DESIGN` |
+| Base | `557914624b4288ff3250ff31cf4f0455f8209119` |
+| Recovery HEAD | `579c2b0aa15baf07422e92a44a302f4ec30f0548` |
+
+## Remote Verification
+
+```powershell
+git ls-remote --heads origin agent/composer/T-PHASE3-2-1-AND-3-3-DESIGN
+```
+
+## Tests and Validator
+
+- **280 tests**, `exit_code: 0`
+- Validator: passed after handoff format fix
+
+## ADR Number Corrections
+
+| Was (Codex) | Now (canonical) |
+|-------------|-----------------|
+| ADR-0014 | ADR-0020 |
+| ADR-0015 | ADR-0021 |
+| ADR-0016 | ADR-0022 |
+| ADR-0017 | ADR-0023 |
+| ADR-0018 | ADR-0024 |
+
+## Remaining Risks
+
+See **Risks / Caveats** above.
+
+## How Claude Can Independently Verify
+
+See **How to Verify My Work** above.
+
 ## Recommended Next Action
 
-Review Phase 3.3 design docs and ADR-0020–0024 on the pushed branch. Do **not** proceed to Phase 3.4 implementation until Claude signs off Phase 3.3 design packet.
+See **Recommended Next Action for Receiver** above.
