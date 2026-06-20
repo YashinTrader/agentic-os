@@ -13,10 +13,11 @@ REQUIREMENTS = REPO_ROOT / "requirements.txt"
 RESULT_PATH = REPO_ROOT / "runtime" / "unittest_last_run.txt"
 
 
-def _git_head() -> str:
+def _git_head(short: bool = True) -> str:
+    flag = "--short" if short else "HEAD"
     try:
         result = subprocess.run(
-            ["git", "rev-parse", "--short", "HEAD"],
+            ["git", "rev-parse", flag],
             cwd=REPO_ROOT,
             capture_output=True,
             text=True,
@@ -29,14 +30,46 @@ def _git_head() -> str:
     return "unknown"
 
 
+def _git_toplevel() -> str:
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except Exception:
+        pass
+    return str(REPO_ROOT)
+
+
+def _parse_test_count(output: str) -> int | None:
+    for line in reversed(output.splitlines()):
+        stripped = line.strip()
+        if stripped.startswith("Ran ") and " tests" in stripped:
+            try:
+                return int(stripped.split()[1])
+            except (IndexError, ValueError):
+                return None
+    return None
+
+
 def _write_result(exit_code: int, output: str) -> None:
     RESULT_PATH.parent.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
     tail = "\n".join(output.strip().splitlines()[-25:])
+    test_count = _parse_test_count(output)
+    count_line = f"test_count: {test_count}\n" if test_count is not None else ""
     RESULT_PATH.write_text(
         f"timestamp: {stamp}\n"
-        f"commit: {_git_head()}\n"
+        f"repo_root: {_git_toplevel()}\n"
+        f"commit: {_git_head(short=True)}\n"
+        f"commit_full: {_git_head(short=False)}\n"
         f"python: {sys.executable}\n"
+        f"{count_line}"
         f"exit_code: {exit_code}\n"
         f"--- tail ---\n"
         f"{tail}\n",

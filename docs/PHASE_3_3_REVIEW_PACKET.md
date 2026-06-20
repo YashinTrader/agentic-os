@@ -12,8 +12,8 @@ Phase 3.2.1 hardens the controlled subprocess executor. Phase 3.3 delivers desig
 
 | Area | Evidence |
 |------|----------|
-| Path containment | `dispatch/path_containment.py`, `tests/test_worktree_policy.py` |
-| Preview freshness blocking | `dispatch/freshness.py`, executor integration |
+| Path containment | `dispatch/path_containment.py`, `tests/test_path_containment.py`, `tests/test_dispatch_worktree_policy.py` |
+| Preview freshness blocking | `dispatch/execution_gate.py` + `dispatch/freshness.py`; regressions in `tests/test_phase3_3_review_fixes.py` |
 | `supports_execution` schema | `agents/adapter_registry.yaml`, `scripts/validate.py` |
 | Event emit observability | `dispatch/executor.py` → `event_emit_errors` |
 

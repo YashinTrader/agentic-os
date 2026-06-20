@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -73,6 +74,26 @@ REQUIRED_HANDOFF_SECTIONS = [
     "## Risks / Caveats",
     "## Recommended Next Action for Receiver",
 ]
+
+HANDOFF_PROTOCOL_V2_MARKER = "**Handoff Protocol:** v2"
+
+REQUIRED_VERIFICATION_FIELDS = (
+    "repo_root:",
+    "branch:",
+    "base_sha:",
+    "local_head_sha:",
+    "remote_head_sha:",
+    "git_status_clean:",
+    "tests_commit_sha:",
+    "test_count:",
+    "test_exit_code:",
+    "validator_exit_code:",
+    "validator_commit_sha:",
+    "artifact_commit_sha:",
+    "working_copy_path:",
+)
+
+_SHA40_RE = re.compile(r"^[0-9a-fA-F]{40}$")
 
 REQUIRED_ADR_SECTIONS = [
     "## Context",
@@ -283,11 +304,50 @@ def validate_logs(errors: list[str], warnings: list[str]) -> None:
             errors.append(f"logs/agent-events.jsonl:{index}: missing required field 'type'")
 
 
+def _verification_field_value(text: str, field: str) -> str | None:
+    prefix = field if field.endswith(":") else f"{field}:"
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith(prefix):
+            return stripped[len(prefix) :].strip()
+    return None
+
+
+def validate_handoff_verification_block(rel: str, text: str, errors: list[str]) -> None:
+    """Require Repository Verification block for Handoff Protocol v2 handoffs only."""
+    if HANDOFF_PROTOCOL_V2_MARKER not in text:
+        return
+    if "## Repository Verification" not in text:
+        errors.append(f"{rel}: v2 handoff missing section ## Repository Verification")
+        return
+    for field in REQUIRED_VERIFICATION_FIELDS:
+        if field not in text:
+            errors.append(f"{rel}: v2 handoff missing verification field {field}")
+    for sha_field in ("base_sha:", "local_head_sha:", "remote_head_sha:", "tests_commit_sha:", "validator_commit_sha:", "artifact_commit_sha:"):
+        value = _verification_field_value(text, sha_field)
+        if value is None:
+            continue
+        if not _SHA40_RE.match(value):
+            errors.append(f"{rel}: {sha_field} must be a 40-character hex SHA ({value!r})")
+    test_exit = _verification_field_value(text, "test_exit_code:")
+    if test_exit is not None and test_exit != "0":
+        errors.append(f"{rel}: test_exit_code must be 0 for v2 handoff (got {test_exit!r})")
+    validator_exit = _verification_field_value(text, "validator_exit_code:")
+    if validator_exit is not None and validator_exit != "0":
+        errors.append(f"{rel}: validator_exit_code must be 0 for v2 handoff (got {validator_exit!r})")
+    local_head = _verification_field_value(text, "local_head_sha:")
+    remote_head = _verification_field_value(text, "remote_head_sha:")
+    if local_head and remote_head and local_head.lower() != remote_head.lower():
+        errors.append(
+            f"{rel}: local_head_sha ({local_head}) does not match remote_head_sha ({remote_head})"
+        )
+
+
 def validate_handoffs(errors: list[str]) -> None:
     for path in sorted((ROOT / "handoffs").glob("*.md")):
         if path.name == "README.md":
             continue
-        rel = path.relative_to(ROOT)
+        rel = str(path.relative_to(ROOT))
         text = path.read_text(encoding="utf-8")
         if not text.startswith("# Handoff: "):
             errors.append(f"{rel}: must start with '# Handoff: <task-id>'")
@@ -297,6 +357,7 @@ def validate_handoffs(errors: list[str]) -> None:
         for section in REQUIRED_HANDOFF_SECTIONS:
             if section not in text:
                 errors.append(f"{rel}: missing required section {section}")
+        validate_handoff_verification_block(rel, text, errors)
 
 
 def has_adr_metadata(text: str, key: str) -> bool:

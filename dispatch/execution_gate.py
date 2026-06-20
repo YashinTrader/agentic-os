@@ -100,12 +100,16 @@ def evaluate_execution_gates(
 
         plan = load_plan(repo_root, preview.get("plan_path"))
         task = load_task_for_plan(repo_root, plan)
+        stored_hash = str(preview.get("preview_hash") or "").strip()
+        baseline_hash = stored_hash or compute_preview_hash(
+            preview, adapter=adapter, task=task, plan=plan
+        )
         if is_preview_stale(
             preview,
             current_adapter=adapter,
             current_task=task,
             current_plan=plan,
-            baseline_hash=compute_preview_hash(preview, adapter=adapter, task=task, plan=plan),
+            baseline_hash=baseline_hash,
         ):
             blocked.append("preview is stale relative to current task/plan context")
     except Exception as exc:
