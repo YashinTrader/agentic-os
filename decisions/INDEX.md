@@ -25,3 +25,7 @@
 | ADR-0022 | No autonomous execution by default (Phase 3.3 design)      | accepted | 2026-06-19 |
 | ADR-0023 | Real-agent adapter promotion process (Phase 3.3 design)     | accepted | 2026-06-19 |
 | ADR-0024 | Concurrency and resource limits (Phase 3.3 design)        | accepted | 2026-06-19 |
+| ADR-0025 | Worktree allocator MVP (Phase 3.4)                        | accepted | 2026-06-20 |
+| ADR-0026 | HMAC approval authenticity (Phase 3.4)                    | accepted | 2026-06-20 |
+| ADR-0027 | Single-use approval anti-replay (Phase 3.4)               | accepted | 2026-06-20 |
+| ADR-0028 | Phase 3.4 execution boundary                              | accepted | 2026-06-20 |
