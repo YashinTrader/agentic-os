@@ -25,6 +25,10 @@
 - **Staleness baseline:** use `preview_hash` captured at preview build; gate falls back to live-context hash when absent.
 - **Handoff v2 cutoff:** only handoffs with `**Handoff Protocol:** v2` require Repository Verification block.
 
+## Open Questions
+
+None.
+
 ## How to Verify My Work
 
 ```bash
@@ -58,18 +62,20 @@ Compare `runtime/unittest_last_run.txt` `commit_full` to `tests_commit_sha` belo
 repo_root: C:/Users/gabot/agentic-os
 branch: agent/composer/T-PHASE3-3-REVIEW-FIXES
 base_sha: b7a1239b4e429dd6c903433c6ed773ab71a03c95
-local_head_sha: 97ee6883b8724b3366e5881f18d675083ff76bb6
-remote_head_sha: 97ee6883b8724b3366e5881f18d675083ff76bb6
-git_status_clean: false
+implementation_sha: 93fa5580977a5a54dd8a3a235eab1b419e274891
 tests_commit_sha: 93fa5580977a5a54dd8a3a235eab1b419e274891
+final_head_sha: f7ec3ca9ccd6f50d782311532b741cca721e945e
+remote_head_sha: f7ec3ca9ccd6f50d782311532b741cca721e945e
+git_status_clean: false
+validator_commit_sha: 93fa5580977a5a54dd8a3a235eab1b419e274891
 test_count: 296
 test_exit_code: 0
 validator_exit_code: 0
-validator_commit_sha: 97ee6883b8724b3366e5881f18d675083ff76bb6
-artifact_commit_sha: 97ee6883b8724b3366e5881f18d675083ff76bb6
+post_test_diff_policy: docs-only-allowlist-v2
+post_test_files: docs/REVIEW_COMPOSER_PHASE_3_3_1_SELF_REVIEW.md, handoffs/T-PHASE3-3-REVIEW-FIXES__composer__to__claude.md, runtime/unittest_last_run.txt, tasks/active/T-PHASE3-3-REVIEW-FIXES.yaml
 working_copy_path: C:/Users/gabot/agentic-os
 
-Note: `git_status_clean: false` due to untracked local scratch files under `runtime/` (not committed). Commits after `93fa558` are documentation/verification-only.
+Historical note: this block was corrected in Phase 3.3.2. At original ship time the branch was red (missing Open Questions); see `docs/REVIEW_CLAUDE_PHASE_3_3_1_CLOSEOUT.md`.
 
 ## Risks / Caveats
 

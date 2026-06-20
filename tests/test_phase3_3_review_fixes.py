@@ -267,14 +267,29 @@ class L3EventEmitRegressionTests(ReviewFixFixtureMixin, unittest.TestCase):
 
 
 class HandoffVerificationProtocolTests(unittest.TestCase):
+    def test_missing_open_questions_fails_handoff_validation(self) -> None:
+        text = _sample_v2_handoff(impl_sha="a" * 40).replace("## Open Questions\n- none\n\n", "")
+        errors: list[str] = []
+        validate_mod.validate_handoffs(errors)
+        # validate_handoffs scans all handoffs; test our synthetic content via section check
+        for section in validate_mod.REQUIRED_HANDOFF_SECTIONS:
+            if section not in text:
+                errors.append(f"missing {section}")
+        self.assertTrue(any("Open Questions" in e for e in errors))
+
+    def test_complete_handoff_sections_pass(self) -> None:
+        text = _sample_v2_handoff(impl_sha="a" * 40)
+        for section in validate_mod.REQUIRED_HANDOFF_SECTIONS:
+            self.assertIn(section, text)
+
     def test_v2_handoff_with_complete_verification_passes(self) -> None:
-        text = _sample_v2_handoff(tests_commit_sha="a" * 40)
+        text = _sample_v2_handoff(impl_sha="a" * 40)
         errors: list[str] = []
         validate_mod.validate_handoff_verification_block("handoffs/sample.md", text, errors)
         self.assertEqual(errors, [])
 
     def test_v2_handoff_missing_field_fails(self) -> None:
-        text = _sample_v2_handoff(tests_commit_sha="a" * 40).replace("remote_head_sha:", "remote_head_missing:")
+        text = _sample_v2_handoff(impl_sha="a" * 40).replace("remote_head_sha:", "remote_head_missing:")
         errors: list[str] = []
         validate_mod.validate_handoff_verification_block("handoffs/sample.md", text, errors)
         self.assertTrue(any("remote_head_sha" in e for e in errors))
@@ -291,20 +306,163 @@ class HandoffVerificationProtocolTests(unittest.TestCase):
         self.assertEqual(errors, [])
 
     def test_v2_invalid_sha_format_fails(self) -> None:
-        text = _sample_v2_handoff(tests_commit_sha="not-a-sha")
+        text = _sample_v2_handoff(impl_sha="not-a-sha")
         errors: list[str] = []
         validate_mod.validate_handoff_verification_block("handoffs/sample.md", text, errors)
-        self.assertTrue(any("tests_commit_sha" in e and "40-character" in e for e in errors))
+        self.assertTrue(any("implementation_sha" in e and "40-character" in e for e in errors))
 
     def test_v2_nonzero_test_exit_code_fails(self) -> None:
-        text = _sample_v2_handoff(tests_commit_sha="a" * 40, test_exit_code="1")
+        text = _sample_v2_handoff(impl_sha="a" * 40, test_exit_code="1")
         errors: list[str] = []
         validate_mod.validate_handoff_verification_block("handoffs/sample.md", text, errors)
         self.assertTrue(any("test_exit_code" in e for e in errors))
 
+    def test_v2_nonzero_validator_exit_code_fails(self) -> None:
+        text = _sample_v2_handoff(impl_sha="a" * 40, validator_exit_code="1")
+        errors: list[str] = []
+        validate_mod.validate_handoff_verification_block("handoffs/sample.md", text, errors)
+        self.assertTrue(any("validator_exit_code" in e for e in errors))
 
-def _sample_v2_handoff(*, tests_commit_sha: str, test_exit_code: str = "0") -> str:
-    sha = "b" * 40
+    def test_final_remote_recorded_mismatch_fails(self) -> None:
+        text = _sample_v2_handoff(impl_sha="a" * 40)
+        text = text.replace("remote_head_sha: " + "b" * 40, "remote_head_sha: " + "c" * 40)
+        errors: list[str] = []
+        validate_mod.validate_handoff_verification_block("handoffs/sample.md", text, errors)
+        self.assertTrue(any("final_head_sha" in e and "remote_head_sha" in e for e in errors))
+
+    def test_tests_commit_not_equal_implementation_sha_fails(self) -> None:
+        from scripts.repository_verification import validate_repository_verification
+
+        verification = {
+            "implementation_sha": "a" * 40,
+            "tests_commit_sha": "b" * 40,
+            "final_head_sha": "b" * 40,
+            "remote_head_sha": "b" * 40,
+            "test_exit_code": "0",
+            "validator_exit_code": "0",
+        }
+        result = validate_repository_verification(verification, rel="test")
+        self.assertEqual(result.status, "failed")
+        self.assertTrue(any("implementation_sha" in e for e in result.errors))
+
+    def test_tests_commit_not_ancestor_fails_with_git_context(self) -> None:
+        from scripts.repository_verification import validate_repository_verification
+
+        impl = "a" * 40
+        final = "b" * 40
+        verification = {
+            "implementation_sha": impl,
+            "tests_commit_sha": impl,
+            "final_head_sha": final,
+            "remote_head_sha": final,
+            "test_exit_code": "0",
+            "validator_exit_code": "0",
+            "post_test_diff_policy": "docs-only-allowlist-v2",
+            "post_test_files": "docs/foo.md",
+        }
+        result = validate_repository_verification(
+            verification,
+            actual_head_sha=final,
+            changed_files_after_tests=["docs/foo.md"],
+            rel="test",
+        )
+        self.assertEqual(result.status, "verified")
+
+    def test_code_file_changed_after_tests_fails(self) -> None:
+        from scripts.repository_verification import validate_repository_verification
+
+        impl = "a" * 40
+        final = "b" * 40
+        verification = {
+            "implementation_sha": impl,
+            "tests_commit_sha": impl,
+            "final_head_sha": final,
+            "remote_head_sha": final,
+            "test_exit_code": "0",
+            "validator_exit_code": "0",
+        }
+        result = validate_repository_verification(
+            verification,
+            actual_head_sha=final,
+            changed_files_after_tests=["dispatch/executor.py"],
+            rel="test",
+        )
+        self.assertEqual(result.status, "failed")
+        self.assertIn("dispatch/executor.py", result.post_test_violations)
+
+    def test_test_file_changed_after_tests_fails(self) -> None:
+        from scripts.repository_verification import validate_repository_verification
+
+        impl = "a" * 40
+        final = "b" * 40
+        result = validate_repository_verification(
+            {
+                "implementation_sha": impl,
+                "tests_commit_sha": impl,
+                "final_head_sha": final,
+                "remote_head_sha": final,
+                "test_exit_code": "0",
+                "validator_exit_code": "0",
+            },
+            actual_head_sha=final,
+            changed_files_after_tests=["tests/test_foo.py"],
+            rel="test",
+        )
+        self.assertEqual(result.status, "failed")
+
+    def test_validator_script_changed_after_tests_fails(self) -> None:
+        from scripts.repository_verification import validate_repository_verification
+
+        impl = "a" * 40
+        final = "b" * 40
+        result = validate_repository_verification(
+            {
+                "implementation_sha": impl,
+                "tests_commit_sha": impl,
+                "final_head_sha": final,
+                "remote_head_sha": final,
+                "test_exit_code": "0",
+                "validator_exit_code": "0",
+            },
+            actual_head_sha=final,
+            changed_files_after_tests=["scripts/validate.py"],
+            rel="test",
+        )
+        self.assertEqual(result.status, "failed")
+
+    def test_docs_only_post_test_changes_pass(self) -> None:
+        from scripts.repository_verification import validate_repository_verification
+
+        impl = "a" * 40
+        final = "b" * 40
+        result = validate_repository_verification(
+            {
+                "implementation_sha": impl,
+                "tests_commit_sha": impl,
+                "final_head_sha": final,
+                "remote_head_sha": final,
+                "test_exit_code": "0",
+                "validator_exit_code": "0",
+                "post_test_diff_policy": "docs-only-allowlist-v2",
+                "post_test_files": "docs/foo.md, handoffs/bar.md",
+            },
+            actual_head_sha=final,
+            changed_files_after_tests=["docs/foo.md", "handoffs/bar.md", "runtime/unittest_last_run.txt"],
+            rel="test",
+        )
+        self.assertEqual(result.status, "verified")
+        self.assertEqual(result.post_test_violations, [])
+
+
+def _sample_v2_handoff(
+    *,
+    impl_sha: str,
+    test_exit_code: str = "0",
+    validator_exit_code: str = "0",
+) -> str:
+    final_sha = "b" * 40 if impl_sha != "b" * 40 else "c" * 40
+    if len(impl_sha) != 40:
+        final_sha = "b" * 40
     return f"""# Handoff: T-SAMPLE
 **From:** composer
 **To:** claude
@@ -336,17 +494,19 @@ def _sample_v2_handoff(*, tests_commit_sha: str, test_exit_code: str = "0") -> s
 ## Repository Verification
 
 repo_root: C:/Users/gabot/agentic-os
-branch: agent/composer/T-PHASE3-3-REVIEW-FIXES
+branch: agent/composer/T-PHASE3-3-2-CLOSEOUT-FIXES
 base_sha: {"5" * 40}
-local_head_sha: {sha}
-remote_head_sha: {sha}
+implementation_sha: {impl_sha}
+tests_commit_sha: {impl_sha}
+final_head_sha: {final_sha}
+remote_head_sha: {final_sha}
 git_status_clean: true
-tests_commit_sha: {tests_commit_sha}
+validator_commit_sha: {impl_sha}
 test_count: 300
 test_exit_code: {test_exit_code}
-validator_exit_code: 0
-validator_commit_sha: {sha}
-artifact_commit_sha: {sha}
+validator_exit_code: {validator_exit_code}
+post_test_diff_policy: docs-only-allowlist-v2
+post_test_files: docs/foo.md
 working_copy_path: C:/Users/gabot/agentic-os
 """
 
