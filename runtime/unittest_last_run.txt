@@ -1,9 +1,9 @@
-timestamp: 2026-06-20T10:07:16Z
+timestamp: 2026-06-20T12:48:12Z
 repo_root: C:/Users/gabot/agentic-os
 commit: unknown
-commit_full: 93fa5580977a5a54dd8a3a235eab1b419e274891
+commit_full: 1ee1db92e8077a5afa11e8d3de2c5b3955bc7e76
 python: C:\Users\gabot\AppData\Local\hermes\hermes-agent\venv\Scripts\python.exe
-test_count: 296
+test_count: 306
 exit_code: 0
 --- tail ---
 test_list_skills_cli_json_output (test_skills_registry.SkillsRegistryTests.test_list_skills_cli_json_output) ... ok
@@ -28,6 +28,6 @@ test_teams_registry_loads (test_teams_registry.TeamsRegistryTests.test_teams_reg
 test_teams_tab_rejects_path_traversal_suggest_task (test_teams_registry.TeamsRegistryTests.test_teams_tab_rejects_path_traversal_suggest_task) ... ok
 
 ----------------------------------------------------------------------
-Ran 296 tests in 667.029s
+Ran 306 tests in 923.576s
 
 OK
