@@ -50,6 +50,20 @@ PHASE_3_2_EXECUTION_EVENT_TYPES = frozenset(
     }
 )
 
+# Phase 3.4 worktree + signed approval events (active emitters only)
+PHASE_3_4_EVENT_TYPES = frozenset(
+    {
+        "worktree_allocated",
+        "worktree_cleanup_blocked",
+        "worktree_cleaned",
+        "approval_signed",
+        "approval_verified",
+        "approval_rejected",
+        "approval_consumed",
+        "approval_replay_blocked",
+    }
+)
+
 # Legacy / reserved names (not emitted)
 RESERVED_EVENT_TYPES = frozenset(
     {
@@ -67,6 +81,7 @@ ALLOWED_EVENT_TYPES = (
     | PHASE_2_EVENT_TYPES
     | PHASE_3_PREVIEW_EVENT_TYPES
     | PHASE_3_2_EXECUTION_EVENT_TYPES
+    | PHASE_3_4_EVENT_TYPES
 )
 
 # Deprecated v1 field `event` — still accepted in historical log lines with warnings.
