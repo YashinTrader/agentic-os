@@ -21,7 +21,7 @@
 
 ## Decisions Made
 
-- **Option A commit split:** implementation/tests commit (`93fa558`) then verification/docs commit (`2f7e7b5`); `tests_commit_sha` != `artifact_commit_sha` by design.
+- **Option A commit split:** implementation/tests commit (`93fa558`) then verification/docs commits; `tests_commit_sha` != `artifact_commit_sha` by design.
 - **Staleness baseline:** use `preview_hash` captured at preview build; gate falls back to live-context hash when absent.
 - **Handoff v2 cutoff:** only handoffs with `**Handoff Protocol:** v2` require Repository Verification block.
 
@@ -58,18 +58,18 @@ Compare `runtime/unittest_last_run.txt` `commit_full` to `tests_commit_sha` belo
 repo_root: C:/Users/gabot/agentic-os
 branch: agent/composer/T-PHASE3-3-REVIEW-FIXES
 base_sha: b7a1239b4e429dd6c903433c6ed773ab71a03c95
-local_head_sha: 2f7e7b5e149daf86971688b9955cc0bfede77467
-remote_head_sha: 2f7e7b5e149daf86971688b9955cc0bfede77467
+local_head_sha: e6f8c002950c74417c3fa98e5d93a83e0258bdd9
+remote_head_sha: e6f8c002950c74417c3fa98e5d93a83e0258bdd9
 git_status_clean: false
 tests_commit_sha: 93fa5580977a5a54dd8a3a235eab1b419e274891
 test_count: 296
 test_exit_code: 0
 validator_exit_code: 0
-validator_commit_sha: 2f7e7b5e149daf86971688b9955cc0bfede77467
-artifact_commit_sha: 2f7e7b5e149daf86971688b9955cc0bfede77467
+validator_commit_sha: e6f8c002950c74417c3fa98e5d93a83e0258bdd9
+artifact_commit_sha: e6f8c002950c74417c3fa98e5d93a83e0258bdd9
 working_copy_path: C:/Users/gabot/agentic-os
 
-Note: `git_status_clean: false` due to untracked local scratch files under `runtime/` (not committed). Commit `2f7e7b5` is documentation/verification-only relative to `tests_commit_sha` `93fa558`.
+Note: `git_status_clean: false` due to untracked local scratch files under `runtime/` (not committed). Commits after `93fa558` are documentation/verification-only.
 
 ## Risks / Caveats
 
