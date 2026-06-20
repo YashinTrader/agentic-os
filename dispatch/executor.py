@@ -39,7 +39,10 @@ def _emit_dispatch_event(
     run_id: str,
     detail: str,
     ref: str = "",
+    run_dir: Path | None = None,
+    event_emit_errors: list[str] | None = None,
 ) -> None:
+    errors = event_emit_errors if event_emit_errors is not None else []
     try:
         from protocol.emit_event import append_event
 
@@ -51,8 +54,23 @@ def _emit_dispatch_event(
             detail=detail,
             ref=ref,
         )
-    except Exception:
-        pass
+    except Exception as exc:
+        msg = f"central agent-events emit failed for {event_type}: {exc}"
+        errors.append(msg)
+        if run_dir is not None:
+            try:
+                append_run_event(
+                    run_dir,
+                    {
+                        "ts": utc_now(),
+                        "type": "event_emit_error",
+                        "task_id": task_id,
+                        "detail": msg,
+                        "ref": ref,
+                    },
+                )
+            except Exception as nested:
+                errors.append(f"failed to record event_emit_error locally: {nested}")
 
 
 def load_preview(path: Path) -> dict[str, Any]:
@@ -76,6 +94,7 @@ def execute_dispatch(
     operator_execute=True, dry_run=False, and all gates pass.
     """
     repo_root = repo_root.resolve()
+    event_emit_errors: list[str] = []
     preview = load_preview(preview_path)
     run_id = str(preview.get("run_id", ""))
     task_id = str(preview.get("task_id", ""))
@@ -143,6 +162,8 @@ def execute_dispatch(
         run_id=run_id,
         detail=f"run_id={run_id} dry_run={dry_run} execute={operator_execute}",
         ref=str(run_dir.relative_to(repo_root)),
+        run_dir=run_dir,
+        event_emit_errors=event_emit_errors,
     )
 
     if not gate.execution_allowed:
@@ -175,7 +196,11 @@ def execute_dispatch(
             run_id=run_id,
             detail="; ".join(gate.blocked_reasons[:5]),
             ref=result.result_path,
+            run_dir=run_dir,
+            event_emit_errors=event_emit_errors,
         )
+        result.event_emit_errors = list(event_emit_errors)
+        write_result(run_dir, result)
         return result
 
     if dry_run:
@@ -204,6 +229,8 @@ def execute_dispatch(
             run_id=run_id,
             detail=f"dry-run gates passed run_id={run_id}",
             ref=result.result_path,
+            run_dir=run_dir,
+            event_emit_errors=event_emit_errors,
         )
         _emit_dispatch_event(
             repo_root,
@@ -212,7 +239,11 @@ def execute_dispatch(
             run_id=run_id,
             detail=f"handoff required at {handoff_path}",
             ref=handoff_path,
+            run_dir=run_dir,
+            event_emit_errors=event_emit_errors,
         )
+        result.event_emit_errors = list(event_emit_errors)
+        write_result(run_dir, result)
         return result
 
     command = str(preview.get("command", ""))
@@ -228,6 +259,8 @@ def execute_dispatch(
         run_id=run_id,
         detail=f"subprocess start adapter={adapter_id}",
         ref=str(run_dir.relative_to(repo_root)),
+        run_dir=run_dir,
+        event_emit_errors=event_emit_errors,
     )
 
     stdout_path = run_dir / "stdout.log"
@@ -306,6 +339,8 @@ def execute_dispatch(
         run_id=run_id,
         detail=f"exit_code={exit_code} timed_out={timed_out}",
         ref=result.result_path,
+        run_dir=run_dir,
+        event_emit_errors=event_emit_errors,
     )
     _emit_dispatch_event(
         repo_root,
@@ -314,5 +349,9 @@ def execute_dispatch(
         run_id=run_id,
         detail=f"handoff required at {handoff_path}",
         ref=handoff_path,
+        run_dir=run_dir,
+        event_emit_errors=event_emit_errors,
     )
+    result.event_emit_errors = list(event_emit_errors)
+    write_result(run_dir, result)
     return result

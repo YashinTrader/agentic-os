@@ -62,7 +62,12 @@ def main() -> int:
         print(f"execute failed: {exc}", file=sys.stderr)
         return 1
 
-    print(json.dumps(_result_to_dict(result), indent=2, ensure_ascii=False))
+    payload = _result_to_dict(result)
+    print(json.dumps(payload, indent=2, ensure_ascii=False))
+    if result.event_emit_errors:
+        print("warning: event emission failures recorded in result.event_emit_errors", file=sys.stderr)
+        for err in result.event_emit_errors:
+            print(f"  - {err}", file=sys.stderr)
     if not result.execution_allowed:
         return 3
     if args.dry_run:

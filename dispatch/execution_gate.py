@@ -109,7 +109,11 @@ def evaluate_execution_gates(
         ):
             blocked.append("preview is stale relative to current task/plan context")
     except Exception as exc:
-        warnings.append(f"preview freshness check skipped: {exc}")
+        msg = f"preview freshness cannot be verified: {exc}"
+        if operator_execute and not dry_run:
+            blocked.append(msg)
+        else:
+            warnings.append(msg)
 
     if preview.get("secrets_required") and required_level != "human":
         blocked.append("secrets_required blocks execution without human approval level")

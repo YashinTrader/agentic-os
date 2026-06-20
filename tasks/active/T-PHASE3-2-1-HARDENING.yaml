@@ -1,0 +1,41 @@
+id: T-PHASE3-2-1-HARDENING
+title: Phase 3.2.1 controlled executor hardening
+owner: composer
+reviewer: claude
+created_by: composer
+status: review
+phase: "3.2.1"
+created_at: 2026-06-19T00:00:00Z
+updated_at: 2026-06-19T00:00:00Z
+priority: high
+risk_level: high
+requires_human_approval: false
+human_approval_checklist: []
+objective: Harden controlled subprocess executor safety checks before Phase 3.3 design.
+context: Claude approved Phase 3.2 with M1, M2, L1, L3 hardening required.
+goals:
+  - Fix path containment using pathlib-safe logic
+  - Block execution when preview freshness cannot be verified
+  - Require supports_execution in adapter schema
+  - Surface event emission failures in result artifacts
+non_goals:
+  - Promote real-agent adapters
+  - Implement worktree allocator
+  - Implement signing or scheduler
+inputs:
+  - dispatch/preview.py
+  - agents/adapter_registry.yaml
+  - scripts/validate.py
+outputs:
+  - dispatch/executor.py
+  - dispatch/worktree_policy.py
+  - dispatch/freshness.py
+  - tests/test_dispatch_executor.py
+  - docs/PHASE_3_2_1_HARDENING_REPORT.md
+constraints:
+  - Only local-python-exec-test may execute
+  - No dashboard execution controls
+acceptance:
+  - All unittest and validator checks pass
+  - Safety grep confirms subprocess and adapter posture
+notes: Awaiting Claude final review.

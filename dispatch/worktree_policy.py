@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from dispatch.path_containment import path_is_inside
+
 
 @dataclass
 class WorktreePolicyResult:
@@ -25,7 +27,7 @@ def _resolve_inside(base: Path, candidate: str) -> tuple[Path | None, str | None
             resolved = raw.resolve()
         else:
             resolved = (base_resolved / raw).resolve()
-        if not str(resolved).startswith(str(base_resolved)):
+        if not path_is_inside(resolved, base_resolved, allow_equal=True):
             return None, f"path escapes sandbox: {candidate!r}"
         return resolved, None
     except (OSError, ValueError) as exc:
@@ -46,11 +48,8 @@ def allowed_roots(repo_root: Path, worktree_root: str | None = None) -> list[Pat
 def path_inside_any_root(path: Path, roots: list[Path]) -> bool:
     resolved = path.resolve()
     for root in roots:
-        try:
-            resolved.relative_to(root.resolve())
+        if path_is_inside(resolved, root.resolve(), allow_equal=True):
             return True
-        except ValueError:
-            continue
     return False
 
 

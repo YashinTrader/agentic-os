@@ -28,8 +28,8 @@ adapters:
     approval_level: none
     risk_level: low
     notes: >
-      Phase 3.2 controlled executor test fixture only. Harmless local python -c print.
-      Real agent adapters remain preview-only (supports_execution omitted/false).
+      Phase 3.2 controlled executor test fixture only. Quoted command_template for YAML safety.
+      Harmless local python -c print. Real agent adapters remain preview-only (supports_execution false).
   - id: composer-cli-preview
     display_name: Composer CLI (dry-run preview)
     agent_id: composer
@@ -51,6 +51,7 @@ adapters:
     working_directory_policy: repo_root
     supports_dry_run: true
     supports_streaming: false
+    supports_execution: false
     writes_files: false
     approval_level: reviewer
     risk_level: medium
@@ -76,6 +77,7 @@ adapters:
     working_directory_policy: repo_root
     supports_dry_run: true
     supports_streaming: false
+    supports_execution: false
     writes_files: true
     approval_level: reviewer
     risk_level: medium
@@ -100,6 +102,7 @@ adapters:
     working_directory_policy: repo_root
     supports_dry_run: true
     supports_streaming: false
+    supports_execution: false
     writes_files: false
     approval_level: reviewer
     risk_level: low
@@ -124,6 +127,7 @@ adapters:
     working_directory_policy: repo_root
     supports_dry_run: true
     supports_streaming: false
+    supports_execution: false
     writes_files: true
     approval_level: reviewer
     risk_level: medium
@@ -147,6 +151,7 @@ adapters:
     working_directory_policy: repo_root
     supports_dry_run: false
     supports_streaming: false
+    supports_execution: false
     writes_files: false
     approval_level: human
     risk_level: high

@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentic-os.local/schemas/scheduling_policy.schema.json",
+  "title": "SchedulingPolicy",
+  "type": "object",
+  "required": ["autonomy_level", "global_concurrency_limit"],
+  "properties": {
+    "autonomy_level": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4,
+      "description": "0=preview, 1=explicit operator, 2=queued+approval, 3=bounded automation, 4=autonomous"
+    },
+    "global_concurrency_limit": { "type": "integer", "minimum": 1 },
+    "per_agent_concurrency_limit": { "type": "integer", "minimum": 1 },
+    "max_retries": { "type": "integer", "minimum": 0 },
+    "retry_backoff_seconds": { "type": "integer", "minimum": 0 },
+    "emergency_stop": { "type": "boolean" },
+    "operator_pause": { "type": "boolean" },
+    "prohibited": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  },
+  "additionalProperties": false
+}

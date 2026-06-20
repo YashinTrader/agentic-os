@@ -29,6 +29,7 @@ class ExecutionResult:
     error: str | None = None
     handoff_path: str = ""
     rollback_path: str = ""
+    event_emit_errors: list[str] = field(default_factory=list)
 
 
 def run_directory(repo_root: Path, run_id: str) -> Path:

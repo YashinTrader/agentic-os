@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentic-os.local/schemas/worktree_allocation.schema.json",
+  "title": "WorktreeAllocation",
+  "type": "object",
+  "required": [
+    "allocation_id",
+    "run_id",
+    "task_id",
+    "repo_root",
+    "worktree_root",
+    "branch_name",
+    "base_branch",
+    "base_commit",
+    "created_at",
+    "status",
+    "cleanup_policy"
+  ],
+  "properties": {
+    "allocation_id": { "type": "string", "minLength": 1 },
+    "run_id": { "type": "string", "minLength": 1 },
+    "task_id": { "type": "string", "minLength": 1 },
+    "repo_root": { "type": "string", "minLength": 1 },
+    "worktree_root": { "type": "string", "minLength": 1 },
+    "branch_name": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "base_branch": { "type": "string" },
+    "base_commit": { "type": "string", "minLength": 7 },
+    "created_at": { "type": "string", "format": "date-time" },
+    "expires_at": { "type": "string", "format": "date-time" },
+    "status": {
+      "type": "string",
+      "enum": [
+        "requested",
+        "allocated",
+        "active",
+        "completed",
+        "failed",
+        "preserved",
+        "cleanup_pending",
+        "cleaned"
+      ]
+    },
+    "cleanup_policy": {
+      "type": "string",
+      "enum": ["preserve_on_failure", "clean_on_success", "manual"]
+    },
+    "rollback_command": { "type": "string" },
+    "files_changed": { "type": "array", "items": { "type": "string" } },
+    "dirty_before": { "type": "boolean" },
+    "dirty_after": { "type": "boolean" }
+  },
+  "additionalProperties": false
+}

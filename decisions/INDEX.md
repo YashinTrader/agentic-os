@@ -20,3 +20,8 @@
 | ADR-0017 | Phase 3.2 controlled executor MVP                         | accepted | 2026-06-12 |
 | ADR-0018 | Execution event vocabulary                                  | accepted | 2026-06-12 |
 | ADR-0019 | Operator-commanded execution only                           | accepted | 2026-06-12 |
+| ADR-0020 | Worktree allocation and lifecycle (Phase 3.3 design)      | accepted | 2026-06-19 |
+| ADR-0021 | Approval authenticity and anti-replay (Phase 3.3 design)    | accepted | 2026-06-19 |
+| ADR-0022 | No autonomous execution by default (Phase 3.3 design)      | accepted | 2026-06-19 |
+| ADR-0023 | Real-agent adapter promotion process (Phase 3.3 design)     | accepted | 2026-06-19 |
+| ADR-0024 | Concurrency and resource limits (Phase 3.3 design)        | accepted | 2026-06-19 |

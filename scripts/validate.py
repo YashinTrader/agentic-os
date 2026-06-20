@@ -799,6 +799,7 @@ ADAPTER_REQUIRED_FIELDS = {
     "working_directory_policy",
     "supports_dry_run",
     "supports_streaming",
+    "supports_execution",
     "writes_files",
     "approval_level",
     "risk_level",
@@ -870,6 +871,12 @@ def validate_adapter_registry(errors: list[str]) -> None:
 
         if not isinstance(adapter.get("secrets_required"), bool):
             errors.append(f"{prefix} ({adapter_id}): secrets_required must be a boolean")
+
+        supports_execution = adapter.get("supports_execution")
+        if supports_execution is None:
+            errors.append(f"{prefix} ({adapter_id}): missing required field supports_execution")
+        elif not isinstance(supports_execution, bool):
+            errors.append(f"{prefix} ({adapter_id}): supports_execution must be a boolean")
 
         risk_level = adapter.get("risk_level")
         if risk_level not in ALLOWED_RISK_LEVELS:

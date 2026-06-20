@@ -81,6 +81,15 @@ class DispatchExecutorTests(unittest.TestCase):
             "files_to_inspect": [],
         }
         (orch / "latest_plan.json").write_text(json.dumps(plan), encoding="utf-8")
+        state = {
+            "run_id": "run-exec",
+            "task_id": "T-EXEC",
+            "task_path": str((task_dir / "T-EXEC.yaml").relative_to(self.root)),
+            "plan_path": "runtime/orchestrator/latest_plan.json",
+            "approval_level": "none",
+            "risk_level": "low",
+        }
+        (orch / "latest_state.json").write_text(json.dumps(state), encoding="utf-8")
 
     def _make_preview(self) -> Path:
         preview = build_dispatch_preview(self.root, adapter_id="local-python-exec-test")
