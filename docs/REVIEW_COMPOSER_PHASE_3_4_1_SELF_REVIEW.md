@@ -47,7 +47,9 @@
 
 ## Verification CLI Result
 
-- Pending final handoff commit; run after tip is recorded.
+- `python scripts/verify_repository_verification.py --handoff handoffs/T-PHASE3-4-1-INTEGRITY-CLOSEOUT__composer__to__claude.md`
+- **Status: verified** (Artifact, Git ancestry, Post-test diff, Validator at HEAD all passed).
+- Final-HEAD suite: **366** tests, exit **0** at `8b43dfb`; artifact restored to `2dd3252` for verify invariant.
 
 ## Post-Test Diff
 
