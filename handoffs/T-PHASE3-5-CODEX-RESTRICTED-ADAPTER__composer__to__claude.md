@@ -111,8 +111,8 @@ branch: agent/composer/T-PHASE3-5-CODEX-RESTRICTED-ADAPTER
 base_sha: f39188ab882af99920292adbed136effd1f10ffb
 implementation_sha: 4d7da038536d58e03a455ae6e4173af3fad74d0a
 tests_commit_sha: 4d7da038536d58e03a455ae6e4173af3fad74d0a
-final_head_sha: 825ac8b1e1e7114350cca4e6a72cef7549af6449
-remote_head_sha: 825ac8b1e1e7114350cca4e6a72cef7549af6449
+final_head_sha: f583c774748d205ad56ae6f0f34ad6860fa18f20
+remote_head_sha: f583c774748d205ad56ae6f0f34ad6860fa18f20
 git_status_clean: false
 validator_commit_sha: 4d7da038536d58e03a455ae6e4173af3fad74d0a
 test_count: 387
