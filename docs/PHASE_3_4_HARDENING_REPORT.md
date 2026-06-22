@@ -30,6 +30,13 @@
 9. Dashboard has no Execute/Approve/Allocate controls
 10. Autonomy Level 1 unchanged
 
+## Phase 3.4.1 integrity closeout (2026-06-22)
+
+- Regenerated `runtime/unittest_last_run.txt` at `implementation_sha` (F1)
+- Removed `decisions/**` from post-test allowlist; explicit verification-only paths (F2)
+- Verify CLI cross-checks artifact and reruns validator at HEAD (F3)
+- **366** tests after closeout (+33 integrity regression tests)
+
 ## Known limitations
 
 - HMAC keys are env vars, not OS keyring (design doc mentioned keyring; MVP uses env)
