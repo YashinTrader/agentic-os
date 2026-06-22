@@ -345,11 +345,12 @@ class HandoffVerificationProtocolTests(unittest.TestCase):
         self.assertEqual(result.status, "failed")
         self.assertTrue(any("implementation_sha" in e for e in result.errors))
 
-    def test_tests_commit_not_ancestor_fails_with_git_context(self) -> None:
+    def test_allowlisted_post_test_changes_pass_with_git_context(self) -> None:
         from scripts.repository_verification import validate_repository_verification
 
         impl = "a" * 40
         final = "b" * 40
+        allowed = "docs/REVIEW_COMPOSER_PHASE_3_4_1_SELF_REVIEW.md"
         verification = {
             "implementation_sha": impl,
             "tests_commit_sha": impl,
@@ -357,13 +358,13 @@ class HandoffVerificationProtocolTests(unittest.TestCase):
             "remote_head_sha": final,
             "test_exit_code": "0",
             "validator_exit_code": "0",
-            "post_test_diff_policy": "docs-only-allowlist-v2",
-            "post_test_files": "docs/foo.md",
+            "post_test_diff_policy": "verification-only-allowlist-v3",
+            "post_test_files": allowed,
         }
         result = validate_repository_verification(
             verification,
             actual_head_sha=final,
-            changed_files_after_tests=["docs/foo.md"],
+            changed_files_after_tests=[allowed],
             rel="test",
         )
         self.assertEqual(result.status, "verified")
@@ -430,7 +431,35 @@ class HandoffVerificationProtocolTests(unittest.TestCase):
         )
         self.assertEqual(result.status, "failed")
 
-    def test_docs_only_post_test_changes_pass(self) -> None:
+    def test_explicit_allowlist_post_test_changes_pass(self) -> None:
+        from scripts.repository_verification import validate_repository_verification
+
+        impl = "a" * 40
+        final = "b" * 40
+        allowed = [
+            "runtime/unittest_last_run.txt",
+            "handoffs/T-PHASE3-4-1-INTEGRITY-CLOSEOUT__composer__to__claude.md",
+            "docs/REVIEW_COMPOSER_PHASE_3_4_1_SELF_REVIEW.md",
+        ]
+        result = validate_repository_verification(
+            {
+                "implementation_sha": impl,
+                "tests_commit_sha": impl,
+                "final_head_sha": final,
+                "remote_head_sha": final,
+                "test_exit_code": "0",
+                "validator_exit_code": "0",
+                "post_test_diff_policy": "verification-only-allowlist-v3",
+                "post_test_files": ", ".join(allowed),
+            },
+            actual_head_sha=final,
+            changed_files_after_tests=allowed,
+            rel="test",
+        )
+        self.assertEqual(result.status, "verified")
+        self.assertEqual(result.post_test_violations, [])
+
+    def test_decisions_change_after_tests_fails(self) -> None:
         from scripts.repository_verification import validate_repository_verification
 
         impl = "a" * 40
@@ -443,15 +472,13 @@ class HandoffVerificationProtocolTests(unittest.TestCase):
                 "remote_head_sha": final,
                 "test_exit_code": "0",
                 "validator_exit_code": "0",
-                "post_test_diff_policy": "docs-only-allowlist-v2",
-                "post_test_files": "docs/foo.md, handoffs/bar.md",
             },
             actual_head_sha=final,
-            changed_files_after_tests=["docs/foo.md", "handoffs/bar.md", "runtime/unittest_last_run.txt"],
+            changed_files_after_tests=["decisions/INDEX.md"],
             rel="test",
         )
-        self.assertEqual(result.status, "verified")
-        self.assertEqual(result.post_test_violations, [])
+        self.assertEqual(result.status, "failed")
+        self.assertIn("decisions/INDEX.md", result.post_test_violations)
 
 
 def _sample_v2_handoff(
