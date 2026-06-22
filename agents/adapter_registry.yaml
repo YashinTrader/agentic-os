@@ -83,6 +83,43 @@ adapters:
     risk_level: medium
     notes: Preview only. File-writing adapter requires rollback in Phase 3.2+.
 
+  - id: codex-restricted
+    display_name: Codex CLI restricted adapter (Phase 3.5 candidate)
+    agent_id: codex
+    adapter_type: cli
+    status: active
+    command_template: "codex exec -C {worktree_path} -s workspace-write --json -o {agent_output_path}"
+    allowed_commands:
+      - codex
+    forbidden_args:
+      - "--dangerously-bypass-approvals-and-sandbox"
+      - "--dangerously-bypass-hook-trust"
+      - "--dangerously-bypass-approvals"
+    required_clis:
+      - codex
+    env_vars_required:
+      - OPENAI_API_KEY
+    secrets_required: true
+    timeout_seconds: 600
+    working_directory_policy: worktree
+    supports_dry_run: true
+    supports_streaming: false
+    supports_execution: false
+    writes_files: true
+    approval_level: human
+    risk_level: high
+    promotion_state: restricted_candidate
+    supports_preview: true
+    worktree_required: true
+    network_required: true
+    mcp_required: false
+    minimum_version: "0.136.0"
+    context_bundle_required: true
+    handoff_required: true
+    rollback_required: true
+    notes: >
+      Phase 3.5 restricted candidate. supports_execution false until separate activation
+      after Claude approval. See agents/codex_restricted_adapter.yaml and ADR-0029.
   - id: claude-cli-preview
     display_name: Claude Code CLI (dry-run preview)
     agent_id: claude

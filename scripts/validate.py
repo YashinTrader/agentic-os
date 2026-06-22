@@ -900,6 +900,89 @@ def validate_adapter_registry(errors: list[str]) -> None:
     if active_count == 0:
         errors.append(f"{rel}: at least one active adapter is required for Phase 3.0 preview")
 
+    validate_phase35_adapter_boundaries(errors, adapters)
+
+
+PROMOTION_EXECUTION_STATES = {
+    "restricted_candidate": False,
+    "preview_only": False,
+    "planned": False,
+    "test_execution": False,
+    "disabled": False,
+    "revoked": False,
+    "restricted_execution": True,
+    "active": True,
+}
+
+
+def validate_phase35_adapter_boundaries(errors: list[str], adapters: list[Any]) -> None:
+    """Phase 3.5: codex-restricted candidate + single executable adapter invariant."""
+    execution_capable: list[str] = []
+    codex_restricted: dict[str, Any] | None = None
+
+    for adapter in adapters:
+        if not isinstance(adapter, dict):
+            continue
+        adapter_id = str(adapter.get("id", ""))
+        if adapter.get("supports_execution"):
+            execution_capable.append(adapter_id)
+
+        promotion_state = adapter.get("promotion_state")
+        if promotion_state is not None:
+            expected = PROMOTION_EXECUTION_STATES.get(str(promotion_state))
+            if expected is None:
+                errors.append(
+                    f"agents/adapter_registry.yaml ({adapter_id}): unknown promotion_state {promotion_state!r}"
+                )
+            elif bool(adapter.get("supports_execution")) != expected:
+                errors.append(
+                    f"agents/adapter_registry.yaml ({adapter_id}): promotion_state {promotion_state!r} "
+                    f"contradicts supports_execution={adapter.get('supports_execution')}"
+                )
+
+        if adapter_id == "codex-restricted":
+            codex_restricted = adapter
+
+    if execution_capable != ["local-python-exec-test"]:
+        errors.append(
+            "agents/adapter_registry.yaml: only local-python-exec-test may have supports_execution=true; "
+            f"found {execution_capable!r}"
+        )
+
+    if codex_restricted is None:
+        errors.append("agents/adapter_registry.yaml: missing codex-restricted adapter entry")
+        return
+
+    if codex_restricted.get("supports_execution"):
+        errors.append("codex-restricted must have supports_execution=false in Phase 3.5")
+    if codex_restricted.get("promotion_state") != "restricted_candidate":
+        errors.append("codex-restricted promotion_state must be restricted_candidate")
+    if codex_restricted.get("approval_level") != "human":
+        errors.append("codex-restricted approval_level must be human")
+    if not codex_restricted.get("worktree_required"):
+        errors.append("codex-restricted worktree_required must be true")
+    if not codex_restricted.get("network_required"):
+        errors.append("codex-restricted network_required must be true")
+    if not codex_restricted.get("secrets_required"):
+        errors.append("codex-restricted secrets_required must be true")
+
+    dedicated_path = ROOT / "agents" / "codex_restricted_adapter.yaml"
+    if not dedicated_path.exists():
+        errors.append("agents/codex_restricted_adapter.yaml: file does not exist")
+        return
+    try:
+        dedicated = yaml.safe_load(dedicated_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        errors.append(f"agents/codex_restricted_adapter.yaml: invalid YAML: {exc}")
+        return
+    if not isinstance(dedicated, dict):
+        errors.append("agents/codex_restricted_adapter.yaml: root must be a mapping")
+        return
+    if dedicated.get("supports_execution"):
+        errors.append("agents/codex_restricted_adapter.yaml: supports_execution must be false")
+    if dedicated.get("id") != "codex-restricted":
+        errors.append("agents/codex_restricted_adapter.yaml: id must be codex-restricted")
+
 
 def validate_skill_mcp_references(errors: list[str]) -> None:
     skills_path = ROOT / "skills" / "registry.yaml"

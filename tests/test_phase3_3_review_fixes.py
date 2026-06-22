@@ -346,11 +346,14 @@ class HandoffVerificationProtocolTests(unittest.TestCase):
         self.assertTrue(any("implementation_sha" in e for e in result.errors))
 
     def test_allowlisted_post_test_changes_pass_with_git_context(self) -> None:
+        from scripts import repository_verification as rv
         from scripts.repository_verification import validate_repository_verification
 
         impl = "a" * 40
         final = "b" * 40
-        allowed = "docs/REVIEW_COMPOSER_PHASE_3_4_1_SELF_REVIEW.md"
+        allowed = sorted(
+            p for p in rv.POST_TEST_ALLOWLIST_EXACT if p.startswith("docs/REVIEW_COMPOSER_")
+        )[0]
         verification = {
             "implementation_sha": impl,
             "tests_commit_sha": impl,
@@ -432,14 +435,19 @@ class HandoffVerificationProtocolTests(unittest.TestCase):
         self.assertEqual(result.status, "failed")
 
     def test_explicit_allowlist_post_test_changes_pass(self) -> None:
+        from scripts import repository_verification as rv
         from scripts.repository_verification import validate_repository_verification
 
         impl = "a" * 40
         final = "b" * 40
+        handoff = sorted(p for p in rv.POST_TEST_ALLOWLIST_EXACT if p.startswith("handoffs/"))[0]
+        self_review = sorted(
+            p for p in rv.POST_TEST_ALLOWLIST_EXACT if p.startswith("docs/REVIEW_COMPOSER_")
+        )[0]
         allowed = [
             "runtime/unittest_last_run.txt",
-            "handoffs/T-PHASE3-4-1-INTEGRITY-CLOSEOUT__composer__to__claude.md",
-            "docs/REVIEW_COMPOSER_PHASE_3_4_1_SELF_REVIEW.md",
+            handoff,
+            self_review,
         ]
         result = validate_repository_verification(
             {
