@@ -2,7 +2,7 @@
 
 - Status: accepted
 - Date: 2026-06-20
-- Deciders: composer (implementer), pending claude review
+- Deciders: composer (implementer), claude (reviewer — Phase 3.4.1 closeout 2026-06-20)
 - Related: `dispatch/worktree_allocator.py`, `docs/PHASE_3_4_WORKTREE_ALLOCATOR.md`, ADR-0020
 
 ## Context
@@ -23,3 +23,8 @@ Phase 3.3 designed worktree allocation; Phase 3.2 blocked file-writing execution
 - Positive: Isolated file mutations, auditable lifecycle, path containment enforced.
 - Negative: Manual allocate step before file-writing runs; disk usage from preserved dirty trees.
 - Real adapters remain preview-only until promotion (ADR-0023).
+
+## Reviewer sign-off
+
+- [x] composer (implementer)
+- [x] claude (reviewer — Phase 3.4.1 closeout 2026-06-20)

@@ -35,6 +35,15 @@ def _verification(**overrides) -> dict:
     return base
 
 
+def _current_closeout_handoff() -> str:
+    handoffs = sorted(
+        p for p in rv.POST_TEST_ALLOWLIST_EXACT if p.startswith("handoffs/")
+    )
+    if not handoffs:
+        raise AssertionError("POST_TEST_ALLOWLIST_EXACT must include a handoffs/ path")
+    return handoffs[0]
+
+
 def _artifact(**overrides) -> dict:
     base = {
         "commit_full": _sha("e"),
@@ -79,11 +88,7 @@ class PostTestAllowlistTests(unittest.TestCase):
         self.assertTrue(rv.is_post_test_allowlisted("runtime/unittest_last_run.txt"))
 
     def test_closeout_handoff_allowlisted(self) -> None:
-        self.assertTrue(
-            rv.is_post_test_allowlisted(
-                "handoffs/T-PHASE3-4-1-INTEGRITY-CLOSEOUT__composer__to__claude.md"
-            )
-        )
+        self.assertTrue(rv.is_post_test_allowlisted(_current_closeout_handoff()))
 
     def test_unrelated_docs_not_allowlisted(self) -> None:
         self.assertFalse(rv.is_post_test_allowlisted("docs/PHASE_3_5_PLAN.md"))
@@ -162,7 +167,7 @@ class PostTestAllowlistTests(unittest.TestCase):
         self.assertEqual(result.status, "verified")
 
     def test_closeout_handoff_only_passes(self) -> None:
-        handoff = "handoffs/T-PHASE3-4-1-INTEGRITY-CLOSEOUT__composer__to__claude.md"
+        handoff = _current_closeout_handoff()
         result = rv.validate_repository_verification(
             _verification(post_test_files=handoff),
             actual_head_sha=_sha("f"),

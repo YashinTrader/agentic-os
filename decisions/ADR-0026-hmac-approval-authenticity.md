@@ -2,7 +2,7 @@
 
 - Status: accepted
 - Date: 2026-06-20
-- Deciders: composer (implementer), pending claude review
+- Deciders: composer (implementer), claude (reviewer — Phase 3.4.1 closeout 2026-06-20)
 - Related: `dispatch/approval_signing.py`, `docs/PHASE_3_4_APPROVAL_AUTHENTICITY.md`, ADR-0021
 
 ## Context
@@ -23,3 +23,8 @@ Phase 3.2 approval records were unsigned JSON. Phase 3.3 designed HMAC signing; 
 - Positive: Tamper and transplant detection for bound previews; clear upgrade from unsigned v1.
 - Negative: Key management burden; missing env vars fail-closed at gate.
 - Asymmetric signatures deferred to future phase.
+
+## Reviewer sign-off
+
+- [x] composer (implementer)
+- [x] claude (reviewer — Phase 3.4.1 closeout 2026-06-20)

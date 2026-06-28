@@ -2,7 +2,7 @@
 
 - Status: accepted
 - Date: 2026-06-20
-- Deciders: composer (implementer), pending claude review
+- Deciders: composer (implementer), claude (reviewer — Phase 3.4.1 closeout 2026-06-20)
 - Related: `dispatch/approval_replay.py`, `dispatch/executor.py`, ADR-0021
 
 ## Context
@@ -22,3 +22,8 @@ Signed approvals could still be replayed for a second subprocess if only signatu
 - Positive: Prevents naive replay of valid signatures across multiple runs.
 - Negative: Consumed markers accumulate; operator must manage disk; approval cannot be reused after failed claim mid-flight without new approval.
 - Does not prevent holder of signing key from issuing new approvals (Level 1 expectation).
+
+## Reviewer sign-off
+
+- [x] composer (implementer)
+- [x] claude (reviewer — Phase 3.4.1 closeout 2026-06-20)

@@ -29,3 +29,8 @@
 | ADR-0026 | HMAC approval authenticity (Phase 3.4)                    | accepted | 2026-06-20 |
 | ADR-0027 | Single-use approval anti-replay (Phase 3.4)               | accepted | 2026-06-20 |
 | ADR-0028 | Phase 3.4 execution boundary                              | accepted | 2026-06-20 |
+| ADR-0029 | Codex restricted adapter contract                         | accepted | 2026-06-22 |
+| ADR-0030 | Real-agent environment and secret boundary                | accepted | 2026-06-22 |
+| ADR-0031 | Codex worktree-only execution                             | accepted | 2026-06-22 |
+| ADR-0032 | Two-stage adapter activation                              | accepted | 2026-06-22 |
+| ADR-0033 | Real-agent canary and rollback policy                     | accepted | 2026-06-22 |

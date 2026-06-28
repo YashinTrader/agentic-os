@@ -22,15 +22,15 @@ UNITTEST_ARTIFACT_REL = "runtime/unittest_last_run.txt"
 POST_TEST_ALLOWLIST_EXACT = frozenset(
     {
         "runtime/unittest_last_run.txt",
-        "handoffs/T-PHASE3-4-1-INTEGRITY-CLOSEOUT__composer__to__claude.md",
-        "docs/REVIEW_COMPOSER_PHASE_3_4_1_SELF_REVIEW.md",
-        "docs/REVIEW_CLAUDE_PHASE_3_4.md",
-        "docs/PHASE_3_4_1_INTEGRITY_CLOSEOUT.md",
-        "docs/HANDOFF_PROTOCOL.md",
-        "docs/PHASE_3_4_HARDENING_REPORT.md",
-        "docs/PHASE_3_4_REVIEW_PACKET.md",
-        "docs/REPOSITORY_INTEGRITY_INCIDENT_PHASE_3_3.md",
-        "tasks/active/T-PHASE3-4-1-INTEGRITY-CLOSEOUT.yaml",
+        "handoffs/T-PHASE3-5-CODEX-RESTRICTED-ADAPTER__composer__to__claude.md",
+        "docs/REVIEW_COMPOSER_PHASE_3_5_SELF_REVIEW.md",
+        "docs/PHASE_3_5_BASELINE.md",
+        "docs/PHASE_3_5_CODEX_ADAPTER.md",
+        "docs/PHASE_3_5_CODEX_SECURITY_MODEL.md",
+        "docs/PHASE_3_5_CODEX_CANARY_PLAN.md",
+        "docs/PHASE_3_5_HARDENING_REPORT.md",
+        "docs/PHASE_3_5_REVIEW_PACKET.md",
+        "tasks/active/T-PHASE3-5-CODEX-RESTRICTED-ADAPTER.yaml",
     }
 )
 

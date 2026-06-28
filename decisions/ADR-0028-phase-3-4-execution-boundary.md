@@ -2,7 +2,7 @@
 
 - Status: accepted
 - Date: 2026-06-20
-- Deciders: composer (implementer), pending claude review
+- Deciders: composer (implementer), claude (reviewer — Phase 3.4.1 closeout 2026-06-20)
 - Related: `dispatch/execution_gate.py`, `dispatch/executor.py`, ADR-0019, ADR-0022
 
 ## Context
@@ -23,3 +23,8 @@ Phase 3.4 adds worktree allocation and signed approvals. Execution boundaries fr
 - Positive: Phase 3.4 features add defense-in-depth without expanding autonomy.
 - Negative: File-writing workflow requires three operator steps: allocate, sign approval, execute.
 - Level 2+ scheduling remains future work per ADR-0022.
+
+## Reviewer sign-off
+
+- [x] composer (implementer)
+- [x] claude (reviewer — Phase 3.4.1 closeout 2026-06-20)

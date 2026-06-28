@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentic-os.local/schemas/agent_execution_result.schema.json",
+  "title": "AgentExecutionResult",
+  "type": "object",
+  "required": [
+    "run_id",
+    "task_id",
+    "adapter_id",
+    "process_exit_code",
+    "timed_out",
+    "started_at",
+    "finished_at",
+    "duration_ms",
+    "stdout_path",
+    "stderr_path",
+    "agent_output_path",
+    "files_changed",
+    "git_diff_stat",
+    "verification_commands",
+    "verification_results",
+    "handoff_path",
+    "blocked_reasons",
+    "error",
+    "completion_status"
+  ],
+  "properties": {
+    "completion_status": {
+      "type": "string",
+      "enum": [
+        "blocked",
+        "started",
+        "completed_unverified",
+        "completed_verified",
+        "failed",
+        "timed_out",
+        "handoff_missing"
+      ]
+    },
+    "timed_out": { "type": "boolean" },
+    "process_exit_code": { "type": ["integer", "null"] }
+  },
+  "additionalProperties": false
+}

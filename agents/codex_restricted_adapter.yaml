@@ -1,0 +1,72 @@
+schema_version: "1.0"
+updated_at: 2026-06-22T12:00:00Z
+id: codex-restricted
+display_name: Codex CLI restricted adapter (Phase 3.5 candidate)
+adapter_type: agent_cli
+provider: openai
+executable: codex
+agent_id: codex
+status: active
+promotion_state: restricted_candidate
+command_template: "codex exec -C {worktree_path} -s workspace-write --json -o {agent_output_path}"
+allowed_commands:
+  - codex
+required_clis:
+  - codex
+minimum_version: "0.136.0"
+active: true
+supports_preview: true
+supports_dry_run: true
+supports_execution: false
+writes_files: true
+worktree_required: true
+network_required: true
+secrets_required: true
+mcp_required: false
+approval_level: human
+risk_level: high
+timeout_seconds: 600
+maximum_timeout_seconds: 1800
+allowed_subcommands:
+  - exec
+allowed_flags:
+  - "-C"
+  - "--cd"
+  - "-s"
+  - "--sandbox"
+  - "--json"
+  - "-o"
+  - "--output-last-message"
+forbidden_flags:
+  - "--dangerously-bypass-approvals-and-sandbox"
+  - "--dangerously-bypass-hook-trust"
+  - "--dangerously-bypass-approvals"
+environment_allowlist:
+  - PATH
+  - HOME
+  - USERPROFILE
+  - TEMP
+  - TMP
+  - SYSTEMROOT
+  - CODEX_HOME
+  - OPENAI_API_KEY
+environment_denylist:
+  - AGENTIC_OS_HUMAN_APPROVAL_KEY
+  - AGENTIC_OS_REVIEWER_APPROVAL_KEY
+  - GITHUB_TOKEN
+  - SUPABASE_KEY
+output_format: jsonl
+context_bundle_required: true
+handoff_required: true
+rollback_required: true
+working_directory_policy: worktree
+env_vars_required:
+  - OPENAI_API_KEY
+forbidden_args:
+  - "--dangerously-bypass-approvals-and-sandbox"
+  - "--dangerously-bypass-hook-trust"
+supports_streaming: false
+notes: >
+  Phase 3.5 restricted candidate. supports_execution remains false until a separate
+  clerical activation task after Claude approval. Worktree-only file mutations with
+  human HMAC approval and single-use anti-replay. No MCP, merge, push, or deploy.
