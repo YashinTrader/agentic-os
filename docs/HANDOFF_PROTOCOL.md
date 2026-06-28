@@ -1,4 +1,4 @@
-# Handoff Protocol v1
+# Handoff Protocol (v1 + v2 verification)
 
 A **handoff** is the formal end of one agent's work session on a task. It
 captures what was done, what remains, and what the next agent needs to know.
@@ -54,6 +54,38 @@ handoffs/T-0007__codex__to__claude__2026-05-22T1105.md
 Review EXAMPLE.yaml against TASK_SCHEMA.md. If acceptable, mark task `done`
 and move to tasks/done/. Otherwise, return with comments via a new handoff.
 ```
+
+## Handoff Protocol v2 — Repository Verification (mandatory for new handoffs)
+
+Handoffs created **after 2026-06-20** for review-closeout or recovery milestones must include:
+
+```markdown
+**Handoff Protocol:** v2
+```
+
+and a `## Repository Verification` block with these fields (real values, not placeholders):
+
+```markdown
+## Repository Verification
+
+repo_root: <git rev-parse --show-toplevel>
+branch: <exact branch name>
+base_sha: <40-char canonical milestone base>
+local_head_sha: <40-char git rev-parse HEAD>
+remote_head_sha: <40-char git ls-remote after push>
+git_status_clean: <true|false — list tracked exceptions if false>
+tests_commit_sha: <40-char commit tested by scripts/run_tests.py>
+test_count: <discovered unittest count>
+test_exit_code: <0 required for closeout>
+validator_exit_code: <0 required for closeout>
+validator_commit_sha: <40-char commit validated>
+artifact_commit_sha: <40-char commit containing this handoff>
+working_copy_path: <absolute canonical clone path>
+```
+
+**Critical invariant:** when `runtime/unittest_last_run.txt` is tracked, its `commit_full` (or `commit`) must equal `tests_commit_sha`. If `local_head_sha` differs from `tests_commit_sha`, later commits must be documentation/verification-only and this must be stated in the handoff.
+
+Historical v1 handoffs (without `**Handoff Protocol:** v2`) remain valid and are not retroactively required to add this block. `scripts/validate.py` enforces v2 fields only when the v2 marker is present.
 
 ## Rules
 1. **The outgoing agent writes the handoff.** Never the incoming one.

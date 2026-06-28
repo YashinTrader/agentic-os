@@ -8,7 +8,7 @@
 
 - Implemented Phase 3.2.1 controlled executor hardening on branch `agent/composer/T-PHASE3-2-1-AND-3-3-DESIGN`.
 - Added `dispatch/path_containment.py` with `path_is_inside()` using `Path.resolve()` and `relative_to()` (no string prefix checks).
-- Added `dispatch/worktree_policy.py`, `dispatch/freshness.py`, `dispatch/approval.py`, `dispatch/executor.py`, and `scripts/execute_dispatch.py`.
+- Hardened canonical Phase 3.2 modules: `dispatch/worktree_policy.py`, `dispatch/execution_gate.py`, `dispatch/executor.py`, `dispatch/approval_store.py` (pre-existing), and `scripts/execute_dispatch.py`.
 - Made preview freshness failures blocking with structured `preview freshness cannot be verified: …` reasons.
 - Required `supports_execution` on all adapters; only `local-python-exec-test` is `true`.
 - Surfaced event emission failures via `event_emit_errors` in `result.json` and per-run `events.jsonl`.
@@ -46,7 +46,7 @@ Check:
 - `runtime/unittest_last_run.txt` → `exit_code: 0`
 - `agents/adapter_registry.yaml` → only `local-python-exec-test` has `supports_execution: true`
 - `dispatch/executor.py` is the only dispatch runtime subprocess module
-- Phase 3.3 design docs and ADR-0020–0018 exist
+- Phase 3.3 design docs and ADR-0020–ADR-0024 exist
 - No `dispatch/worktree_allocator.py` or `scheduler/` execution module
 
 ## Risks / Caveats

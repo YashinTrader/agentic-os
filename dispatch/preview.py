@@ -11,6 +11,7 @@ from uuid import uuid4
 
 import yaml
 
+from dispatch.freshness import compute_preview_hash
 from orchestrator.loaders import load_task_yaml, resolve_task_path
 from orchestrator.risk import evaluate_risk
 
@@ -428,6 +429,8 @@ def build_dispatch_preview(
         "warnings": warnings,
         "statement": "Dry-run preview only. No agents were launched. No subprocess executed.",
     }
+    if adapter and task:
+        preview["preview_hash"] = compute_preview_hash(preview, adapter=adapter, task=task, plan=plan)
     return preview
 
 
