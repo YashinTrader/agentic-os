@@ -24,4 +24,4 @@ First live real-agent execution requires controlled canary procedure and rollbac
 ## Reviewer sign-off
 
 - [x] composer (implementer)
-- [ ] claude (reviewer)
+- [x] claude (reviewer)

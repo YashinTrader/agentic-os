@@ -24,4 +24,4 @@ Real-agent CLIs often inherit broad parent environments containing unrelated cre
 ## Reviewer sign-off
 
 - [x] composer (implementer)
-- [ ] claude (reviewer)
+- [x] claude (reviewer)

@@ -26,4 +26,4 @@ Phase 3.4 established worktree allocation, HMAC approvals, and anti-replay. Phas
 ## Reviewer sign-off
 
 - [x] composer (implementer)
-- [ ] claude (reviewer)
+- [x] claude (reviewer)

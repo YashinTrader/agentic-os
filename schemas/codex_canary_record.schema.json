@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentic-os.local/schemas/codex_canary_record.schema.json",
+  "title": "CodexCanaryRecord",
+  "type": "object",
+  "required": [
+    "run_id",
+    "version",
+    "adapter_id",
+    "activation_id",
+    "canary_contract_hash",
+    "expected_relative_path",
+    "documentation_only",
+    "status",
+    "created_at"
+  ],
+  "properties": {
+    "run_id": { "type": "string", "minLength": 1 },
+    "version": { "type": "string", "const": "1.0" },
+    "adapter_id": { "type": "string", "const": "codex-restricted" },
+    "activation_id": { "type": "string" },
+    "canary_contract_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "expected_relative_path": { "type": "string", "pattern": "^docs/codex-canary-.+\\.md$" },
+    "documentation_only": { "type": "boolean", "const": true },
+    "status": {
+      "type": "string",
+      "enum": ["prepared", "refused", "completed", "failed", "rolled_back"]
+    },
+    "created_at": { "type": "string" },
+    "completed_at": { "type": "string" },
+    "blocked_reasons": { "type": "array", "items": { "type": "string" } }
+  },
+  "additionalProperties": false
+}

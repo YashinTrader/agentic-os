@@ -22,15 +22,17 @@ UNITTEST_ARTIFACT_REL = "runtime/unittest_last_run.txt"
 POST_TEST_ALLOWLIST_EXACT = frozenset(
     {
         "runtime/unittest_last_run.txt",
-        "handoffs/T-PHASE3-5-CODEX-RESTRICTED-ADAPTER__composer__to__claude.md",
-        "docs/REVIEW_COMPOSER_PHASE_3_5_SELF_REVIEW.md",
-        "docs/PHASE_3_5_BASELINE.md",
-        "docs/PHASE_3_5_CODEX_ADAPTER.md",
-        "docs/PHASE_3_5_CODEX_SECURITY_MODEL.md",
-        "docs/PHASE_3_5_CODEX_CANARY_PLAN.md",
-        "docs/PHASE_3_5_HARDENING_REPORT.md",
-        "docs/PHASE_3_5_REVIEW_PACKET.md",
-        "tasks/active/T-PHASE3-5-CODEX-RESTRICTED-ADAPTER.yaml",
+        "handoffs/T-PHASE3-6-CODEX-ACTIVATION-READINESS__composer__to__claude.md",
+        "docs/REVIEW_COMPOSER_PHASE_3_6_SELF_REVIEW.md",
+        "docs/PHASE_3_6_BASELINE.md",
+        "docs/PHASE_3_6_CODEX_ACTIVATION_READINESS.md",
+        "docs/PHASE_3_6_CODEX_COMMAND_CONTRACT.md",
+        "docs/PHASE_3_6_CODEX_CANARY_RUNBOOK.md",
+        "docs/PHASE_3_6_CODEX_ROLLBACK.md",
+        "docs/PHASE_3_6_HUMAN_APPROVAL_CHECKLIST.md",
+        "docs/PHASE_3_6_HARDENING_REPORT.md",
+        "docs/PHASE_3_6_REVIEW_PACKET.md",
+        "tasks/active/T-PHASE3-6-CODEX-ACTIVATION-READINESS.yaml",
     }
 )
 

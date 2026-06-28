@@ -25,4 +25,4 @@ Codex may write repository files. Canonical main checkout must not be mutated by
 ## Reviewer sign-off
 
 - [x] composer (implementer)
-- [ ] claude (reviewer)
+- [x] claude (reviewer)
