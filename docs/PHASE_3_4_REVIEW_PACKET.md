@@ -21,6 +21,16 @@ Phase 3.4 implements operator-commanded worktree allocation, HMAC-SHA256 approva
 | Tests | `tests/test_phase3_4_*.py` (27 tests) |
 | ADRs | ADR-0025 through ADR-0028 |
 
+## Phase 3.4.1 integrity closeout (2026-06-22)
+
+Claude verdict: **APPROVE WITH CHANGES**. Closeout addresses F1 (artifact SHA), F2 (`decisions/**` allowlist removal), F3 (artifact cross-check + validator-at-HEAD). **366** tests after closeout.
+
+| Fix | Evidence |
+|-----|----------|
+| F1 | `runtime/unittest_last_run.txt` regenerated at `implementation_sha` |
+| F2 | `POST_TEST_ALLOWLIST_EXACT` — no `decisions/**` |
+| F3 | `verify_repository_verification.py` cross-checks artifact + runs validator |
+
 ## Safety checklist for reviewer
 
 - [ ] Only `local-python-exec-test` has `supports_execution: true`
