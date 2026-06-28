@@ -1,0 +1,43 @@
+id: T-PHASE3-3-DESIGN
+title: Phase 3.3 worktree approval scheduling design
+owner: composer
+reviewer: claude
+created_by: composer
+status: review
+phase: "3.3"
+created_at: 2026-06-19T00:00:00Z
+updated_at: 2026-06-19T00:00:00Z
+priority: high
+risk_level: medium
+requires_human_approval: false
+human_approval_checklist: []
+objective: Design worktree allocator, approval signing, and scheduling boundaries without implementation.
+context: Phase 3.2.1 hardening completes executor safety; Phase 3.3 defines next operational layer.
+goals:
+  - Publish worktree allocator contract
+  - Publish approval authenticity design
+  - Define scheduling autonomy levels with Level 1 enforcement
+  - Define real-agent adapter promotion process
+  - Add ADR-0020 through ADR-0024
+non_goals:
+  - Git worktree commands
+  - Cryptographic signing
+  - Scheduler daemon
+  - Real adapter promotion
+inputs:
+  - docs/PHASE_3_DESIGN_SPEC.md
+  - decisions/ADR-0012-phase-3-agent-dispatch-gates.md
+outputs:
+  - docs/PHASE_3_3_DESIGN_SPEC.md
+  - docs/PHASE_3_3_REVIEW_PACKET.md
+  - decisions/ADR-0020 through ADR-0024
+  - schemas/worktree_allocation.schema.json
+  - handoffs/T-PHASE3-3-DESIGN__composer__to__claude.md
+constraints:
+  - Design only
+  - Current autonomy Level 1
+acceptance:
+  - Design docs and ADRs exist
+  - test_phase3_3_design.py passes
+  - No operational allocator or scheduler code
+notes: Awaiting Claude final review.

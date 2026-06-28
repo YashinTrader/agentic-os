@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentic-os.local/schemas/adapter_promotion.schema.json",
+  "title": "AdapterPromotion",
+  "type": "object",
+  "required": ["adapter_id", "state", "supports_execution", "adr_ref"],
+  "properties": {
+    "adapter_id": { "type": "string", "minLength": 1 },
+    "state": {
+      "type": "string",
+      "enum": [
+        "planned",
+        "preview_only",
+        "test_execution",
+        "restricted_execution",
+        "active",
+        "disabled",
+        "revoked"
+      ]
+    },
+    "supports_execution": { "type": "boolean" },
+    "adr_ref": { "type": "string", "pattern": "^ADR-[0-9]{4}" },
+    "reviewer_signoff": { "type": "string" },
+    "human_signoff": { "type": "string" },
+    "allowed_commands": { "type": "array", "items": { "type": "string" } },
+    "worktree_required": { "type": "boolean" },
+    "network_required": { "type": "boolean" },
+    "notes": { "type": "string" }
+  },
+  "additionalProperties": false
+}

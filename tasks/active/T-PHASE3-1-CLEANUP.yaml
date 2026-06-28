@@ -1,0 +1,71 @@
+id: T-PHASE3-1-CLEANUP
+title: Phase 3.1 cleanup — contract hardening before Phase 3.2 executor
+owner: composer
+reviewer: claude
+created_by: composer
+status: review
+phase: "3.1"
+created_at: 2026-06-11T14:00:00Z
+updated_at: 2026-06-11T14:00:00Z
+priority: medium
+risk_level: low
+requires_human_approval: false
+human_approval_checklist: []
+objective: >
+  Apply Claude Phase 3.1 review cleanup (M1/M2/L1/L2/L3-L5) — split approval validation,
+  fix mcp_required inference, clarify field errors, document open-question decisions. No
+  Phase 3.2 executor implementation.
+context: |
+  Claude approved Phase 3.1 design (docs/REVIEW_CLAUDE_PHASE_3_1.md).
+  Recommended T-PHASE3-1-CLEANUP before opening T-PHASE3-2-EXECUTOR.
+goals:
+  - M1 split validate_approval_record_shape vs evaluate_approval_satisfaction
+  - M2 remove dead substring freshness checks; structured status/reasons
+  - L1 resolve_mcp_required from adapter_type not suffix
+  - L2 separate missing vs invalid field reasons
+  - L3-L5 document CLI gate, worktree advisory, TTL defaults, forbidden_args dual-duty
+  - Add regression tests; no execution code
+non_goals:
+  - Phase 3.2 executor or subprocess runtime
+  - Dashboard execute/approve buttons
+  - CLI inventory gate in Phase 3.0 preview
+inputs:
+  - docs/REVIEW_CLAUDE_PHASE_3_1.md
+  - dispatch/approval_contract.py
+  - dispatch/executor_contract.py
+  - dispatch/freshness.py
+  - dispatch/preview.py
+outputs:
+  - dispatch/approval_contract.py
+  - dispatch/executor_contract.py
+  - dispatch/freshness.py
+  - dispatch/preview.py
+  - docs/PHASE_3_1_APPROVAL_MODEL.md
+  - docs/PHASE_3_1_EXECUTOR_DESIGN.md
+  - docs/PHASE_3_1_WORKTREE_SANDBOX_STRATEGY.md
+  - decisions/ADR-0014-phase-3-1-controlled-executor-contract.md
+  - decisions/ADR-0015-approval-recording-and-preview-freshness.md
+  - decisions/ADR-0016-worktree-sandbox-before-file-writing-execution.md
+  - tests/test_phase3_1_approval_contract.py
+  - tests/test_phase3_1_executor_contract.py
+  - docs/REVIEW_COMPOSER_PHASE_3_1_CLEANUP_SELF_REVIEW.md
+  - handoffs/T-PHASE3-1-CLEANUP__composer__to__claude.md
+constraints:
+  - No subprocess execution
+  - No Phase 3.2 executor implementation
+acceptance:
+  - Approval shape vs satisfaction split with full test matrix
+  - mcp_required uses adapter_type only
+  - missing/invalid field messages distinct
+  - Open questions documented in design docs and ADRs
+  - python scripts/run_tests.py exit 0
+  - python scripts/validate.py exit 0
+notes: Precedes T-PHASE3-2-EXECUTOR per Claude recommendation.
+labels:
+  - phase-3.1
+  - cleanup
+  - dispatch-design
+related_decisions:
+  - ADR-0014
+  - ADR-0015
+  - ADR-0016

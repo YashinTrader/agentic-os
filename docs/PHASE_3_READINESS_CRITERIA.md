@@ -76,3 +76,15 @@ Before file-writing agent runs:
 3. Timeout + log capture
 4. Human approval workflow integration
 5. Worktree-isolated execution pilot
+
+## Phase 3.0 follow-up (ADR-0013)
+
+Phase 3.0 preview is complete per `decisions/ADR-0013-adapter-registry-schema.md`:
+
+- Preview only — no subprocess, MCP, or LLM execution
+- `forbidden_args` enforced at **token level** after `shlex.split`
+- Missing or inactive adapter → `approval_level: blocked`, `approval_status: blocked`
+- Generated artifacts gitignored: `runtime/dispatch/**`, `logs/dispatch-*.jsonl`
+- `dispatch_allowed: true` is not execution permission
+
+Phase 3.1 design (execute path, approval recording) requires a **separate ADR** and remains blocked.

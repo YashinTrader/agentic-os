@@ -200,6 +200,54 @@ def load_teams_registry(root_dir: Path) -> tuple[dict | None, list[str]]:
         return None, [f"teams/registry.yaml: failed to parse: {exc}"]
 
 
+def load_dispatch_latest(root_dir: Path) -> tuple[dict | None, list[str]]:
+    """Load latest dispatch dry-run preview JSON if present."""
+    errors: list[str] = []
+    path = root_dir / "runtime" / "dispatch" / "latest_preview.json"
+    if not path.exists():
+        return None, errors
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            errors.append("runtime/dispatch/latest_preview.json: root must be a JSON object")
+            return None, errors
+        return data, errors
+    except Exception as exc:
+        return None, [f"runtime/dispatch/latest_preview.json: failed to parse: {exc}"]
+
+
+def load_dispatch_execution_request(root_dir: Path) -> tuple[dict | None, list[str]]:
+    """Load latest execution request JSON (read-only, Phase 3.2)."""
+    errors: list[str] = []
+    path = root_dir / "runtime" / "dispatch" / "latest_execution_request.json"
+    if not path.exists():
+        return None, errors
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            errors.append("runtime/dispatch/latest_execution_request.json: root must be a JSON object")
+            return None, errors
+        return data, errors
+    except Exception as exc:
+        return None, [f"runtime/dispatch/latest_execution_request.json: failed to parse: {exc}"]
+
+
+def load_dispatch_execution_result(root_dir: Path) -> tuple[dict | None, list[str]]:
+    """Load latest execution result JSON (read-only, Phase 3.2)."""
+    errors: list[str] = []
+    path = root_dir / "runtime" / "dispatch" / "latest_result.json"
+    if not path.exists():
+        return None, errors
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            errors.append("runtime/dispatch/latest_result.json: root must be a JSON object")
+            return None, errors
+        return data, errors
+    except Exception as exc:
+        return None, [f"runtime/dispatch/latest_result.json: failed to parse: {exc}"]
+
+
 def load_orchestrator_latest(root_dir: Path) -> tuple[dict | None, dict | None, list[str]]:
     """Load latest orchestrator plan and state JSON if present."""
     errors: list[str] = []
@@ -616,6 +664,9 @@ def generate_dashboard_html(query_params: dict[str, list[str]]) -> str:
     roles_registry, roles_registry_errors = load_roles_registry(ROOT_DIR)
     obsidian_mapping, obsidian_mapping_errors = load_obsidian_mapping(ROOT_DIR)
     orchestrator_plan, orchestrator_state, orchestrator_errors = load_orchestrator_latest(ROOT_DIR)
+    dispatch_preview, dispatch_preview_errors = load_dispatch_latest(ROOT_DIR)
+    dispatch_exec_request, dispatch_exec_request_errors = load_dispatch_execution_request(ROOT_DIR)
+    dispatch_exec_result, dispatch_exec_result_errors = load_dispatch_execution_result(ROOT_DIR)
     obsidian_last_sync, obsidian_sync_errors = load_obsidian_last_sync_report(ROOT_DIR, obsidian_mapping)
     obsidian_notes_planned = count_obsidian_notes_planned(ROOT_DIR)
     
@@ -1290,7 +1341,7 @@ def generate_dashboard_html(query_params: dict[str, list[str]]) -> str:
         <div style="flex-grow: 1;"></div>
         
         <div style="font-size: 10px; color: #475569; text-align: center; border-top: 1px solid rgba(255, 255, 255, 0.05); padding-top: 12px;">
-            Antigravity Dashboard • Phase 2.6
+            Antigravity Dashboard • Phase 3.0 preview
         </div>
     </div>
     """)
@@ -1329,6 +1380,7 @@ def generate_dashboard_html(query_params: dict[str, list[str]]) -> str:
                 <a href="/?tab=roles" class="tab-link {'active' if active_tab == 'roles' else ''}">🎭 Roles</a>
                 <a href="/?tab=obsidian" class="tab-link {'active' if active_tab == 'obsidian' else ''}">📓 Obsidian Sync</a>
                 <a href="/?tab=orchestrator" class="tab-link {'active' if active_tab == 'orchestrator' else ''}">🧭 Orchestrator</a>
+                <a href="/?tab=dispatch" class="tab-link {'active' if active_tab == 'dispatch' else ''}">🚀 Dispatch Preview</a>
                 <a href="/?tab=health" class="tab-link {'active' if active_tab == 'health' else ''}">🏥 Health Panel</a>
             </div>
     """)
@@ -2478,18 +2530,83 @@ python scripts/orchestrate_task.py --task tasks/active/&lt;task-id&gt;.yaml --js
     """)
 
     # ==========================================
+    # TAB PANEL: DISPATCH (Phase 3.0 preview + Phase 3.2 read-only execution status)
+    # ==========================================
+    dp_run_id = dispatch_preview.get("run_id", "—") if dispatch_preview else "—"
+    dp_task = dispatch_preview.get("task_id", "—") if dispatch_preview else "—"
+    dp_adapter = dispatch_preview.get("adapter_id", "—") if dispatch_preview else "—"
+    dp_allowed = dispatch_preview.get("dispatch_allowed", "—") if dispatch_preview else "—"
+    dp_command = dispatch_preview.get("command", "—") if dispatch_preview else "—"
+    dp_workdir = dispatch_preview.get("working_directory", "—") if dispatch_preview else "—"
+    dp_risk = dispatch_preview.get("risk_gate", {}).get("approval_level", "—") if dispatch_preview else "—"
+    dp_approval = dispatch_preview.get("approval_gate", {}).get("approval_status", "—") if dispatch_preview else "—"
+    dp_errors = dispatch_preview.get("errors", []) if dispatch_preview else []
+    de_executed = dispatch_exec_result.get("executed", "—") if dispatch_exec_result else "—"
+    de_allowed = dispatch_exec_result.get("execution_allowed", "—") if dispatch_exec_result else "—"
+    de_exit = dispatch_exec_result.get("exit_code", "—") if dispatch_exec_result else "—"
+    de_blocked = dispatch_exec_result.get("blocked_reasons", []) if dispatch_exec_result else []
+    de_approval_status = dispatch_exec_result.get("approval_status", "—") if dispatch_exec_result else "—"
+
+    html_out.append(f"""
+            <div class="tab-panel {'active' if active_tab == 'dispatch' else ''}">
+                <h3>🚀 Dispatch Status</h3>
+                <p style="font-size:12px; color:#94a3b8; margin-bottom:16px;">
+                    <strong>Read-only.</strong> Preview and execution status only. Operator must use CLI;
+                    this dashboard does not run agents, MCPs, or subprocesses.
+                </p>
+                <div style="background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.05); border-radius:8px; padding:16px; margin-bottom:16px;">
+                    <div class="inspector-section-title" style="border:none; margin-bottom:10px;">Latest Preview</div>
+                    <div class="inspector-meta-row"><span class="inspector-meta-label">Run ID</span><span class="inspector-meta-val">{escape(str(dp_run_id))}</span></div>
+                    <div class="inspector-meta-row"><span class="inspector-meta-label">Task</span><span class="inspector-meta-val">{escape(str(dp_task))}</span></div>
+                    <div class="inspector-meta-row"><span class="inspector-meta-label">Adapter</span><span class="inspector-meta-val">{escape(str(dp_adapter))}</span></div>
+                    <div class="inspector-meta-row"><span class="inspector-meta-label">Dispatch allowed</span><span class="inspector-meta-val">{escape(str(dp_allowed))}</span></div>
+                    <div class="inspector-meta-row"><span class="inspector-meta-label">Risk gate</span><span class="inspector-meta-val">{escape(str(dp_risk))}</span></div>
+                    <div class="inspector-meta-row"><span class="inspector-meta-label">Approval status</span><span class="inspector-meta-val">{escape(str(dp_approval))}</span></div>
+                    <div class="inspector-meta-row"><span class="inspector-meta-label">Command</span><span class="inspector-meta-val" style="font-size:10px;">{escape(str(dp_command))}</span></div>
+                    <div class="inspector-meta-row"><span class="inspector-meta-label">Working dir</span><span class="inspector-meta-val" style="font-size:10px;">{escape(str(dp_workdir))}</span></div>
+                </div>
+                <div style="background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.05); border-radius:8px; padding:16px; margin-bottom:16px;">
+                    <div class="inspector-section-title" style="border:none; margin-bottom:10px;">Latest Execution Result</div>
+                    <div class="inspector-meta-row"><span class="inspector-meta-label">Executed</span><span class="inspector-meta-val">{escape(str(de_executed))}</span></div>
+                    <div class="inspector-meta-row"><span class="inspector-meta-label">Execution allowed</span><span class="inspector-meta-val">{escape(str(de_allowed))}</span></div>
+                    <div class="inspector-meta-row"><span class="inspector-meta-label">Exit code</span><span class="inspector-meta-val">{escape(str(de_exit))}</span></div>
+                    <div class="inspector-meta-row"><span class="inspector-meta-label">Approval status</span><span class="inspector-meta-val">{escape(str(de_approval_status))}</span></div>
+                </div>
+                <div style="background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.05); border-radius:8px; padding:16px;">
+                    <div class="inspector-section-title" style="border:none; margin-bottom:10px;">Operator CLI (command line only)</div>
+                    <pre style="font-size:12px; color:#cbd5e1; white-space:pre-wrap;">python scripts/preview_dispatch.py --adapter local-python-exec-test --json
+python scripts/approve_dispatch.py --preview runtime/dispatch/previews/&lt;run_id&gt;/preview.json --level reviewer --approved-by operator
+python scripts/execute_dispatch.py --preview runtime/dispatch/previews/&lt;run_id&gt;/preview.json --dry-run
+python scripts/execute_dispatch.py --preview ... --execute --approval runtime/dispatch/approvals/&lt;id&gt;.json</pre>
+                </div>
+    """)
+    if dispatch_preview_errors:
+        for err in dispatch_preview_errors:
+            html_out.append(f'<div class="event-type-warn" style="margin-top:12px;">{escape(err)}</div>')
+    for err in dispatch_exec_request_errors + dispatch_exec_result_errors:
+        html_out.append(f'<div class="event-type-warn" style="margin-top:12px;">{escape(err)}</div>')
+    if dp_errors:
+        html_out.append('<div style="margin-top:8px; font-size:11px; color:#f87171;">Preview errors: ' + escape("; ".join(str(e) for e in dp_errors[:5])) + '</div>')
+    if de_blocked:
+        html_out.append('<div style="margin-top:8px; font-size:11px; color:#f87171;">Blocked: ' + escape("; ".join(str(e) for e in de_blocked[:5])) + '</div>')
+    if not dispatch_preview:
+        html_out.append('<div style="margin-top:12px; font-size:12px; color:#64748b;">No dispatch preview yet. Run orchestration then <code>python scripts/preview_dispatch.py</code>.</div>')
+    html_out.append("""
+            </div>
+    """)
+
+    # ==========================================
     # TAB PANEL: HEALTH & SAFETY
     # ==========================================
     html_out.append(f"""
             <div class="tab-panel {'active' if active_tab == 'health' else ''}">
                 <h3>🏥 System Diagnostic Log</h3>
                 <div style="background:rgba(59,130,246,0.08); border-left:4px solid #3b82f6; border-radius:6px; padding:14px; margin-bottom:16px;">
-                    <div style="font-size:12px; color:#93c5fd; font-weight:600; margin-bottom:6px;">Phase 2 status (2.6 — Claude review fixes)</div>
+                    <div style="font-size:12px; color:#93c5fd; font-weight:600; margin-bottom:6px;">Phase 3.0 — Dispatch preview (dry-run only)</div>
                     <div style="font-size:11px; color:#cbd5e1; line-height:1.5;">
-                        2.0 Daemon • 2.1 Skills/MCP • 2.2 Teams/Roles • 2.3 Obsidian one-way •
-                        2.4 LangGraph planning • 2.5 Hardening • 2.6 Risk-gate + event fixes.
-                        No agent dispatch. Phase 3 design:
-                        <code>docs/PHASE_3_DESIGN_SPEC.md</code>
+                        Adapter registry + command preview CLI + read-only dashboard tab.
+                        No agent execution, MCP calls, or paid APIs. Live dispatch blocked per ADR-0012.
+                        Design: <code>docs/PHASE_3_DESIGN_SPEC.md</code> • Blockers: <code>docs/PHASE_3_0_BLOCKERS.md</code>
                     </div>
                 </div>
     """)

@@ -1,0 +1,64 @@
+id: T-PHASE3-2-EXECUTOR
+title: Phase 3.2 controlled executor MVP with safety gates
+owner: composer
+reviewer: claude
+created_by: composer
+status: review
+phase: "3.2"
+created_at: 2026-06-12T12:00:00Z
+updated_at: 2026-06-12T12:00:00Z
+priority: high
+risk_level: medium
+requires_human_approval: false
+human_approval_checklist: []
+objective: >
+  Implement operator-commanded controlled dispatch executor with approval gates,
+  runtime capture, worktree policy, and read-only dashboard status. No autonomous execution.
+context: >
+  Continues from approved Phase 3.1 design and cleanup. Claude reviews only at end of milestone.
+goals:
+  - Phase 3.1 cleanup regression tests
+  - Controlled executor MVP (dry-run + narrow --execute)
+  - Approval recording CLI
+  - Runtime capture and event vocabulary
+  - Hardening docs and review packet
+non_goals:
+  - Autonomous agent scheduling (Phase 3.3)
+  - MCP/LLM execution
+  - Dashboard execution controls
+  - Auto worktree creation
+inputs:
+  - dispatch/approval_contract.py
+  - dispatch/executor_contract.py
+  - dispatch/preview.py
+  - docs/REVIEW_CLAUDE_PHASE_3_1.md
+outputs:
+  - dispatch/executor.py
+  - dispatch/execution_gate.py
+  - dispatch/runtime_capture.py
+  - dispatch/worktree_policy.py
+  - dispatch/approval_store.py
+  - scripts/execute_dispatch.py
+  - scripts/approve_dispatch.py
+  - docs/PHASE_3_2_EXECUTOR_MVP.md
+  - docs/PHASE_3_2_HARDENING_REPORT.md
+  - docs/PHASE_3_2_REVIEW_PACKET.md
+  - docs/REVIEW_COMPOSER_PHASE_3_2_SELF_REVIEW.md
+  - decisions/ADR-0017-phase-3-2-controlled-executor-mvp.md
+  - decisions/ADR-0018-execution-event-vocabulary.md
+  - decisions/ADR-0019-operator-commanded-execution-only.md
+  - tests/test_phase3_1_cleanup.py
+  - tests/test_dispatch_*.py
+constraints:
+  - Subprocess only in dispatch/executor.py
+  - Explicit --execute required for subprocess
+  - Real agent adapters remain preview-only
+  - No task owner/status mutation from executor
+acceptance:
+  - python scripts/run_tests.py exits 0
+  - python scripts/validate.py exits 0
+  - Safety grep passes (subprocess isolation, dashboard read-only)
+  - Claude final review packet complete
+notes: >
+  Branch agent/composer/T-PHASE3-2-CONTROLLED-EXECUTOR.
+  Commit T-PHASE3-2: add controlled executor MVP with safety gates.

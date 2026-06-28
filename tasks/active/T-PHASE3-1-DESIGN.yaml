@@ -1,0 +1,83 @@
+id: T-PHASE3-1-DESIGN
+title: Phase 3.1 — Controlled executor design contract (no execution)
+owner: composer
+reviewer: claude
+created_by: composer
+status: review
+phase: "3.1"
+created_at: 2026-06-11T12:00:00Z
+updated_at: 2026-06-11T12:00:00Z
+priority: high
+risk_level: low
+requires_human_approval: false
+human_approval_checklist: []
+objective: >
+  Design the controlled execution layer (executor contract, approval model, preview
+  freshness, CLI gate, worktree strategy, runtime capture) for Phase 3.2. No runtime
+  execution.
+context: |
+  Phase 3.0 preview approved. T-PHASE3-0-FOLLOWUP complete.
+  Claude reviews Phase 3.1 at end only (builder/reviewer loop internal).
+goals:
+  - Executor contract types and validate_execution_request_contract
+  - Approval record model and freshness hashing
+  - CLI inventory gate design and helper
+  - KEY=VALUE forbidden key extension in preview validation
+  - Worktree/sandbox and runtime capture design docs
+  - ADR-0014, ADR-0015, ADR-0016
+  - Tests and schemas; no subprocess execution
+non_goals:
+  - execute_dispatch.py or subprocess executor
+  - Agent/MCP/LLM API execution
+  - Dashboard Execute/Approve buttons
+  - Task owner/status mutation by dispatch
+inputs:
+  - dispatch/preview.py
+  - agents/adapter_registry.yaml
+  - protocol/event_types.py
+  - docs/PHASE_3_DESIGN_SPEC.md
+  - decisions/ADR-0012-phase-3-agent-dispatch-gates.md
+  - decisions/ADR-0013-adapter-registry-schema.md
+outputs:
+  - docs/PHASE_3_1_EXECUTOR_DESIGN.md
+  - docs/PHASE_3_1_APPROVAL_MODEL.md
+  - docs/PHASE_3_1_WORKTREE_SANDBOX_STRATEGY.md
+  - docs/PHASE_3_1_RUNTIME_CAPTURE_CONTRACT.md
+  - docs/PHASE_3_1_REVIEW_PACKET.md
+  - docs/REVIEW_COMPOSER_PHASE_3_1_DESIGN_SELF_REVIEW.md
+  - decisions/ADR-0014-phase-3-1-controlled-executor-contract.md
+  - decisions/ADR-0015-approval-recording-and-preview-freshness.md
+  - decisions/ADR-0016-worktree-sandbox-before-file-writing-execution.md
+  - decisions/INDEX.md
+  - dispatch/executor_contract.py
+  - dispatch/approval_contract.py
+  - dispatch/freshness.py
+  - schemas/dispatch_executor_contract.schema.json
+  - schemas/approval_record.schema.json
+  - tests/test_phase3_1_executor_contract.py
+  - tests/test_phase3_1_approval_contract.py
+  - tests/test_phase3_1_freshness.py
+  - handoffs/T-PHASE3-1-DESIGN__composer__to__claude.md
+constraints:
+  - No subprocess execution in dispatch modules
+  - No execution events in ALLOWED_EVENT_TYPES without emitters
+  - Validator and full test suite must pass
+acceptance:
+  - All Phase 3.1 design docs and ADRs exist
+  - Contract validators block unsafe requests without executing
+  - Preview hash deterministic; stale/expired approvals detected
+  - KEY=VALUE forbidden key tests pass
+  - python scripts/run_tests.py exit 0
+  - python scripts/validate.py exit 0
+notes: Internal self-review in REVIEW_COMPOSER_PHASE_3_1_DESIGN_SELF_REVIEW.md before Claude handoff.
+labels:
+  - phase-3.1
+  - dispatch-design
+  - executor-contract
+  - adr
+related_decisions:
+  - ADR-0012
+  - ADR-0013
+  - ADR-0014
+  - ADR-0015
+  - ADR-0016

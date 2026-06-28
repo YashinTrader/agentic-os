@@ -39,7 +39,7 @@ Phase 3.0 does **not** run agents. It builds dry-run command preview and gates.
 6. approval gate      ← human | reviewer | none | blocked
 7. dry-run output     ← stdout plan only; no subprocess
 8. [future] execute   ← Phase 3.2+ behind explicit operator command
-9. capture logs       ← logs/dispatch-<run_id>.jsonl
+9. capture logs       ← logs/<run_id>.jsonl (run_id prefix dispatch-)
 10. write handoff     ← handoffs/<task>__<agent>__to__<receiver>.md
 11. update task       ← only via scripts/update_task.py when permitted
 ```
@@ -97,13 +97,33 @@ Fields:
 | Environment variables (names only) | yes |
 | Secrets required | yes/no flag only |
 | Expected outputs | yes |
-| Logs path | `logs/dispatch-<run_id>.jsonl` |
+| Logs path | `logs/<run_id>.jsonl` (run_id already starts with `dispatch-`) |
 | Handoff path | proposed path |
 | Rollback strategy | text for file-writing adapters |
 | Risk gate result | `approval_level` + reason |
 | Approval gate result | pending human/reviewer/none |
 
 No subprocess invocation in Phase 3.0.
+
+### `dispatch_allowed` semantics (Phase 3.0)
+
+`dispatch_allowed: true` means the preview JSON is internally well-formed and
+could be shown to a future executor. It does **not** authorize execution.
+Phase 3.1+ must also check `approval_gate.approval_status`, recorded approvals,
+and preview freshness before any subprocess.
+
+### `forbidden_args` (token-level)
+
+Allowlist enforcement compares `forbidden_args` against **shlex-parsed command
+tokens**, not substrings. Example: `--execute` matches the token `--execute`;
+`not--execute-here` does not. Malformed templates fail safely without execution.
+
+### Missing or inactive adapter
+
+When no active allowlisted adapter is selected, `approval_gate` must return
+`approval_level: blocked` and `approval_status: blocked` with an explicit
+adapter-selection reason. Inactive adapters (`status: disabled`) follow the same
+blocked gate when referenced explicitly.
 
 ## F. Approval gates
 

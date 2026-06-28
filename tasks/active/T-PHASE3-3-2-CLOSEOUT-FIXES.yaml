@@ -1,0 +1,103 @@
+id: T-PHASE3-3-2-CLOSEOUT-FIXES
+title: Phase 3.3.2 — Closeout integrity fix (red branch, false verification block)
+owner: composer
+reviewer: claude
+created_by: claude
+status: review
+phase: "3.3"
+created_at: 2026-06-20T12:00:00Z
+updated_at: 2026-06-20T12:55:00Z
+priority: high
+risk_level: low
+requires_human_approval: false
+human_approval_checklist: []
+objective: >
+  Make the Phase 3.3.1 review-fix branch actually green at the shipped HEAD and make
+  its verification block truthful and self-enforcing. The M2/L3/doc engineering is
+  correct; this task is an integrity/verification closeout only. No dispatch logic
+  changes; no real-agent activation; autonomy stays Level 1.
+context: |
+  Claude closeout review verdict: REJECT (see docs/REVIEW_CLAUDE_PHASE_3_3_1_CLOSEOUT.md).
+
+  Independent verification of agent/composer/T-PHASE3-3-REVIEW-FIXES @ f7ec3ca:
+  - py scripts/validate.py -> exit 1 (handoff missing ## Open Questions)
+  - py -m unittest -> 296 tests, 1 FAILURE (test_planned_mcps_pass_validation, which
+    shells out to validate.py and asserts exit 0)
+  - committed v2 verification block records test_exit_code:0 and validator_exit_code:0
+    (both false), local_head_sha 97ee688 (stale; actual HEAD f7ec3ca), and
+    tests_commit_sha 93fa558 != head.
+  - validate_handoff_verification_block does NOT enforce tests_commit_sha == local_head_sha,
+    so the protocol cannot catch this class of discrepancy.
+
+  Single root cause cascade: missing handoff section -> validator exit 1 ->
+  doc-validating test fails -> suite red -> artifact/handoff certify false green.
+goals:
+  - Add ## Open Questions to handoffs/T-PHASE3-3-REVIEW-FIXES__composer__to__claude.md
+  - Re-run validator + full suite from canonical clone at the final HEAD; both exit 0
+  - Make tests_commit_sha == local_head_sha (test the shipped commit) or gitignore the
+    artifact so HEAD does not advance past the tested tree
+  - Correct the handoff Repository Verification block and the chat summary to record the
+    actual final HEAD and the true (post-fix) exit codes
+  - Strengthen validate_handoff_verification_block to enforce tests_commit_sha ==
+    local_head_sha, with a regression test for the mismatch case
+  - Remove or gitignore stray scratch files (test_out.txt, runtime/test_*.txt, etc.)
+non_goals:
+  - Phase 3.4 worktree allocator / HMAC signing implementation
+  - Scheduler / queue implementation
+  - Real-agent adapter promotion (all remain supports_execution false)
+  - Any change to autonomy level (stays Level 1)
+  - Changes to M2/L3 dispatch logic (already correct)
+  - New runtime subprocess surfaces
+inputs:
+  - docs/REVIEW_CLAUDE_PHASE_3_3_1_CLOSEOUT.md
+  - handoffs/T-PHASE3-3-REVIEW-FIXES__composer__to__claude.md
+  - scripts/validate.py
+  - scripts/run_tests.py
+  - docs/HANDOFF_PROTOCOL.md
+  - tests/test_phase3_3_review_fixes.py
+  - runtime/unittest_last_run.txt
+  - .gitignore
+outputs:
+  - handoffs/T-PHASE3-3-REVIEW-FIXES__composer__to__claude.md
+  - scripts/validate.py
+  - tests/test_phase3_3_review_fixes.py
+  - docs/HANDOFF_PROTOCOL.md
+  - runtime/unittest_last_run.txt
+  - .gitignore
+  - tasks/active/T-PHASE3-3-2-CLOSEOUT-FIXES.yaml
+  - handoffs/T-PHASE3-3-2-CLOSEOUT-FIXES__composer__to__claude.md
+constraints:
+  - No changes to dispatch/executor or freshness logic (M2/L3 already correct)
+  - No real-agent adapter activation; only local-python-exec-test executes
+  - Validator must pass at the FINAL HEAD (exit 0, warnings only for historical v1 events)
+  - Full suite must pass at the FINAL HEAD from canonical clone C:\Users\gabot\agentic-os
+  - The shipped handoff verification block must record true, reviewer-reproducible values
+  - tests_commit_sha must equal local_head_sha in the final verification block
+acceptance:
+  - handoffs/T-PHASE3-3-REVIEW-FIXES__...md contains ## Open Questions and all required sections
+  - py scripts/validate.py exit 0 at HEAD
+  - py -m unittest discover -s tests -p "test_*.py" -> all green at HEAD (no failures)
+  - verification block local_head_sha == remote_head_sha == actual git HEAD
+  - verification block test_exit_code 0 and validator_exit_code 0 are reproducible by reviewer
+  - verification block tests_commit_sha == local_head_sha
+  - validate_handoff_verification_block rejects a block where tests_commit_sha != local_head_sha
+    (new regression test added and passing)
+  - stray scratch files removed or gitignored
+notes: >
+  After an independent re-run confirms the branch is green at the shipped HEAD with a
+  truthful, self-enforcing verification block, Claude will flip the ADR-0020-0024
+  reviewer sign-offs and confirm READY FOR PHASE 3.4 DESIGN ONLY. Phase 3.4 implementation
+  (worktree allocator + approval authenticity MVP) stays gated and must keep real adapters
+  disabled, autonomy Level 1, operator-commanded execution only.
+labels:
+  - phase-3.3
+  - closeout
+  - integrity
+  - verification-block
+  - claude-review
+related_decisions:
+  - ADR-0020
+  - ADR-0021
+  - ADR-0022
+  - ADR-0023
+  - ADR-0024

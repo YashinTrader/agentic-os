@@ -11,42 +11,8 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
-from orchestrator.graph import run_orchestration  # noqa: E402
 from orchestrator.loaders import safe_task_path  # noqa: E402
-
-
-def resolve_output_dir(
-    repo_root: Path,
-    output_dir: str | None,
-    *,
-    allow_outside_repo: bool = False,
-) -> str:
-    """Resolve orchestrator output directory inside repo root by default."""
-    default = repo_root / "runtime" / "orchestrator" / "runs"
-    if output_dir is None:
-        return str(default.resolve())
-
-    candidate = Path(output_dir)
-    if candidate.is_absolute():
-        resolved = candidate.resolve()
-    else:
-        resolved = (repo_root / candidate).resolve()
-
-    if ".." in candidate.parts:
-        raise ValueError(
-            f"output directory must not contain path traversal segments: {output_dir}"
-        )
-
-    try:
-        resolved.relative_to(repo_root)
-    except ValueError as exc:
-        if not allow_outside_repo:
-            raise ValueError(
-                f"output directory must be inside repository root ({repo_root}); "
-                f"got {resolved}. Pass --allow-outside-repo only for explicit override."
-            ) from exc
-
-    return str(resolved)
+from orchestrator.paths import resolve_output_dir  # noqa: E402
 
 
 def parser() -> argparse.ArgumentParser:
@@ -86,6 +52,8 @@ def main() -> int:
         return 1
 
     try:
+        from orchestrator.graph import run_orchestration
+
         state = run_orchestration(
             root,
             args.task,

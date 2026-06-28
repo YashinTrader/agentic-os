@@ -1,0 +1,106 @@
+id: T-PHASE3-3-REVIEW-FIXES
+title: Phase 3.3.1 — Claude review fixes (artifact integrity, M2/L3 tests, doc accuracy)
+owner: composer
+reviewer: claude
+created_by: claude
+status: review
+phase: "3.3"
+created_at: 2026-06-20T10:00:00Z
+updated_at: 2026-06-20T10:10:00Z
+priority: high
+risk_level: low
+requires_human_approval: false
+human_approval_checklist: []
+objective: >
+  Close the required fixes from the Claude final review of Phase 3.2.1 + Phase 3.3
+  (docs/REVIEW_CLAUDE_PHASE_3_2_1_AND_3_3.md). Restore verification-artifact integrity,
+  add the two missing hardening regression tests (M2 freshness block, L3 event-emit
+  observability), and correct documentation that overstates or misstates reality.
+  No new runtime behavior; no real-agent activation; autonomy stays Level 1.
+context: |
+  Claude verdict: APPROVE WITH CHANGES.
+  Phase readiness: READY FOR PHASE 3.4 DESIGN ONLY.
+
+  Reviewed HEAD: b7a1239b4e429dd6c903433c6ed773ab71a03c95 (canonical base 5579146).
+  Independent run: 280 tests OK, validator passed.
+
+  The hardening code (M1/M2/L1/L3) is correct. What blocks a clean approval:
+  (1) committed runtime/unittest_last_run.txt references HEAD's parent 02cd934 and
+  was generated from the deprecated Codex clone python path; (2) M2 and L3 have no
+  regression tests despite being safety-critical paths; (3) the self-review and
+  hardening report contain stale/inaccurate claims (nonexistent dispatch/approval.py,
+  "five ADRs 0014-0018", "220 tests", an L3 test that does not exist).
+
+  Phase 3.4 implementation (worktree allocator + HMAC signing) must NOT begin until
+  these land.
+goals:
+  - Regenerate/correct runtime/unittest_last_run.txt to reference reviewed HEAD from
+    the canonical clone, OR gitignore it and adopt a handoff verification block
+  - Add M2 regression test (execute blocks when plan missing/malformed)
+  - Add L3 regression test (mocked emit failure surfaces event_emit_errors in result.json)
+  - Correct documentation inaccuracies in hardening report, self-review, design handoff
+  - (Optional) M2 dry-run parity: report execution_allowed false when freshness unverifiable
+  - (Optional) clean stray scratch files / extend .gitignore
+non_goals:
+  - Phase 3.4 worktree allocator implementation
+  - HMAC/approval signing implementation
+  - Scheduler/queue implementation
+  - Real-agent adapter promotion (all remain supports_execution false)
+  - Any change to autonomy level (stays Level 1)
+  - New runtime subprocess surfaces
+inputs:
+  - docs/REVIEW_CLAUDE_PHASE_3_2_1_AND_3_3.md
+  - dispatch/execution_gate.py
+  - dispatch/executor.py
+  - dispatch/runtime_capture.py
+  - tests/test_dispatch_executor.py
+  - tests/test_phase3_2_1_hardening.py
+  - docs/PHASE_3_2_1_HARDENING_REPORT.md
+  - docs/REVIEW_COMPOSER_PHASE_3_2_1_AND_3_3_SELF_REVIEW.md
+  - handoffs/T-PHASE3-3-DESIGN__composer__to__claude.md
+  - runtime/unittest_last_run.txt
+  - .gitignore
+outputs:
+  - tests/test_dispatch_executor.py
+  - docs/PHASE_3_2_1_HARDENING_REPORT.md
+  - docs/REVIEW_COMPOSER_PHASE_3_2_1_AND_3_3_SELF_REVIEW.md
+  - handoffs/T-PHASE3-3-DESIGN__composer__to__claude.md
+  - runtime/unittest_last_run.txt
+  - .gitignore
+  - tasks/active/T-PHASE3-3-REVIEW-FIXES.yaml
+  - handoffs/T-PHASE3-3-REVIEW-FIXES__composer__to__claude.md
+constraints:
+  - No new runtime behavior beyond optional M2 dry-run parity
+  - No real-agent adapter activation; only local-python-exec-test executes
+  - Validator must still pass (warnings only for historical v1 events)
+  - Full suite must run from the canonical clone C:\Users\gabot\agentic-os
+  - Handoff must embed a verification block with full 40-char local+remote SHAs
+acceptance:
+  - runtime/unittest_last_run.txt references the actual reviewed HEAD and a canonical-clone
+    python path (or is gitignored with a handoff verification block replacing it)
+  - tests/test_dispatch_executor.py covers execute-blocks-on-missing-plan and
+    execute-blocks-on-malformed-plan (M2), asserting no subprocess and execution_allowed false
+  - tests/ covers L3 — mocked append_event failure yields non-empty event_emit_errors in result.json
+  - docs/PHASE_3_2_1_HARDENING_REPORT.md file lists match reality (no dispatch/approval.py;
+    freshness.py not claimed as added)
+  - REVIEW_COMPOSER self-review references ADR-0020-0024 and 280 tests (no 0014-0018 / 220)
+  - design handoff "ADR-0020-0018" typo corrected to ADR-0020-0024
+  - python scripts/run_tests.py exit 0 with tests_commit_sha == local HEAD
+  - python scripts/validate.py exit 0
+notes: >
+  After this closeout, the next milestone is Phase 3.4 — Worktree Allocator +
+  Approval Authenticity MVP, which must keep real adapters disabled, autonomy at
+  Level 1, and operator-commanded execution only. Claude will flip the ADR-0020-0024
+  reviewer sign-offs once this task lands and the verification artifact is trustworthy.
+labels:
+  - phase-3.3
+  - review-fixes
+  - integrity
+  - test-coverage
+  - claude-review
+related_decisions:
+  - ADR-0020
+  - ADR-0021
+  - ADR-0022
+  - ADR-0023
+  - ADR-0024
