@@ -84,9 +84,12 @@ class Phase33DesignTests(unittest.TestCase):
                 self.assertNotIn("subprocess.run", source, str(py))
                 self.assertNotIn("execute_dispatch", source, str(py))
 
-    def test_no_worktree_git_implementation(self) -> None:
+    def test_worktree_allocator_is_operator_commanded_only(self) -> None:
         allocator = REPO_ROOT / "dispatch" / "worktree_allocator.py"
-        self.assertFalse(allocator.exists())
+        self.assertTrue(allocator.exists())
+        source = allocator.read_text(encoding="utf-8")
+        self.assertIn("allocate_worktree", source)
+        self.assertNotIn("shell=True", source)
 
     def test_promotion_states_in_schema(self) -> None:
         schema = json.loads((REPO_ROOT / "schemas/adapter_promotion.schema.json").read_text(encoding="utf-8"))

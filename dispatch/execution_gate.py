@@ -16,6 +16,9 @@ from dispatch.executor_contract import (
 )
 from dispatch.freshness import compute_preview_hash, is_preview_stale
 from dispatch.preview import validate_command_allowlist
+from dispatch.approval_replay import is_approval_consumed
+from dispatch.approval_signing import SIGNING_VERSION, verify_signed_approval
+from dispatch.worktree_allocator import evaluate_allocation_for_execution
 from dispatch.worktree_policy import evaluate_worktree_policy
 
 MAX_TIMEOUT_SECONDS = 3600
@@ -50,7 +53,10 @@ def evaluate_execution_gates(
     operator_execute: bool = False,
     dry_run: bool = False,
     worktree_root: str | None = None,
+    allocation_record: dict[str, Any] | None = None,
     mcp_execution_allowed: bool = False,
+    require_signed_approval: bool = True,
+    check_replay: bool = False,
     now: datetime | None = None,
 ) -> ExecutionGateResult:
     """Evaluate all hard execution rules. Does not execute subprocess."""
@@ -148,6 +154,18 @@ def evaluate_execution_gates(
                 blocked.append("approval record missing or insufficient")
         if approval_record is None:
             blocked.append("approval record required but not provided")
+        elif require_signed_approval:
+            version = int(approval_record.get("version", 1))
+            if version >= SIGNING_VERSION:
+                sig_result = verify_signed_approval(approval_record, preview=preview, now=now)
+                if sig_result.status != "valid":
+                    blocked.append(f"signed approval verification failed: {sig_result.status}")
+                    for err in sig_result.errors:
+                        blocked.append(err)
+                if check_replay and is_approval_consumed(
+                    repo_root, str(approval_record.get("approval_id", ""))
+                ):
+                    blocked.append("approval already consumed (replay blocked)")
 
     if preview.get("secrets_required"):
         if approval_record is None or str(approval_record.get("approver_type", "")) != "human":
@@ -155,13 +173,37 @@ def evaluate_execution_gates(
 
     adapter_writes = bool((adapter or {}).get("writes_files"))
     worktree_required = bool(preview.get("worktree_required")) or adapter_writes
+    effective_worktree_root = worktree_root
+    if allocation_record is not None:
+        effective_worktree_root = str(allocation_record.get("worktree_path", worktree_root or ""))
+
+    if adapter_writes and worktree_required:
+        base_sha = str(preview.get("base_sha") or preview.get("plan_base_sha") or "")
+        if not base_sha:
+            blocked.append("missing base_sha for worktree-bound file-writing execution")
+        blocked.extend(
+            evaluate_allocation_for_execution(
+                allocation_record,
+                task_id=str(preview.get("task_id", "")),
+                run_id=str(preview.get("run_id", "")),
+                base_sha=base_sha,
+                cwd=str(preview.get("working_directory", "")),
+                scope_paths=preview.get("scope_paths") or [],
+            )
+        )
+        if allocation_record is None:
+            blocked.append(
+                "file-writing execution requires explicit worktree allocation record; "
+                "automatic allocation is not enabled"
+            )
+
     wd_result = evaluate_worktree_policy(
         repo_root,
         cwd=str(preview.get("working_directory", "")),
         scope_paths=preview.get("scope_paths") or [],
         writes_files=adapter_writes,
         worktree_required=worktree_required,
-        worktree_root=worktree_root,
+        worktree_root=effective_worktree_root,
     )
     blocked.extend(wd_result.blocked_reasons)
 

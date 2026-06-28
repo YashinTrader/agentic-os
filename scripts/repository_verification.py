@@ -15,6 +15,7 @@ _SHA40_RE = re.compile(r"^[0-9a-fA-F]{40}$")
 
 # Conservative post-test allowlist (documentation / verification only).
 POST_TEST_ALLOWLIST_PREFIXES = (
+    "decisions/",
     "docs/",
     "handoffs/",
     "tasks/",

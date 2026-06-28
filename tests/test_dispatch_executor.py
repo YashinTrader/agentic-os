@@ -148,8 +148,11 @@ class DispatchExecutorTests(unittest.TestCase):
     def test_executor_subprocess_isolated_to_executor_module(self) -> None:
         executor_source = (REPO_ROOT / "dispatch" / "executor.py").read_text(encoding="utf-8")
         self.assertIn("import subprocess", executor_source)
+        approved_subprocess_modules = frozenset(
+            {"executor.py", "worktree_allocator.py"}
+        )
         for path in (REPO_ROOT / "dispatch").glob("*.py"):
-            if path.name == "executor.py":
+            if path.name in approved_subprocess_modules:
                 continue
             source = path.read_text(encoding="utf-8")
             self.assertNotIn("import subprocess", source, msg=path.name)
