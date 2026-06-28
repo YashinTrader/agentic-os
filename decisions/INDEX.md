@@ -38,3 +38,7 @@
 | ADR-0035 | Codex activation manifest and two-person gate             | accepted | 2026-06-28 |
 | ADR-0036 | Documentation-only first Codex canary                     | accepted | 2026-06-28 |
 | ADR-0037 | Codex emergency-disable and rollback policy               | accepted | 2026-06-28 |
+| ADR-0038 | Codex canary-only activation state                        | accepted | 2026-06-28 |
+| ADR-0039 | Preflight-complete live-run-prohibited boundary           | accepted | 2026-06-28 |
+| ADR-0040 | Human authorization record for one-shot canary            | accepted | 2026-06-28 |
+| ADR-0041 | Automatic post-canary suspension policy                   | accepted | 2026-06-28 |

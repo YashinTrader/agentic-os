@@ -1,13 +1,13 @@
 schema_version: "1.0"
-updated_at: 2026-06-22T12:00:00Z
+updated_at: 2026-06-28T12:00:00Z
 id: codex-restricted
-display_name: Codex CLI restricted adapter (Phase 3.5 candidate)
+display_name: Codex CLI restricted adapter (Phase 3.7A activation candidate)
 adapter_type: agent_cli
 provider: openai
 executable: codex
 agent_id: codex
 status: active
-promotion_state: restricted_candidate
+promotion_state: activation_candidate
 command_template: "codex exec -C {worktree_path} -s workspace-write --json -o {agent_output_path}"
 allowed_commands:
   - codex
@@ -17,7 +17,12 @@ minimum_version: "0.136.0"
 active: true
 supports_preview: true
 supports_dry_run: true
-supports_execution: false
+supports_execution: true
+execution_scope: canary_only
+maximum_runs: 1
+automatic_disable_after_run: true
+live_run_authorized: false
+phase3_7b_authorization_required: true
 writes_files: true
 worktree_required: true
 network_required: true
@@ -67,6 +72,7 @@ forbidden_args:
   - "--dangerously-bypass-hook-trust"
 supports_streaming: false
 notes: >
-  Phase 3.5 restricted candidate. supports_execution remains false until a separate
-  clerical activation task after Claude approval. Worktree-only file mutations with
-  human HMAC approval and single-use anti-replay. No MCP, merge, push, or deploy.
+  Phase 3.7A activation candidate. supports_execution true with canary_only scope;
+  live run blocked until Phase 3.7B authorization artifact. One run maximum with
+  automatic post-canary suspension. Worktree-only mutations with human HMAC approval.
+  No MCP, merge, push, or deploy.

@@ -90,9 +90,14 @@ class CodexExecutorIntegrationTests(unittest.TestCase):
             gate.blocked_reasons,
         )
 
-    def test_dedicated_config_remains_non_executable(self) -> None:
+    def test_dedicated_config_activation_candidate_gated(self) -> None:
         dedicated = load_codex_restricted_adapter(REPO_ROOT)
-        self.assertFalse(dedicated["supports_execution"])
+        if (REPO_ROOT / "dispatch" / "codex_activation_gate.py").is_file():
+            self.assertTrue(dedicated["supports_execution"])
+            self.assertEqual(dedicated.get("execution_scope"), "canary_only")
+            self.assertFalse(dedicated.get("live_run_authorized", True))
+        else:
+            self.assertFalse(dedicated["supports_execution"])
 
 
 if __name__ == "__main__":

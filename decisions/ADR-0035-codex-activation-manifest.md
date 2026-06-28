@@ -25,4 +25,4 @@ Codex activation requires binding reviewed configuration, CLI help, command cont
 ## Reviewer sign-off
 
 - [x] composer (implementer)
-- [ ] claude (reviewer)
+- [x] claude (reviewer)

@@ -1,4 +1,4 @@
-"""Documentation-only Codex canary contract — deterministic hash, no execution."""
+"""Codex canary contract v2 — deterministic hash, one-file worktree canary."""
 
 from __future__ import annotations
 
@@ -10,24 +10,35 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+CANARY_CONTRACT_VERSION = "2.0"
 CANARY_FILE_PATTERN = re.compile(r"^docs/codex-canary-[a-zA-Z0-9._-]+\.md$")
-CANARY_FIXED_SENTENCE = "Codex documentation-only canary confirmed."
+CANARY_FIXED_SENTENCE = (
+    "Codex restricted adapter canary completed inside an isolated worktree."
+)
 ALLOWED_CANARY_PATHS = ("docs/codex-canary-*.md",)
+DEFAULT_TASK_ID = "T-PHASE3-7A-CODEX-CANARY-ACTIVATION"
+DEFAULT_MAXIMUM_TIMEOUT_SECONDS = 900
 
 FORBIDDEN_CANARY_OPERATIONS = frozenset(
     {
+        "modify_existing_file",
         "modify_source",
         "modify_tests",
         "modify_dependencies",
         "modify_ci",
         "modify_adapter_config",
+        "modify_adrs",
         "modify_task_protocol",
         "modify_approval_files",
         "delete_files",
         "git_commit",
         "git_merge",
         "git_push",
+        "deploy",
+        "production_access",
         "mcp_invoke",
+        "browser_automation",
+        "email_side_effects",
         "unrelated_shell",
     }
 )
@@ -41,6 +52,11 @@ class CanaryContract:
     fixed_sentence: str
     forbidden_operations: tuple[str, ...]
     contract_hash: str
+    task_id: str
+    adapter_id: str
+    maximum_runs: int
+    approval_required: bool
+    maximum_timeout_seconds: int
 
 
 @dataclass
@@ -53,17 +69,50 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
-def build_canary_contract() -> CanaryContract:
-    body = {
-        "version": "1.0",
+def build_canary_contract_body(
+    *,
+    command_contract_hash: str,
+    context_bundle_hash: str = "",
+    cli_version: str = "",
+    reviewed_commit_sha: str = "",
+) -> dict[str, Any]:
+    return {
+        "version": CANARY_CONTRACT_VERSION,
+        "task_id": DEFAULT_TASK_ID,
+        "adapter_id": "codex-restricted",
         "allowed_path_glob": ALLOWED_CANARY_PATHS[0],
         "maximum_files_added": 1,
         "fixed_sentence": CANARY_FIXED_SENTENCE,
         "forbidden_operations": sorted(FORBIDDEN_CANARY_OPERATIONS),
-        "documentation_only": True,
+        "maximum_runs": 1,
+        "approval_required": True,
+        "maximum_timeout_seconds": DEFAULT_MAXIMUM_TIMEOUT_SECONDS,
+        "command_contract_hash": command_contract_hash,
+        "context_bundle_hash": context_bundle_hash,
+        "cli_version": cli_version,
+        "reviewed_commit_sha": reviewed_commit_sha,
+        "documentation_only": False,
         "merge_allowed": False,
         "push_allowed": False,
     }
+
+
+def build_canary_contract(
+    *,
+    command_contract_hash: str = "",
+    context_bundle_hash: str = "",
+    cli_version: str = "",
+    reviewed_commit_sha: str = "",
+) -> CanaryContract:
+    from dispatch.codex_adapter import compute_command_contract_hash
+
+    cmd_hash = command_contract_hash or compute_command_contract_hash()
+    body = build_canary_contract_body(
+        command_contract_hash=cmd_hash,
+        context_bundle_hash=context_bundle_hash,
+        cli_version=cli_version,
+        reviewed_commit_sha=reviewed_commit_sha,
+    )
     digest = hashlib.sha256(json.dumps(body, sort_keys=True).encode("utf-8")).hexdigest()
     return CanaryContract(
         version=body["version"],
@@ -72,11 +121,27 @@ def build_canary_contract() -> CanaryContract:
         fixed_sentence=body["fixed_sentence"],
         forbidden_operations=tuple(body["forbidden_operations"]),
         contract_hash=digest,
+        task_id=body["task_id"],
+        adapter_id=body["adapter_id"],
+        maximum_runs=body["maximum_runs"],
+        approval_required=body["approval_required"],
+        maximum_timeout_seconds=body["maximum_timeout_seconds"],
     )
 
 
-def compute_canary_contract_hash() -> str:
-    return build_canary_contract().contract_hash
+def compute_canary_contract_hash(
+    *,
+    command_contract_hash: str = "",
+    context_bundle_hash: str = "",
+    cli_version: str = "",
+    reviewed_commit_sha: str = "",
+) -> str:
+    return build_canary_contract(
+        command_contract_hash=command_contract_hash,
+        context_bundle_hash=context_bundle_hash,
+        cli_version=cli_version,
+        reviewed_commit_sha=reviewed_commit_sha,
+    ).contract_hash
 
 
 def expected_canary_relative_path(run_id: str) -> str:
@@ -119,10 +184,10 @@ def build_canary_file_content(*, run_id: str, timestamp: str | None = None) -> s
     ts = timestamp or utc_now()
     return "\n".join(
         [
-            f"# Codex Canary {run_id}",
+            "# Codex Canary",
             "",
-            f"- run_id: {run_id}",
-            f"- timestamp: {ts}",
+            f"Run ID: {run_id}",
+            f"Timestamp: {ts}",
             "",
             CANARY_FIXED_SENTENCE,
             "",
@@ -131,11 +196,10 @@ def build_canary_file_content(*, run_id: str, timestamp: str | None = None) -> s
 
 
 def validate_canary_audit_package(paths_present: dict[str, bool]) -> list[str]:
-    """Validate future canary audit package completeness (no secret values)."""
     required = (
         "activation_manifest.json",
-        "preview.json",
-        "approval_record.json",
+        "preflight.json",
+        "human_approval_request.json",
         "worktree_allocation.json",
         "result.json",
         "handoff.md",

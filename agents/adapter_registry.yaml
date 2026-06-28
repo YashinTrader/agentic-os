@@ -84,7 +84,7 @@ adapters:
     notes: Preview only. File-writing adapter requires rollback in Phase 3.2+.
 
   - id: codex-restricted
-    display_name: Codex CLI restricted adapter (Phase 3.5 candidate)
+    display_name: Codex CLI restricted adapter (Phase 3.7A activation candidate)
     agent_id: codex
     adapter_type: cli
     status: active
@@ -104,11 +104,16 @@ adapters:
     working_directory_policy: worktree
     supports_dry_run: true
     supports_streaming: false
-    supports_execution: false
+    supports_execution: true
+    execution_scope: canary_only
+    maximum_runs: 1
+    automatic_disable_after_run: true
+    live_run_authorized: false
+    phase3_7b_authorization_required: true
     writes_files: true
     approval_level: human
     risk_level: high
-    promotion_state: restricted_candidate
+    promotion_state: activation_candidate
     supports_preview: true
     worktree_required: true
     network_required: true
@@ -118,8 +123,8 @@ adapters:
     handoff_required: true
     rollback_required: true
     notes: >
-      Phase 3.5 restricted candidate. supports_execution false until separate activation
-      after Claude approval. See agents/codex_restricted_adapter.yaml and ADR-0029.
+      Phase 3.7A activation candidate. supports_execution true with canary_only scope;
+      live run requires Phase 3.7B authorization. See codex_restricted_adapter.yaml and ADR-0038.
   - id: claude-cli-preview
     display_name: Claude Code CLI (dry-run preview)
     agent_id: claude

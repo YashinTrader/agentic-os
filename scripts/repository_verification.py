@@ -22,17 +22,16 @@ UNITTEST_ARTIFACT_REL = "runtime/unittest_last_run.txt"
 POST_TEST_ALLOWLIST_EXACT = frozenset(
     {
         "runtime/unittest_last_run.txt",
-        "handoffs/T-PHASE3-6-CODEX-ACTIVATION-READINESS__composer__to__claude.md",
-        "docs/REVIEW_COMPOSER_PHASE_3_6_SELF_REVIEW.md",
-        "docs/PHASE_3_6_BASELINE.md",
-        "docs/PHASE_3_6_CODEX_ACTIVATION_READINESS.md",
-        "docs/PHASE_3_6_CODEX_COMMAND_CONTRACT.md",
-        "docs/PHASE_3_6_CODEX_CANARY_RUNBOOK.md",
-        "docs/PHASE_3_6_CODEX_ROLLBACK.md",
-        "docs/PHASE_3_6_HUMAN_APPROVAL_CHECKLIST.md",
-        "docs/PHASE_3_6_HARDENING_REPORT.md",
-        "docs/PHASE_3_6_REVIEW_PACKET.md",
-        "tasks/active/T-PHASE3-6-CODEX-ACTIVATION-READINESS.yaml",
+        "handoffs/T-PHASE3-7A-CODEX-CANARY-ACTIVATION__composer__to__claude.md",
+        "docs/REVIEW_COMPOSER_PHASE_3_7A_SELF_REVIEW.md",
+        "docs/PHASE_3_7A_BASELINE.md",
+        "docs/PHASE_3_7A_CODEX_ACTIVATION_CANDIDATE.md",
+        "docs/PHASE_3_7A_CANARY_PREFLIGHT.md",
+        "docs/PHASE_3_7A_HUMAN_APPROVAL_REQUEST.md",
+        "docs/PHASE_3_7A_LIVE_RUN_PROHIBITION.md",
+        "docs/PHASE_3_7A_HARDENING_REPORT.md",
+        "docs/PHASE_3_7A_REVIEW_PACKET.md",
+        "tasks/active/T-PHASE3-7A-CODEX-CANARY-ACTIVATION.yaml",
     }
 )
 

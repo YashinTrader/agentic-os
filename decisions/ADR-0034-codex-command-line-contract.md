@@ -25,4 +25,4 @@ Phase 3.5 introduced a Codex argv builder with MA1: prompt assignment overwrote 
 ## Reviewer sign-off
 
 - [x] composer (implementer)
-- [ ] claude (reviewer)
+- [x] claude (reviewer)
