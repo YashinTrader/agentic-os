@@ -127,15 +127,15 @@ branch: agent/composer/T-PHASE3-7A-CODEX-CANARY-ACTIVATION
 base_sha: d9f203c39c3a85613ef4c7f76e110e3f4734d9c1
 implementation_sha: beb1efa708b5a8ce2231fdf0c09c34651b90abe7
 tests_commit_sha: beb1efa708b5a8ce2231fdf0c09c34651b90abe7
-final_head_sha: e5553e0332e9c77df3a1e086bee1a276627456d4
-remote_head_sha: e5553e0332e9c77df3a1e086bee1a276627456d4
+final_head_sha: 3ad7f55688200f76928e5559db081a89c325438f
+remote_head_sha: 3ad7f55688200f76928e5559db081a89c325438f
 git_status_clean: true
 validator_commit_sha: beb1efa708b5a8ce2231fdf0c09c34651b90abe7
 test_count: 451
 test_exit_code: 0
 validator_exit_code: 0
 post_test_diff_policy: POST_TEST_ALLOWLIST_EXACT
-post_test_files: handoffs/T-PHASE3-7A-CODEX-CANARY-ACTIVATION__composer__to__claude.md, docs/REVIEW_COMPOSER_PHASE_3_7A_SELF_REVIEW.md
+post_test_files: handoffs/T-PHASE3-7A-CODEX-CANARY-ACTIVATION__composer__to__claude.md, docs/REVIEW_COMPOSER_PHASE_3_7A_SELF_REVIEW.md, runtime/unittest_last_run.txt
 working_copy_path: C:/Users/gabot/agentic-os
 
 ## Post-Test Diff
