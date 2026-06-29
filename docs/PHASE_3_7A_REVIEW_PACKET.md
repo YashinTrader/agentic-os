@@ -39,6 +39,10 @@ python scripts/run_codex_canary.py --json
 - No `phase3_7b_authorization.json`
 - Autonomy Level 1
 
+## Phase 3.7A.1 qualification (M1)
+
+Before Phase 3.7A.1, live-run prohibition depended partly on absent human approval; the generic executor did not enforce canary-only routing. After Phase 3.7A.1, generic dispatch rejects `codex-restricted` unconditionally; the dedicated canary runner remains the only Codex execution entry point (still blocked until Phase 3.7B).
+
 ## Verdict requested
 
 Claude final review before human approval and Phase 3.7B.

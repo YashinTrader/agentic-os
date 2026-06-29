@@ -32,6 +32,10 @@ POST_TEST_ALLOWLIST_EXACT = frozenset(
         "docs/PHASE_3_7A_HARDENING_REPORT.md",
         "docs/PHASE_3_7A_REVIEW_PACKET.md",
         "tasks/active/T-PHASE3-7A-CODEX-CANARY-ACTIVATION.yaml",
+        "handoffs/T-PHASE3-7A-1-EXECUTOR-BYPASS-FIX__composer__to__claude.md",
+        "docs/REVIEW_COMPOSER_PHASE_3_7A_1_SELF_REVIEW.md",
+        "tasks/active/T-PHASE3-7A-1-EXECUTOR-BYPASS-FIX.yaml",
+        "decisions/ADR-0042-canary-only-dedicated-execution-route.md",
     }
 )
 

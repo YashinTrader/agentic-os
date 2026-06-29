@@ -19,6 +19,8 @@ supports_preview: true
 supports_dry_run: true
 supports_execution: true
 execution_scope: canary_only
+dedicated_runner_required: true
+required_execution_route: codex_canary
 maximum_runs: 1
 automatic_disable_after_run: true
 live_run_authorized: false

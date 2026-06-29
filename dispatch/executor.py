@@ -15,6 +15,7 @@ from dispatch.worktree_registry import (
     load_allocation_record,
 )
 from dispatch.execution_gate import evaluate_execution_gates
+from dispatch.execution_route_policy import ROUTE_GENERIC_DISPATCH
 from dispatch.executor_contract import (
     build_execution_request_from_preview,
     execution_request_to_dict,
@@ -135,6 +136,7 @@ def execute_dispatch(
         worktree_root=effective_worktree_root,
         allocation_record=allocation_record,
         check_replay=operator_execute and not dry_run,
+        execution_route=ROUTE_GENERIC_DISPATCH,
     )
 
     run_dir = run_directory(repo_root, run_id)
@@ -157,6 +159,10 @@ def execute_dispatch(
     request_dict["dry_run"] = dry_run
     request_dict["preview_hash"] = gate.preview_hash
     request_dict["gate_blocked_reasons"] = gate.blocked_reasons
+    request_dict["execution_route_requested"] = gate.execution_route_requested
+    request_dict["execution_route_required"] = gate.execution_route_required
+    request_dict["execution_route_allowed"] = gate.execution_route_allowed
+    request_dict["route_block_reasons"] = gate.route_block_reasons
     write_execution_request(run_dir, request_dict)
 
     latest_req = repo_root / "runtime" / "dispatch" / "latest_execution_request.json"
@@ -201,12 +207,25 @@ def execute_dispatch(
             handoff_path=handoff_path,
             rollback_path=rollback_path,
             result_path=str((run_dir / "result.json").relative_to(repo_root)),
+            execution_route_requested=gate.execution_route_requested,
+            execution_route_required=gate.execution_route_required,
+            execution_route_allowed=gate.execution_route_allowed,
+            route_block_reasons=gate.route_block_reasons,
         )
         write_result(run_dir, result)
         persist_latest_pointers(repo_root, run_id, result)
         append_run_event(
             run_dir,
-            {"ts": finished_at, "type": "dispatch_blocked", "reasons": gate.blocked_reasons},
+            {
+                "ts": finished_at,
+                "type": "dispatch_blocked",
+                "reasons": gate.blocked_reasons,
+                "adapter_id": adapter_id,
+                "requested_route": gate.execution_route_requested,
+                "required_route": gate.execution_route_required,
+                "approval_consumed": False,
+                "subprocess_invoked": False,
+            },
         )
         _emit_dispatch_event(
             repo_root,

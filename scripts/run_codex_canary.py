@@ -16,6 +16,7 @@ from dispatch.codex_activation_gate import (  # noqa: E402
     evaluate_activation_gates,
 )
 from dispatch.codex_adapter import load_codex_restricted_adapter  # noqa: E402
+from dispatch.execution_route_policy import ROUTE_CODEX_CANARY, evaluate_execution_route  # noqa: E402
 from dispatch.preview import get_adapter_by_id, load_adapter_registry  # noqa: E402
 
 REFUSAL_REASON = (
@@ -66,6 +67,8 @@ def main() -> int:
     if compat_path.exists():
         cli_compatibility = json.loads(compat_path.read_text(encoding="utf-8"))
 
+    route_decision = evaluate_execution_route(dedicated, ROUTE_CODEX_CANARY)
+
     gate_result = evaluate_activation_gates(
         root,
         registry_adapter=registry_adapter,
@@ -81,6 +84,8 @@ def main() -> int:
     )
 
     blocked = list(gate_result.blocked_reasons)
+    if not route_decision.allowed:
+        blocked = list(route_decision.reasons) + blocked
     if args.dry_run:
         blocked.append("dry-run mode refuses live Codex execution")
     if PHASE3_7B_BLOCKED_REASON not in blocked:
@@ -88,6 +93,10 @@ def main() -> int:
 
     report = {
         "status": "refused",
+        "execution_route_requested": ROUTE_CODEX_CANARY,
+        "execution_route_required": route_decision.required_route,
+        "execution_route_allowed": route_decision.allowed,
+        "route_block_reasons": route_decision.reasons,
         "blocked_reasons": blocked if blocked else [REFUSAL_REASON],
         "gate_results": gate_result.gate_results,
         "adapter_supports_execution": registry_adapter.get("supports_execution", False),

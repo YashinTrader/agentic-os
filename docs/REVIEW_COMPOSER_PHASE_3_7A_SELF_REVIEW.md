@@ -29,6 +29,10 @@
 | Live canary executed | false |
 | Autonomy Level | 1 |
 
+## M1 qualification (addressed in Phase 3.7A.1)
+
+Prior wording implied generic dispatch blocked all Codex subprocess paths. That was true only for the dedicated canary runner; the generic executor did not enforce route policy until Phase 3.7A.1 (`dispatch/execution_route_policy.py`). Absent human approval prevented immediate exploitation of H1.
+
 ## Remaining risks
 
 - Codex CLI not installed on this host; compatibility record shows executable absent (acceptable)

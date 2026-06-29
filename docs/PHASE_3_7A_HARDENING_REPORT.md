@@ -8,7 +8,7 @@ None identified in Phase 3.7A implementation.
 
 ### High
 
-None unresolved.
+- **H1 (closed in Phase 3.7A.1):** generic `execute_dispatch.py` could treat `codex-restricted` as a normal executable adapter. Fixed via `dispatch/execution_route_policy.py` and route checks before approval consumption.
 
 ### Medium
 
@@ -20,6 +20,7 @@ None unresolved.
 
 ## Fixes applied
 
+- Phase 3.7A.1: centralized execution-route policy; generic dispatch rejects canary-only adapters
 - Fifteen-gate `evaluate_activation_gates()` with mandatory Phase 3.7B check
 - `run_codex_canary.py` refuses before subprocess (no `subprocess.run`)
 - `disable_codex_canary.py` writes disable record only
