@@ -26,4 +26,4 @@ Claude Phase 3.7A review (H1) found that `codex-restricted` with `supports_execu
 ## Reviewer sign-off
 
 - [x] composer (implementer)
-- [ ] claude (reviewer)
+- [x] claude (reviewer)

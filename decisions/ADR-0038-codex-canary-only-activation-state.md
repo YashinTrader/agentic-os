@@ -24,4 +24,4 @@ Phase 3.6 kept `codex-restricted` disabled (`supports_execution: false`). Phase 
 ## Reviewer sign-off
 
 - [x] composer (implementer)
-- [ ] claude (reviewer)
+- [x] claude (reviewer)
