@@ -119,7 +119,8 @@ def main() -> int:
     out.parent.mkdir(parents=True, exist_ok=True)
     compat_out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
-    compat_record = report.get("compatibility") or {}
+    compat_record = dict(report.get("compatibility") or {})
+    compat_record["invocations"] = report.get("invocations") or []
     compat_out.write_text(json.dumps(compat_record, indent=2, sort_keys=True), encoding="utf-8")
     print(json.dumps(report, indent=2, sort_keys=True))
     return 0 if report.get("executable_path") else 2

@@ -86,6 +86,10 @@ def main() -> int:
         print("error: missing codex_cli_compatibility.json — run inspect_codex_cli.py", file=sys.stderr)
         return 3
     cli_compat = json.loads(compat_path.read_text(encoding="utf-8"))
+    discovery_path = root / "runtime" / "dispatch" / "codex_cli_discovery.json"
+    if discovery_path.is_file() and not cli_compat.get("invocations"):
+        discovery = json.loads(discovery_path.read_text(encoding="utf-8"))
+        cli_compat["invocations"] = discovery.get("invocations") or []
     if not cli_compat.get("compatible"):
         report = {
             "status": "blocked",
@@ -120,7 +124,22 @@ def main() -> int:
             "status": allocation_record.get("status"),
         }
     else:
-        print("warning: worktree not allocated; use --allocate-worktree for full preflight", file=sys.stderr)
+        existing_alloc = activation_bundle_dir(root, activation_id) / "worktree_allocation.json"
+        if existing_alloc.is_file():
+            allocation_record = json.loads(existing_alloc.read_text(encoding="utf-8"))
+            wt_path = Path(str(allocation_record.get("worktree_path", "")))
+            allocation_meta = {
+                "allocated": True,
+                "allocation_id": allocation_record.get("allocation_id"),
+                "branch": allocation_record.get("branch_name"),
+                "worktree_path": allocation_record.get("worktree_path"),
+                "base_sha": allocation_record.get("base_sha"),
+                "clean": _is_worktree_clean(wt_path) if wt_path.exists() else False,
+                "status": allocation_record.get("status"),
+                "reused": True,
+            }
+        else:
+            print("warning: worktree not allocated; use --allocate-worktree for full preflight", file=sys.stderr)
 
     expected_path = f"docs/codex-canary-{run_id.replace('canary-', '')[:60]}.md"
     if not expected_path.startswith("docs/codex-canary-"):
