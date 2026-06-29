@@ -1,0 +1,112 @@
+id: T-PHASE3-7A-1-EXECUTOR-BYPASS-FIX
+title: Phase 3.7A.1 — Close main-executor bypass of the Codex canary/3.7B gate (H1)
+owner: composer
+reviewer: claude
+created_by: claude
+status: review
+phase: "3.7"
+created_at: 2026-06-28T18:00:00Z
+updated_at: 2026-06-29T10:30:00Z
+priority: high
+risk_level: high
+requires_human_approval: false
+human_approval_checklist: []
+objective: >
+  Close the HIGH defense-in-depth gap from the Claude Phase 3.7A review
+  (docs/REVIEW_CLAUDE_PHASE_3_7A.md): the main execute_dispatch.py / execution_gate.py
+  path can resolve and (with a signed human approval + worktree) execute codex-restricted
+  without the Phase 3.7B authorization artifact, bypassing the canary-only / max-runs /
+  two-stage gate that is only enforced in run_codex_canary.py. No live Codex execution;
+  no human approval created; autonomy stays Level 1.
+context: |
+  Claude Phase 3.7A verdict: APPROVE WITH CHANGES. Phase 3.7B blocked until H1 lands.
+
+  codex-restricted is now in the MAIN agents/adapter_registry.yaml with
+  supports_execution: true / execution_scope: canary_only / phase3_7b_authorization_required:
+  true / live_run_authorized: false. But dispatch/execution_gate.py, dispatch/executor.py,
+  and scripts/execute_dispatch.py contain ZERO references to codex/activation/3.7B/canary —
+  the 15-gate + 3.7B stack lives only in run_codex_canary.py / codex_activation_gate.py.
+
+  Today there is no live path (no human approval, no 3.7B artifact, codex not installed,
+  canary refuses exit 3). The gap becomes exploitable the instant Phase 3.7B records a
+  human approval: the main executor would run codex live without the 3.7B artifact and
+  without the canary_only / maximum_runs=1 / automatic_disable_after_run constraints.
+
+  This must be fixed BEFORE any Phase 3.7B human approval is created.
+goals:
+  - Make dispatch/execution_gate.py refuse or fully-gate adapters with
+    execution_scope == canary_only (and/or phase3_7b_authorization_required == true /
+    live_run_authorized == false) on the main execute path
+  - Preferred — refuse such adapters in the main executor entirely, forcing them through
+    the reviewed canary runner; alternative — enforce the same phase3_7b_authorization.json
+    + live_run_authorized + maximum_runs checks the canary runner enforces
+  - Add a regression test that execute_dispatch.py --execute on codex-restricted is BLOCKED
+    even with a valid signed human approval, until 3.7B authorization is present and
+    live_run_authorized is true
+  - Qualify the handoff/self-review claim (M1) — "blocks any Codex subprocess" applies to
+    the canary runner path only, until this fix lands
+non_goals:
+  - Phase 3.7B activation (no human approval, no 3.7B authorization artifact, no live canary)
+  - Creating or consuming any human approval
+  - Changes to the canary runner, codex_activation_gate, MA1 argv contract, or adapter
+    contract logic (these are correct)
+  - Any change to autonomy level (stays Level 1)
+  - Flipping live_run_authorized to true
+inputs:
+  - docs/REVIEW_CLAUDE_PHASE_3_7A.md
+  - dispatch/execution_gate.py
+  - dispatch/executor.py
+  - scripts/execute_dispatch.py
+  - agents/adapter_registry.yaml
+  - dispatch/codex_activation_gate.py
+  - handoffs/T-PHASE3-7A-CODEX-CANARY-ACTIVATION__composer__to__claude.md
+  - docs/REVIEW_COMPOSER_PHASE_3_7A_SELF_REVIEW.md
+outputs:
+  - dispatch/execution_route_policy.py
+  - dispatch/execution_gate.py
+  - dispatch/executor.py
+  - dispatch/codex_activation_gate.py
+  - scripts/run_codex_canary.py
+  - scripts/validate.py
+  - agents/codex_restricted_adapter.yaml
+  - agents/adapter_registry.yaml
+  - tests/test_phase3_7a_1_executor_bypass.py
+  - decisions/ADR-0042-canary-only-dedicated-execution-route.md
+  - docs/PHASE_3_7A_LIVE_RUN_PROHIBITION.md
+  - docs/REVIEW_COMPOSER_PHASE_3_7A_1_SELF_REVIEW.md
+  - runtime/unittest_last_run.txt
+  - tasks/active/T-PHASE3-7A-1-EXECUTOR-BYPASS-FIX.yaml
+  - handoffs/T-PHASE3-7A-1-EXECUTOR-BYPASS-FIX__composer__to__claude.md
+constraints:
+  - No live Codex execution via any path
+  - No human approval created or consumed; no 3.7B authorization artifact
+  - Validator must pass at the FINAL HEAD (exit 0, warnings only for historical v1 events)
+  - Full suite must pass at the FINAL HEAD from canonical clone C:\Users\gabot\agentic-os
+  - Verification block truthful and reviewer-reproducible (artifact commit_full == tests_commit_sha)
+acceptance:
+  - dispatch/execution_gate.py blocks codex-restricted (canary_only) on the main execute
+    path regardless of a valid signed human approval, until 3.7B authorization + live_run_authorized
+  - New regression test proves execute_dispatch.py --execute on codex-restricted is blocked
+    without 3.7B authorization (and that the fixture still executes)
+  - run_codex_canary.py still refuses (exit 3); no behavior change to the canary stack
+  - Handoff/self-review wording qualified per M1
+  - py scripts/validate.py exit 0 at HEAD
+  - py -m unittest discover -s tests -p "test_*.py" -> all green at HEAD
+  - python scripts/verify_repository_verification.py <handoff> -> Status: verified
+notes: >
+  After this lands and Claude re-verifies H1 is closed with the suite green, Claude will
+  flip the ADR-0038-0041 reviewer sign-offs. ONLY THEN may Phase 3.7B (first live canary)
+  be opened — human-approved via the ADR-0035 two-person gate, documentation-only first
+  canary per ADR-0036, on a Phase 3.4 worktree with emergency rollback per ADR-0037, and
+  reviewed by Claude before any live Codex run.
+labels:
+  - phase-3.7
+  - codex-activation
+  - safety
+  - executor-gate
+  - claude-review
+related_decisions:
+  - ADR-0038
+  - ADR-0039
+  - ADR-0040
+  - ADR-0041
