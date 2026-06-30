@@ -28,9 +28,13 @@ class ActivationBoundaryTests(unittest.TestCase):
             )["adapters"]
             if a["id"] == "codex-restricted"
         )
-        self.assertEqual(entry["promotion_state"], "activation_candidate")
         self.assertTrue(entry["supports_execution"])
-        self.assertEqual(entry.get("execution_scope"), "canary_only")
+        if (REPO_ROOT / "config" / "execution-policy.yaml").is_file():
+            self.assertEqual(entry["promotion_state"], "restricted_execution")
+            self.assertEqual(entry.get("execution_scope"), "local_worktree")
+        else:
+            self.assertEqual(entry["promotion_state"], "activation_candidate")
+            self.assertEqual(entry.get("execution_scope"), "canary_only")
 
     def test_canary_script_refuses_without_activation(self) -> None:
         completed = subprocess.run(

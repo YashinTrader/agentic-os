@@ -904,6 +904,7 @@ def validate_adapter_registry(errors: list[str]) -> None:
     validate_phase36_codex_activation_readiness(errors)
     validate_phase37a_codex_canary_activation(errors)
     validate_phase37a1_executor_bypass(errors)
+    validate_phase37c_local_builder(errors)
 
 
 PROMOTION_EXECUTION_STATES = {
@@ -921,6 +922,13 @@ PROMOTION_EXECUTION_STATES = {
 
 def _phase37a_active() -> bool:
     return (ROOT / "dispatch" / "codex_activation_gate.py").is_file()
+
+
+def _phase37c_active() -> bool:
+    return (
+        (ROOT / "config" / "execution-policy.yaml").is_file()
+        and (ROOT / "dispatch" / "codex_local_builder.py").is_file()
+    )
 
 
 def validate_phase35_adapter_boundaries(errors: list[str], adapters: list[Any]) -> None:
@@ -952,6 +960,7 @@ def validate_phase35_adapter_boundaries(errors: list[str], adapters: list[Any]) 
             codex_restricted = adapter
 
     phase37a = _phase37a_active()
+    phase37c = _phase37c_active()
     allowed_execution = (
         ["local-python-exec-test", "codex-restricted"] if phase37a else ["local-python-exec-test"]
     )
@@ -965,7 +974,16 @@ def validate_phase35_adapter_boundaries(errors: list[str], adapters: list[Any]) 
         errors.append("agents/adapter_registry.yaml: missing codex-restricted adapter entry")
         return
 
-    if phase37a:
+    if phase37c:
+        if not codex_restricted.get("supports_execution"):
+            errors.append("codex-restricted must have supports_execution=true in Phase 3.7C")
+        if codex_restricted.get("execution_scope") != "local_worktree":
+            errors.append("codex-restricted execution_scope must be local_worktree in Phase 3.7C")
+        if codex_restricted.get("required_execution_route") != "codex_local_builder":
+            errors.append("codex-restricted required_execution_route must be codex_local_builder")
+        if codex_restricted.get("phase3_7b_authorization_required"):
+            errors.append("codex-restricted must not require phase3_7b authorization in Phase 3.7C")
+    elif phase37a:
         if not codex_restricted.get("supports_execution"):
             errors.append("codex-restricted must have supports_execution=true in Phase 3.7A")
         if codex_restricted.get("promotion_state") != "activation_candidate":
@@ -979,7 +997,10 @@ def validate_phase35_adapter_boundaries(errors: list[str], adapters: list[Any]) 
             errors.append("codex-restricted must have supports_execution=false in Phase 3.5")
         if codex_restricted.get("promotion_state") != "restricted_candidate":
             errors.append("codex-restricted promotion_state must be restricted_candidate")
-    if codex_restricted.get("approval_level") != "human":
+    if phase37c:
+        if codex_restricted.get("approval_level") not in {"none", "standing_policy"}:
+            errors.append("codex-restricted approval_level must be none in Phase 3.7C")
+    elif codex_restricted.get("approval_level") != "human":
         errors.append("codex-restricted approval_level must be human")
     if not codex_restricted.get("worktree_required"):
         errors.append("codex-restricted worktree_required must be true")
@@ -1000,7 +1021,16 @@ def validate_phase35_adapter_boundaries(errors: list[str], adapters: list[Any]) 
     if not isinstance(dedicated, dict):
         errors.append("agents/codex_restricted_adapter.yaml: root must be a mapping")
         return
-    if phase37a:
+    if phase37c:
+        if not dedicated.get("supports_execution"):
+            errors.append("agents/codex_restricted_adapter.yaml: supports_execution must be true in Phase 3.7C")
+        if dedicated.get("execution_scope") != "local_worktree":
+            errors.append("agents/codex_restricted_adapter.yaml: execution_scope must be local_worktree")
+        if dedicated.get("required_execution_route") != "codex_local_builder":
+            errors.append("agents/codex_restricted_adapter.yaml: required_execution_route must be codex_local_builder")
+        if dedicated.get("phase3_7b_authorization_required"):
+            errors.append("agents/codex_restricted_adapter.yaml: phase3_7b_authorization_required must be false")
+    elif phase37a:
         if not dedicated.get("supports_execution"):
             errors.append("agents/codex_restricted_adapter.yaml: supports_execution must be true in Phase 3.7A")
         if dedicated.get("promotion_state") != "activation_candidate":
@@ -1194,8 +1224,11 @@ def validate_phase37a1_executor_bypass(errors: list[str]) -> None:
 
     if not codex.get("dedicated_runner_required"):
         errors.append("Phase 3.7A.1: codex-restricted must declare dedicated_runner_required=true")
-    if codex.get("required_execution_route") != ROUTE_CODEX_CANARY:
-        errors.append("Phase 3.7A.1: codex-restricted required_execution_route must be codex_canary")
+    from dispatch.execution_route_policy import ROUTE_CODEX_LOCAL_BUILDER
+
+    expected_route = ROUTE_CODEX_LOCAL_BUILDER if _phase37c_active() else ROUTE_CODEX_CANARY
+    if codex.get("required_execution_route") != expected_route:
+        errors.append(f"Phase 3.7A.1: codex-restricted required_execution_route must be {expected_route}")
     errors.extend(validate_adapter_route_policy(codex))
 
     generic_block = evaluate_execution_route(codex, ROUTE_GENERIC_DISPATCH)
@@ -1204,9 +1237,16 @@ def validate_phase37a1_executor_bypass(errors: list[str]) -> None:
     if DEDICATED_CANARY_RUNNER_REASON not in generic_block.reasons:
         errors.append("Phase 3.7A.1: generic_dispatch block must cite dedicated canary runner reason")
 
-    canary_allow = evaluate_execution_route(codex, ROUTE_CODEX_CANARY)
-    if not canary_allow.allowed:
-        errors.append(f"Phase 3.7A.1: codex_canary route must be allowed at policy layer: {canary_allow.reasons}")
+    if _phase37c_active():
+        builder_allow = evaluate_execution_route(codex, ROUTE_CODEX_LOCAL_BUILDER)
+        if not builder_allow.allowed:
+            errors.append(
+                f"Phase 3.7C: codex_local_builder route must be allowed: {builder_allow.reasons}"
+            )
+    else:
+        canary_allow = evaluate_execution_route(codex, ROUTE_CODEX_CANARY)
+        if not canary_allow.allowed:
+            errors.append(f"Phase 3.7A.1: codex_canary route must be allowed at policy layer: {canary_allow.reasons}")
 
     capable = [a["id"] for a in registry["adapters"] if a.get("supports_execution")]
     if sorted(capable) != ["codex-restricted", "local-python-exec-test"]:
@@ -1221,6 +1261,62 @@ def validate_phase37a1_executor_bypass(errors: list[str]) -> None:
 
     if str(codex.get("required_execution_route", "")) not in RECOGNIZED_EXECUTION_ROUTES:
         errors.append("Phase 3.7A.1: codex required_execution_route not recognized")
+
+
+def validate_phase37c_local_builder(errors: list[str]) -> None:
+    """Phase 3.7C: autonomous local builder — standing policy, dedicated runner."""
+    if not _phase37c_active():
+        return
+
+    required_docs = (
+        "docs/AUTONOMOUS_LOCAL_BUILDER.md",
+        "docs/CODEX_LOCAL_BUILDER_RUNBOOK.md",
+    )
+    for rel in required_docs:
+        if not (ROOT / rel).exists():
+            errors.append(f"Phase 3.7C: missing document {rel}")
+
+    required_artifacts = (
+        "config/execution-policy.yaml",
+        "dispatch/execution_policy.py",
+        "dispatch/codex_local_builder.py",
+        "dispatch/codex_local_builder_gate.py",
+        "dispatch/local_builder_runs.py",
+        "scripts/run_codex_builder.py",
+        "scripts/run_local_builder_worker.py",
+        "tasks/active/T-FIRST-AUTONOMOUS-CODEX-BUILD.yaml",
+        "tests/test_phase3_7c_local_builder.py",
+    )
+    for rel in required_artifacts:
+        if not (ROOT / rel).exists():
+            errors.append(f"Phase 3.7C: missing artifact {rel}")
+
+    from dispatch.execution_policy import load_execution_policy, validate_execution_policy
+    from dispatch.execution_route_policy import ROUTE_CODEX_LOCAL_BUILDER, evaluate_execution_route
+    from dispatch.codex_adapter import load_codex_restricted_adapter
+
+    try:
+        policy = load_execution_policy(ROOT)
+    except (OSError, ValueError) as exc:
+        errors.append(f"Phase 3.7C: execution policy invalid: {exc}")
+        return
+    errors.extend(validate_execution_policy(policy))
+
+    try:
+        adapter = load_codex_restricted_adapter(ROOT)
+    except (OSError, ValueError) as exc:
+        errors.append(f"Phase 3.7C: codex adapter unavailable: {exc}")
+        return
+
+    builder_route = evaluate_execution_route(adapter, ROUTE_CODEX_LOCAL_BUILDER)
+    if not builder_route.allowed:
+        errors.append(f"Phase 3.7C: codex_local_builder route blocked: {builder_route.reasons}")
+
+    builder_source = (ROOT / "scripts" / "run_codex_builder.py").read_text(encoding="utf-8")
+    if "approval_signing" in builder_source or "try_claim_approval" in builder_source:
+        errors.append("Phase 3.7C: run_codex_builder.py must not use approval signing or replay")
+    if "subprocess.run" not in (ROOT / "dispatch" / "codex_local_builder.py").read_text(encoding="utf-8"):
+        errors.append("Phase 3.7C: codex_local_builder must invoke subprocess.run for Codex")
 
 
 def validate_skill_mcp_references(errors: list[str]) -> None:

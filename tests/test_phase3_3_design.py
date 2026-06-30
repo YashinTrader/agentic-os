@@ -71,12 +71,16 @@ class Phase33DesignTests(unittest.TestCase):
     def test_real_adapters_remain_execution_false(self) -> None:
         registry = yaml.safe_load((REPO_ROOT / "agents" / "adapter_registry.yaml").read_text(encoding="utf-8"))
         phase37a = (REPO_ROOT / "dispatch" / "codex_activation_gate.py").is_file()
+        phase37c = (REPO_ROOT / "config" / "execution-policy.yaml").is_file()
         for adapter in registry["adapters"]:
             if adapter["id"] == "local-python-exec-test":
                 self.assertTrue(adapter["supports_execution"])
-            elif adapter["id"] == "codex-restricted" and phase37a:
+            elif adapter["id"] == "codex-restricted" and (phase37a or phase37c):
                 self.assertTrue(adapter["supports_execution"])
-                self.assertEqual(adapter.get("execution_scope"), "canary_only")
+                if phase37c:
+                    self.assertEqual(adapter.get("execution_scope"), "local_worktree")
+                else:
+                    self.assertEqual(adapter.get("execution_scope"), "canary_only")
             else:
                 self.assertFalse(adapter["supports_execution"])
 

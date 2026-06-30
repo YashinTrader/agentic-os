@@ -1,13 +1,13 @@
 schema_version: "1.0"
-updated_at: 2026-06-28T12:00:00Z
+updated_at: 2026-06-30T12:00:00Z
 id: codex-restricted
-display_name: Codex CLI restricted adapter (Phase 3.7A activation candidate)
+display_name: Codex CLI restricted adapter (autonomous local builder)
 adapter_type: agent_cli
 provider: openai
 executable: codex
 agent_id: codex
 status: active
-promotion_state: activation_candidate
+promotion_state: restricted_execution
 command_template: "codex exec -C {worktree_path} -s workspace-write --json -o {agent_output_path}"
 allowed_commands:
   - codex
@@ -18,21 +18,21 @@ active: true
 supports_preview: true
 supports_dry_run: true
 supports_execution: true
-execution_scope: canary_only
+execution_scope: local_worktree
 dedicated_runner_required: true
-required_execution_route: codex_canary
-maximum_runs: 1
-automatic_disable_after_run: true
-live_run_authorized: false
-phase3_7b_authorization_required: true
+required_execution_route: codex_local_builder
+maximum_runs: 0
+automatic_disable_after_run: false
+live_run_authorized: true
+phase3_7b_authorization_required: false
 writes_files: true
 worktree_required: true
 network_required: true
 secrets_required: true
 mcp_required: false
-approval_level: human
+approval_level: none
 risk_level: high
-timeout_seconds: 600
+timeout_seconds: 1800
 maximum_timeout_seconds: 1800
 allowed_subcommands:
   - exec
@@ -74,7 +74,6 @@ forbidden_args:
   - "--dangerously-bypass-hook-trust"
 supports_streaming: false
 notes: >
-  Phase 3.7A activation candidate. supports_execution true with canary_only scope;
-  live run blocked until Phase 3.7B authorization artifact. One run maximum with
-  automatic post-canary suspension. Worktree-only mutations with human HMAC approval.
-  No MCP, merge, push, or deploy.
+  Autonomous local builder adapter. Standing execution policy auto_local_worktree
+  authorizes bounded Codex development in isolated worktrees without per-run approval.
+  Generic dispatch remains blocked. Merge, push, and deploy are manual operator steps.

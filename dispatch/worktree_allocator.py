@@ -27,7 +27,7 @@ MAX_BRANCH_LENGTH = 120
 DEFAULT_ALLOCATION_TTL_HOURS = 24
 
 ALLOWED_GIT_SUBCOMMANDS = frozenset(
-    {"rev-parse", "status", "worktree", "merge-base"}
+    {"rev-parse", "status", "worktree", "merge-base", "diff"}
 )
 
 _UNSAFE_BRANCH_CHARS = re.compile(r"[^a-zA-Z0-9._/-]+")

@@ -95,7 +95,11 @@ class CodexExecutorIntegrationTests(unittest.TestCase):
 
     def test_dedicated_config_activation_candidate_gated(self) -> None:
         dedicated = load_codex_restricted_adapter(REPO_ROOT)
-        if (REPO_ROOT / "dispatch" / "codex_activation_gate.py").is_file():
+        if (REPO_ROOT / "config" / "execution-policy.yaml").is_file():
+            self.assertTrue(dedicated["supports_execution"])
+            self.assertEqual(dedicated.get("execution_scope"), "local_worktree")
+            self.assertTrue(dedicated.get("live_run_authorized", False))
+        elif (REPO_ROOT / "dispatch" / "codex_activation_gate.py").is_file():
             self.assertTrue(dedicated["supports_execution"])
             self.assertEqual(dedicated.get("execution_scope"), "canary_only")
             self.assertFalse(dedicated.get("live_run_authorized", True))

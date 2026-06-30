@@ -1,0 +1,76 @@
+id: T-FIRST-AUTONOMOUS-CODEX-BUILD
+title: Add execution-runs page to read-only dashboard
+status: ready
+owner: codex
+reviewer: claude
+created_by: composer
+created_at: '2026-06-30T12:00:00Z'
+updated_at: '2026-06-30T12:00:00Z'
+phase: '3.7C'
+priority: high
+risk_level: medium
+requires_human_approval: false
+depends_on: []
+blocks: []
+labels:
+  - autonomous-local-builder
+  - dashboard
+  - first-build
+objective: >
+  Add an execution-runs page to the read-only dashboard that surfaces recent local-builder
+  runs from runtime/dispatch/runs/ with task ID, adapter, route, status, timestamps,
+  worktree path, verification status, blocked reasons, and handoff path.
+context: >
+  Standing execution policy auto_local_worktree authorizes this bounded repository
+  development task in an isolated worktree without per-run human approval.
+goals:
+  - Show recent execution runs with required metadata
+  - Tolerate missing runtime files gracefully
+  - Keep dashboard read-only (no execute/merge/push/approval controls)
+  - Add tests and documentation
+non_goals:
+  - Merge or push generated work
+  - Add execution or scheduling controls
+inputs:
+  - dashboard/app.py
+  - runtime/dispatch/runs/
+  - dispatch/codex_local_builder.py
+outputs:
+  - dashboard/**
+  - tests/**
+  - docs/**
+  - handoffs/T-FIRST-AUTONOMOUS-CODEX-BUILD__codex__to__claude.md
+constraints:
+  - No execute, retry, merge, push, deploy, or approval signing UI
+  - Changes only inside allowed paths
+acceptance:
+  - Execution-runs page displays required fields for available runs
+  - Missing runtime files do not crash the dashboard
+  - Relevant tests pass in the worktree
+  - python scripts/validate.py passes in the worktree
+execution:
+  mode: auto_local_worktree
+  adapter: codex-restricted
+  timeout_seconds: 1800
+  allowed_paths:
+    - dashboard/**
+    - tests/**
+    - docs/**
+    - tasks/**
+    - handoffs/**
+  forbidden_operations:
+    - git_push
+    - git_merge
+    - deploy
+    - production_access
+    - mcp_execution
+    - mcp_invoke
+    - browser_automation
+    - email_side_effects
+verification:
+  commands:
+    - python scripts/validate.py
+  run_full_tests: true
+notes: >
+  First real autonomous Codex build. Work remains in the allocated worktree until
+  manually reviewed and merged.

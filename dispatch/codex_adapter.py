@@ -77,16 +77,26 @@ def _validate_adapter_contract(adapter: dict[str, Any]) -> list[str]:
     if adapter.get("id") != "codex-restricted":
         blocked.append("adapter id must be codex-restricted")
     promotion = str(adapter.get("promotion_state", ""))
+    scope = str(adapter.get("execution_scope", ""))
     if promotion == "restricted_candidate" and adapter.get("supports_execution"):
         blocked.append("restricted_candidate must have supports_execution=false")
     if promotion == "activation_candidate":
         if not adapter.get("supports_execution"):
             blocked.append("activation_candidate requires supports_execution=true")
-        if adapter.get("execution_scope") != "canary_only":
+        if scope != "canary_only":
             blocked.append("activation_candidate execution_scope must be canary_only")
-    elif promotion not in {"restricted_candidate", "activation_candidate"}:
+    elif promotion == "restricted_execution":
+        if not adapter.get("supports_execution"):
+            blocked.append("restricted_execution requires supports_execution=true")
+        if scope != "local_worktree":
+            blocked.append("restricted_execution execution_scope must be local_worktree")
+    elif promotion not in {"restricted_candidate", "activation_candidate", "restricted_execution"}:
         blocked.append(f"unsupported promotion_state: {promotion}")
-    if adapter.get("approval_level") != "human":
+    approval_level = str(adapter.get("approval_level", ""))
+    if scope == "local_worktree":
+        if approval_level not in {"none", "standing_policy"}:
+            blocked.append("local_worktree approval_level must be none or standing_policy")
+    elif approval_level != "human":
         blocked.append("approval_level must be human")
     if not adapter.get("worktree_required"):
         blocked.append("worktree_required must be true")
@@ -258,10 +268,6 @@ def build_codex_command(
     env_preview = environment_preview(adapter)
     blocked.extend(env_preview.get("blocked_reasons") or [])
 
-    for forbidden in adapter.get("forbidden_flags") or []:
-        if forbidden in FORBIDDEN_FLAGS:
-            blocked.append(f"adapter forbids required structural token: {forbidden}")
-
     if timeout_seconds <= 0 or timeout_seconds > int(adapter.get("maximum_timeout_seconds", 3600)):
         blocked.append("timeout out of adapter bounds")
 
@@ -288,6 +294,9 @@ def build_codex_command(
             prompt=prompt_arg,
         )
     )
+    for forbidden in FORBIDDEN_FLAGS:
+        if forbidden in argv:
+            blocked.append(f"forbidden flag present in argv: {forbidden}")
 
     expected = {
         "stdout_path": stdout_path,
