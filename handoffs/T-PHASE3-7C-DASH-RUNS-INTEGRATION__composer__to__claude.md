@@ -17,6 +17,7 @@
   - Exclude `T-FIRST-AUTONOMOUS-CODEX-BUILD.yaml` from fixture `copytree` so sandbox worker tests do not launch real Codex.
   - `test_worker_once_idle_without_ready_task` marks fixture task `in_progress` before invoking worker (test name requires no eligible tasks; prior `setUp` left a `ready` task).
 - Normalized `T-FIRST-AUTONOMOUS-CODEX-BUILD` to `status: review` in `tasks/active/` with integration notes (worker-ineligible; validator Phase 3.7C artifact path requires `tasks/active/` until validator follow-up).
+- Corrected handoff/verification integrity: registered post-test allowlist paths, aligned `runtime/unittest_last_run.txt` with `tests_commit_sha`, and recorded tip SHAs via normal commits (no amend).
 
 ## What Remains
 
@@ -29,6 +30,7 @@
 - Applied Codex diff manually from worktree `20260630T134541-AUTONOMO` (uncommitted there); no dispatch/route/gate changes.
 - Treated full-suite failures as a **test-harness defect** (worker idle test + Windows `TemporaryDirectory` cleanup), not dashboard assertions — fixed minimally in allowed `tests/**` path.
 - Kept originating task at `status: review` in `tasks/active/` rather than `tasks/done/` because `validate.py` currently requires the active path; worker eligibility remains blocked (`ready`/`queued` only).
+- Closeout SHA alignment uses normal follow-up commits only; prior `git commit --amend` closeout attempt orphaned `fe896d7` and is superseded by this correction.
 
 ## Open Questions
 
@@ -88,16 +90,16 @@ repo_root: C:/Users/gabot/agentic-os
 branch: agent/composer/T-PHASE3-7C-DASH-RUNS-INTEGRATION
 base_sha: 177b9a350608f5b45aa496e1be14db468c76c72b
 implementation_sha: 54a86e112dfcdacabfa9f504cbf66818ee0aa43c
-tests_commit_sha: 54a86e112dfcdacabfa9f504cbf66818ee0aa43c
-final_head_sha: fe896d736dfb349da7185a3fdf6996b2c84a16b7
-remote_head_sha: fe896d736dfb349da7185a3fdf6996b2c84a16b7
+tests_commit_sha: 22ab8292cb9e3bf37bcc09526c7127423701f7cb
+final_head_sha: 22ab8292cb9e3bf37bcc09526c7127423701f7cb
+remote_head_sha: 22ab8292cb9e3bf37bcc09526c7127423701f7cb
 git_status_clean: false
-validator_commit_sha: fe896d736dfb349da7185a3fdf6996b2c84a16b7
+validator_commit_sha: 22ab8292cb9e3bf37bcc09526c7127423701f7cb
 test_count: 479
 test_exit_code: 0
 validator_exit_code: 0
 post_test_diff_policy: POST_TEST_ALLOWLIST_EXACT
-post_test_files: handoffs/T-PHASE3-7C-DASH-RUNS-INTEGRATION__composer__to__claude.md, tasks/active/T-FIRST-AUTONOMOUS-CODEX-BUILD.yaml
+post_test_files: handoffs/T-PHASE3-7C-DASH-RUNS-INTEGRATION__composer__to__claude.md, runtime/unittest_last_run.txt
 working_copy_path: C:/Users/gabot/agentic-os
 
 ## Risks / Caveats
