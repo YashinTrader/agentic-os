@@ -99,10 +99,20 @@ def sanitize_run_id(run_id: str) -> str:
     return cleaned[:40]
 
 
+def unique_run_slug(run_id: str) -> str:
+    """Deterministic short slug that stays unique across retries (stamp + suffix)."""
+    run_part = sanitize_run_id(run_id)
+    parts = run_part.split("-")
+    if len(parts) >= 3 and parts[0] == "build":
+        stamp = parts[1][:15]
+        suffix = parts[-1][:8]
+        return f"{stamp}-{suffix}"[:24]
+    return run_part[:12] if len(run_part) > 12 else run_part
+
+
 def build_branch_name(task_id: str, run_id: str) -> str:
     task_part = sanitize_task_id(task_id)
-    run_part = sanitize_run_id(run_id)
-    short_run = run_part[:12] if len(run_part) > 12 else run_part
+    short_run = unique_run_slug(run_id)
     branch = f"agentic/{task_part}/{short_run}"
     if len(branch) > MAX_BRANCH_LENGTH:
         raise ValueError(f"branch name exceeds {MAX_BRANCH_LENGTH} characters")
@@ -115,8 +125,7 @@ def build_branch_name(task_id: str, run_id: str) -> str:
 
 def build_worktree_path(worktree_root: Path, task_id: str, run_id: str) -> Path:
     task_part = sanitize_task_id(task_id)
-    run_part = sanitize_run_id(run_id)
-    short_run = run_part[:12] if len(run_part) > 12 else run_part
+    short_run = unique_run_slug(run_id)
     candidate = (worktree_root / task_part / short_run).resolve()
     if not path_is_inside(candidate, worktree_root.resolve(), allow_equal=True):
         raise ValueError("worktree path escapes configured worktree root")
