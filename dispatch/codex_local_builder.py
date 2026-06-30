@@ -20,7 +20,11 @@ from dispatch.agent_environment import (
     codex_authentication_available,
     merge_allowlists,
 )
-from dispatch.codex_adapter import build_codex_command, load_codex_restricted_adapter
+from dispatch.codex_adapter import (
+    build_codex_command,
+    load_codex_restricted_adapter,
+    resolve_codex_executable,
+)
 from dispatch.codex_local_builder_gate import (
     evaluate_changed_paths_scope,
     evaluate_local_builder_gates,
@@ -339,8 +343,7 @@ def run_local_builder(
     else:
         codex_invoked = True
         argv = list(plan.argv)
-        if codex_executable:
-            argv[0] = codex_executable
+        argv[0] = resolve_codex_executable(codex_executable or argv[0])
         runner = subprocess_runner or subprocess.run
         try:
             completed = runner(

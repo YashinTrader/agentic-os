@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -15,6 +16,15 @@ from dispatch.worktree_allocator import evaluate_allocation_for_execution
 
 CODEX_EXECUTABLE = "codex"
 CODEX_MINIMUM_VERSION = "0.136.0"
+
+
+def resolve_codex_executable(name: str | None = None) -> str:
+    """Resolve Codex CLI to an absolute path (required for Windows .cmd launch)."""
+    candidate = (name or CODEX_EXECUTABLE).strip() or CODEX_EXECUTABLE
+    if Path(candidate).is_file():
+        return str(Path(candidate).resolve())
+    resolved = shutil.which(candidate)
+    return resolved or candidate
 CODEX_ALLOWED_SUBCOMMAND = "exec"
 CODEX_SANDBOX_MODE = "workspace-write"
 CODEX_OUTPUT_FLAG = "-o"
