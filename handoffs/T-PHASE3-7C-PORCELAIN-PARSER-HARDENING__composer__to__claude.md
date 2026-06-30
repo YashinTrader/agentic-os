@@ -58,10 +58,10 @@ python scripts/validate.py
 repo_root: C:/Users/gabot/agentic-os
 branch: agent/composer/T-PHASE3-7C-PORCELAIN-PARSER-HARDENING
 base_sha: ae04098
-implementation_sha: PLACEHOLDER
-tests_commit_sha: PLACEHOLDER
-final_head_sha: PLACEHOLDER
-remote_head_sha: PLACEHOLDER
+implementation_sha: 20aa651
+tests_commit_sha: 20aa651
+final_head_sha: c144b32
+remote_head_sha: c144b32
 git_status_clean: false
 test_exit_code: 0
 validator_exit_code: 0
