@@ -903,6 +903,7 @@ def validate_adapter_registry(errors: list[str]) -> None:
     validate_phase35_adapter_boundaries(errors, adapters)
     validate_phase36_codex_activation_readiness(errors)
     validate_phase37a_codex_canary_activation(errors)
+    validate_phase37a1_executor_bypass(errors)
 
 
 PROMOTION_EXECUTION_STATES = {
@@ -1151,6 +1152,75 @@ def validate_phase37a_codex_canary_activation(errors: list[str]) -> None:
     gate_source = (ROOT / "dispatch" / "codex_activation_gate.py").read_text(encoding="utf-8")
     if "PHASE3_7B_BLOCKED_REASON" not in gate_source:
         errors.append("Phase 3.7A: codex_activation_gate.py must define Phase 3.7B blocked reason")
+
+
+def validate_phase37a1_executor_bypass(errors: list[str]) -> None:
+    """Phase 3.7A.1: generic executor must reject canary-only adapters (H1)."""
+    policy_path = ROOT / "dispatch" / "execution_route_policy.py"
+    if not policy_path.is_file():
+        errors.append("Phase 3.7A.1: missing dispatch/execution_route_policy.py")
+        return
+
+    test_path = ROOT / "tests" / "test_phase3_7a_1_executor_bypass.py"
+    if not test_path.is_file():
+        errors.append("Phase 3.7A.1: missing tests/test_phase3_7a_1_executor_bypass.py")
+
+    from dispatch.execution_route_policy import (
+        DEDICATED_CANARY_RUNNER_REASON,
+        RECOGNIZED_EXECUTION_ROUTES,
+        ROUTE_CODEX_CANARY,
+        ROUTE_GENERIC_DISPATCH,
+        evaluate_execution_route,
+        validate_adapter_route_policy,
+    )
+
+    if DEDICATED_CANARY_RUNNER_REASON not in policy_path.read_text(encoding="utf-8"):
+        errors.append("Phase 3.7A.1: dedicated runner blocked reason missing from policy module")
+
+    gate_source = (ROOT / "dispatch" / "execution_gate.py").read_text(encoding="utf-8")
+    if "evaluate_execution_route" not in gate_source:
+        errors.append("Phase 3.7A.1: execution_gate.py must call evaluate_execution_route")
+
+    executor_source = (ROOT / "dispatch" / "executor.py").read_text(encoding="utf-8")
+    if "ROUTE_GENERIC_DISPATCH" not in executor_source:
+        errors.append("Phase 3.7A.1: executor.py must use generic_dispatch route")
+
+    try:
+        registry = yaml.safe_load((ROOT / "agents" / "adapter_registry.yaml").read_text(encoding="utf-8"))
+        codex = next(a for a in registry["adapters"] if a["id"] == "codex-restricted")
+    except Exception as exc:
+        errors.append(f"Phase 3.7A.1: cannot load codex-restricted adapter: {exc}")
+        return
+
+    if not codex.get("dedicated_runner_required"):
+        errors.append("Phase 3.7A.1: codex-restricted must declare dedicated_runner_required=true")
+    if codex.get("required_execution_route") != ROUTE_CODEX_CANARY:
+        errors.append("Phase 3.7A.1: codex-restricted required_execution_route must be codex_canary")
+    errors.extend(validate_adapter_route_policy(codex))
+
+    generic_block = evaluate_execution_route(codex, ROUTE_GENERIC_DISPATCH)
+    if generic_block.allowed:
+        errors.append("Phase 3.7A.1: generic_dispatch must block codex-restricted")
+    if DEDICATED_CANARY_RUNNER_REASON not in generic_block.reasons:
+        errors.append("Phase 3.7A.1: generic_dispatch block must cite dedicated canary runner reason")
+
+    canary_allow = evaluate_execution_route(codex, ROUTE_CODEX_CANARY)
+    if not canary_allow.allowed:
+        errors.append(f"Phase 3.7A.1: codex_canary route must be allowed at policy layer: {canary_allow.reasons}")
+
+    capable = [a["id"] for a in registry["adapters"] if a.get("supports_execution")]
+    if sorted(capable) != ["codex-restricted", "local-python-exec-test"]:
+        errors.append(f"Phase 3.7A.1: unexpected execution-capable adapters: {capable!r}")
+
+    for adapter in registry["adapters"]:
+        if adapter.get("id") == "local-python-exec-test":
+            errors.extend(validate_adapter_route_policy(adapter))
+            local_route = evaluate_execution_route(adapter, ROUTE_GENERIC_DISPATCH)
+            if not local_route.allowed:
+                errors.append("Phase 3.7A.1: local-python-exec-test must remain generic-dispatch compatible")
+
+    if str(codex.get("required_execution_route", "")) not in RECOGNIZED_EXECUTION_ROUTES:
+        errors.append("Phase 3.7A.1: codex required_execution_route not recognized")
 
 
 def validate_skill_mcp_references(errors: list[str]) -> None:

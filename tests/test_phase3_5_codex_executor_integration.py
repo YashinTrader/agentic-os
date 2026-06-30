@@ -13,6 +13,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
 from dispatch.execution_gate import evaluate_execution_gates  # noqa: E402
+from dispatch.execution_route_policy import DEDICATED_CANARY_RUNNER_REASON  # noqa: E402
 from dispatch.codex_adapter import load_codex_restricted_adapter  # noqa: E402
 
 
@@ -21,7 +22,12 @@ def _codex_adapter_registry_shape() -> dict:
         "id": "codex-restricted",
         "status": "active",
         "supports_dry_run": True,
-        "supports_execution": False,
+        "supports_execution": True,
+        "execution_scope": "canary_only",
+        "dedicated_runner_required": True,
+        "required_execution_route": "codex_canary",
+        "phase3_7b_authorization_required": True,
+        "promotion_state": "activation_candidate",
         "adapter_type": "cli",
         "writes_files": True,
         "allowed_commands": ["codex"],
@@ -54,7 +60,7 @@ class CodexExecutorIntegrationTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.tmp.cleanup()
 
-    def test_execute_blocked_when_supports_execution_false(self) -> None:
+    def test_generic_execute_blocked_for_canary_only_codex(self) -> None:
         preview = {
             "run_id": "dispatch-codex-1",
             "task_id": "T-CODEX",
@@ -85,10 +91,7 @@ class CodexExecutorIntegrationTests(unittest.TestCase):
             require_signed_approval=True,
         )
         self.assertFalse(gate.execution_allowed)
-        self.assertTrue(
-            any("does not support execution" in r for r in gate.blocked_reasons),
-            gate.blocked_reasons,
-        )
+        self.assertIn(DEDICATED_CANARY_RUNNER_REASON, gate.blocked_reasons)
 
     def test_dedicated_config_activation_candidate_gated(self) -> None:
         dedicated = load_codex_restricted_adapter(REPO_ROOT)

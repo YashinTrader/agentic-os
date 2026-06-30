@@ -18,6 +18,10 @@ from dispatch.freshness import compute_preview_hash, is_preview_stale
 from dispatch.preview import validate_command_allowlist
 from dispatch.approval_replay import is_approval_consumed
 from dispatch.approval_signing import SIGNING_VERSION, verify_signed_approval
+from dispatch.execution_route_policy import (
+    ROUTE_GENERIC_DISPATCH,
+    evaluate_execution_route,
+)
 from dispatch.worktree_allocator import evaluate_allocation_for_execution
 from dispatch.worktree_policy import evaluate_worktree_policy
 
@@ -35,6 +39,10 @@ class ExecutionGateResult:
     approval_level: str = "none"
     preview_hash: str = ""
     warnings: list[str] = field(default_factory=list)
+    execution_route_requested: str = ROUTE_GENERIC_DISPATCH
+    execution_route_required: str | None = None
+    execution_route_allowed: bool = True
+    route_block_reasons: list[str] = field(default_factory=list)
 
 
 def adapter_supports_execution(adapter: dict[str, Any] | None) -> bool:
@@ -58,10 +66,14 @@ def evaluate_execution_gates(
     require_signed_approval: bool = True,
     check_replay: bool = False,
     now: datetime | None = None,
+    execution_route: str = ROUTE_GENERIC_DISPATCH,
 ) -> ExecutionGateResult:
     """Evaluate all hard execution rules. Does not execute subprocess."""
     blocked: list[str] = []
     warnings: list[str] = []
+    route_required: str | None = None
+    route_allowed = True
+    route_block_reasons: list[str] = []
 
     approval_gate = preview.get("approval_gate") or {}
     required_level = str(approval_gate.get("approval_level", "blocked"))
@@ -79,6 +91,13 @@ def evaluate_execution_gates(
     if adapter is None:
         blocked.append(f"adapter {preview.get('adapter_id')!r} not found in registry")
     else:
+        route_decision = evaluate_execution_route(adapter, execution_route)
+        route_required = route_decision.required_route
+        route_allowed = route_decision.allowed
+        route_block_reasons = list(route_decision.reasons)
+        if not route_decision.allowed:
+            blocked.extend(route_decision.reasons)
+
         adapter_id = str(adapter.get("id", ""))
         if adapter.get("status") != "active":
             blocked.append(f"adapter {adapter_id!r} is not active")
@@ -228,4 +247,8 @@ def evaluate_execution_gates(
         approval_level=required_level,
         preview_hash=preview_hash,
         warnings=warnings,
+        execution_route_requested=execution_route,
+        execution_route_required=route_required,
+        execution_route_allowed=route_allowed,
+        route_block_reasons=route_block_reasons,
     )

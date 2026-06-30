@@ -11,6 +11,7 @@ from dispatch.codex_adapter import compute_command_contract_hash, load_codex_res
 from dispatch.codex_canary_contract import compute_canary_contract_hash
 from dispatch.codex_cli_compatibility import evaluate_cli_compatibility
 from dispatch.execution_gate import adapter_supports_execution
+from dispatch.execution_route_policy import ROUTE_CODEX_CANARY, evaluate_execution_route
 
 PHASE3_7B_AUTH_FILENAME = "phase3_7b_authorization.json"
 DISABLED_FILENAME = "disabled.json"
@@ -115,6 +116,11 @@ def evaluate_activation_gates(
 
     dedicated = dedicated_adapter or load_codex_restricted_adapter(repo_root)
     act_id = activation_id or str((activation_manifest or {}).get("activation_id", ""))
+
+    route_decision = evaluate_execution_route(dedicated, ROUTE_CODEX_CANARY)
+    gates["execution_route"] = route_decision.allowed
+    if not route_decision.allowed:
+        blocked.extend(route_decision.reasons)
 
     gates["supports_execution"] = adapter_supports_execution(registry_adapter)
     if not gates["supports_execution"]:
