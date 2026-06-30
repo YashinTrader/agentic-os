@@ -24,4 +24,4 @@ Phase 3.7A completes CLI preflight, manifest, and human approval request without
 ## Reviewer sign-off
 
 - [x] composer (implementer)
-- [ ] claude (reviewer)
+- [x] claude (reviewer)

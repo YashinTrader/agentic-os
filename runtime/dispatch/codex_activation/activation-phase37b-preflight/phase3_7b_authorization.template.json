@@ -1,0 +1,22 @@
+{
+  "activation_id": "activation-phase37b-preflight",
+  "adapter_id": "codex-restricted",
+  "authorization_id": "auth-template-activation-phase37b-preflight",
+  "authorized_at": null,
+  "authorized_by": null,
+  "canary_contract_hash": "43c0bb142f294439959a0bad2abe36ad6dd49ef51db02db6f18d8b9b916ff09e",
+  "context_bundle_hash": "505a3394828f4e62cbd8618981281cb3926c7e5189231fff695b4377d1250240",
+  "expected_file": "docs/codex-canary-canary-20260629T204243Z-45a06a4c.md",
+  "expires_at": null,
+  "human_approval_reference": null,
+  "human_approval_signature_verified": false,
+  "maximum_runs": 1,
+  "preview_hash": "c7bc5d1747c508cdc42a381e1c81596b8192d5381bebc33201b68fba4da9d224",
+  "reviewed_commit_sha": "dd186e795e8ba414f2023129782420ade0328a1a",
+  "run_id": "canary-20260629T204243Z-45a06a4c",
+  "statement": "Template only \u2014 not valid for live canary execution.",
+  "status": "awaiting_human_authorization",
+  "task_id": "T-PHASE3-7B-CODEX-CANARY",
+  "timeout_seconds": 600,
+  "worktree_allocation_id": "alloc-bf6a9f147b674dd8a8525c4757d16920"
+}

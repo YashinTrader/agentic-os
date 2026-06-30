@@ -25,6 +25,7 @@ MANIFEST_LIVE_STATUSES = frozenset({"human_approved", "activation_ready"})
 PHASE37A_PERMITTED_MANIFEST_STATUSES = frozenset(
     {"awaiting_claude_review", "awaiting_human_approval"}
 )
+PHASE37B_PERMITTED_MANIFEST_STATUSES = frozenset({"awaiting_human_approval"})
 FORBIDDEN_MANIFEST_STATUSES = frozenset(
     {"human_approved", "activation_ready", "active_canary_only", "active", "completed"}
 )

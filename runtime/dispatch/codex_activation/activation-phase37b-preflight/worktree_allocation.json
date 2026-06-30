@@ -1,0 +1,27 @@
+{
+  "allocation_id": "alloc-bf6a9f147b674dd8a8525c4757d16920",
+  "audit": [
+    {
+      "at": "2026-06-29T20:42:48Z",
+      "event": "allocated"
+    }
+  ],
+  "base_branch": "",
+  "base_sha": "dd186e795e8ba414f2023129782420ade0328a1a",
+  "branch_name": "agentic/t-phase3-7b-codex-canary/canary-20260",
+  "cleanup_policy": "manual",
+  "created_at": "2026-06-29T20:42:45Z",
+  "dirty": false,
+  "error": "",
+  "expires_at": "2026-06-30T20:42:45Z",
+  "git_head": "dd186e795e8ba414f2023129782420ade0328a1a",
+  "last_verified_at": "2026-06-29T20:42:48Z",
+  "owner": "operator-preflight",
+  "repo_root": "C:\\Users\\gabot\\agentic-os",
+  "run_id": "canary-20260629T204243Z-45a06a4c",
+  "status": "allocated",
+  "task_id": "T-PHASE3-7B-CODEX-CANARY",
+  "worktree_path": "C:\\Users\\gabot\\agentic-os-worktrees\\t-phase3-7b-codex-canary\\canary-20260",
+  "worktree_root": "C:\\Users\\gabot\\agentic-os-worktrees",
+  "writes_files": true
+}

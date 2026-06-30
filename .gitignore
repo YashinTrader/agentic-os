@@ -24,6 +24,9 @@ runtime/orchestrator/latest_*.json
 runtime/dispatch/**
 !runtime/dispatch/.gitkeep
 !runtime/dispatch/previews/.gitkeep
+!runtime/dispatch/codex_activation/
+!runtime/dispatch/codex_activation/activation-phase37b-preflight/**
+!runtime/dispatch/codex_cli_discovery.json
 runtime/unittest_last_run.txt
 runtime/unittest_result.txt
 

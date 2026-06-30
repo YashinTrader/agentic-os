@@ -14,6 +14,7 @@ from dispatch.codex_canary_contract import compute_canary_contract_hash
 from dispatch.codex_activation_gate import (
     FORBIDDEN_MANIFEST_STATUSES,
     PHASE37A_PERMITTED_MANIFEST_STATUSES,
+    PHASE37B_PERMITTED_MANIFEST_STATUSES,
 )
 
 ACTIVATION_MANIFEST_VERSION = "2.0"
@@ -240,6 +241,12 @@ def validate_activation_manifest_v2(
         if status and status not in PHASE37A_PERMITTED_MANIFEST_STATUSES:
             if status not in FORBIDDEN_MANIFEST_STATUSES:
                 blockers.append(f"manifest status {status!r} not permitted in Phase 3.7A")
+    elif phase == "3.7B":
+        if status in FORBIDDEN_MANIFEST_STATUSES:
+            blockers.append(f"manifest status {status!r} forbidden in Phase 3.7B preflight")
+        if status and status not in PHASE37B_PERMITTED_MANIFEST_STATUSES:
+            if status not in FORBIDDEN_MANIFEST_STATUSES:
+                blockers.append(f"manifest status {status!r} not permitted in Phase 3.7B preflight")
 
     if manifest.get("adapter_id") != "codex-restricted":
         blockers.append("adapter_id must be codex-restricted")
@@ -252,14 +259,14 @@ def validate_activation_manifest_v2(
     if not manifest.get("phase3_7b_authorization_required"):
         blockers.append("phase3_7b_authorization_required must be true")
     if manifest.get("live_run_authorized"):
-        blockers.append("live_run_authorized must be false in Phase 3.7A")
+        blockers.append(f"live_run_authorized must be false in Phase {phase}")
 
     if str(manifest.get("human_approval_reference", "")).strip():
-        blockers.append("fabricated human_approval_reference not allowed in Phase 3.7A")
-    if str(manifest.get("claude_review_reference", "")).strip():
+        blockers.append(f"fabricated human_approval_reference not allowed in Phase {phase}")
+    if phase == "3.7A" and str(manifest.get("claude_review_reference", "")).strip():
         blockers.append("fabricated claude_review_reference not allowed in Phase 3.7A")
     if str(manifest.get("phase3_7b_authorization_reference", "")).strip():
-        blockers.append("fabricated phase3_7b_authorization_reference not allowed in Phase 3.7A")
+        blockers.append(f"fabricated phase3_7b_authorization_reference not allowed in Phase {phase}")
 
     try:
         adapter = load_codex_restricted_adapter(repo_root)
@@ -280,14 +287,17 @@ def validate_activation_manifest_v2(
     if str(manifest.get("command_contract_hash", "")) != expected_cmd_hash:
         blockers.append("command_contract_hash does not match current command contract")
 
-    expected_canary_hash = compute_canary_contract_hash(
-        command_contract_hash=expected_cmd_hash,
-        context_bundle_hash=str(manifest.get("context_bundle_hash", "")),
-        cli_version=str(manifest.get("cli_version", "")),
-        reviewed_commit_sha=str(manifest.get("reviewed_commit_sha", "")),
-    )
-    if str(manifest.get("canary_contract_hash", "")) != expected_canary_hash:
-        blockers.append("canary_contract_hash does not match current canary contract")
+    if phase != "3.7B":
+        expected_canary_hash = compute_canary_contract_hash(
+            command_contract_hash=expected_cmd_hash,
+            context_bundle_hash=str(manifest.get("context_bundle_hash", "")),
+            cli_version=str(manifest.get("cli_version", "")),
+            reviewed_commit_sha=str(manifest.get("reviewed_commit_sha", "")),
+        )
+        if str(manifest.get("canary_contract_hash", "")) != expected_canary_hash:
+            blockers.append("canary_contract_hash does not match current canary contract")
+    elif not str(manifest.get("canary_contract_hash", "")).strip():
+        blockers.append("canary_contract_hash required in Phase 3.7B preflight manifest")
 
     if current_reviewed_sha and str(manifest.get("reviewed_commit_sha", "")) != current_reviewed_sha:
         blockers.append("reviewed_commit_sha does not match current reviewed commit")
