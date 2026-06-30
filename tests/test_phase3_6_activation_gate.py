@@ -25,7 +25,8 @@ class ActivationGateTests(unittest.TestCase):
             status="awaiting_human_approval",
         )
         self.assertEqual(manifest["status"], "awaiting_human_approval")
-        self.assertTrue(manifest["canary_only"])
+        self.assertEqual(manifest["execution_scope"], "canary_only")
+        self.assertEqual(manifest["version"], "2.0")
         self.assertEqual(manifest["maximum_runs"], 1)
 
     def test_valid_manifest_passes(self) -> None:
@@ -53,7 +54,7 @@ class ActivationGateTests(unittest.TestCase):
         )
         result = validate_activation_manifest(manifest, repo_root=REPO_ROOT)
         self.assertFalse(result.ready_for_review)
-        self.assertTrue(any("not allowed" in b for b in result.blockers))
+        self.assertTrue(any("forbidden" in b or "not allowed" in b for b in result.blockers))
 
     def test_config_hash_mismatch_blocks(self) -> None:
         manifest = build_draft_activation_manifest(

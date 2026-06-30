@@ -902,6 +902,7 @@ def validate_adapter_registry(errors: list[str]) -> None:
 
     validate_phase35_adapter_boundaries(errors, adapters)
     validate_phase36_codex_activation_readiness(errors)
+    validate_phase37a_codex_canary_activation(errors)
 
 
 PROMOTION_EXECUTION_STATES = {
@@ -911,9 +912,14 @@ PROMOTION_EXECUTION_STATES = {
     "test_execution": False,
     "disabled": False,
     "revoked": False,
+    "activation_candidate": True,
     "restricted_execution": True,
     "active": True,
 }
+
+
+def _phase37a_active() -> bool:
+    return (ROOT / "dispatch" / "codex_activation_gate.py").is_file()
 
 
 def validate_phase35_adapter_boundaries(errors: list[str], adapters: list[Any]) -> None:
@@ -944,20 +950,34 @@ def validate_phase35_adapter_boundaries(errors: list[str], adapters: list[Any]) 
         if adapter_id == "codex-restricted":
             codex_restricted = adapter
 
-    if execution_capable != ["local-python-exec-test"]:
+    phase37a = _phase37a_active()
+    allowed_execution = (
+        ["local-python-exec-test", "codex-restricted"] if phase37a else ["local-python-exec-test"]
+    )
+    if sorted(execution_capable) != sorted(allowed_execution):
         errors.append(
-            "agents/adapter_registry.yaml: only local-python-exec-test may have supports_execution=true; "
-            f"found {execution_capable!r}"
+            "agents/adapter_registry.yaml: execution-capable adapters must be "
+            f"{allowed_execution!r}; found {execution_capable!r}"
         )
 
     if codex_restricted is None:
         errors.append("agents/adapter_registry.yaml: missing codex-restricted adapter entry")
         return
 
-    if codex_restricted.get("supports_execution"):
-        errors.append("codex-restricted must have supports_execution=false in Phase 3.5")
-    if codex_restricted.get("promotion_state") != "restricted_candidate":
-        errors.append("codex-restricted promotion_state must be restricted_candidate")
+    if phase37a:
+        if not codex_restricted.get("supports_execution"):
+            errors.append("codex-restricted must have supports_execution=true in Phase 3.7A")
+        if codex_restricted.get("promotion_state") != "activation_candidate":
+            errors.append("codex-restricted promotion_state must be activation_candidate in Phase 3.7A")
+        if codex_restricted.get("execution_scope") != "canary_only":
+            errors.append("codex-restricted execution_scope must be canary_only in Phase 3.7A")
+        if int(codex_restricted.get("maximum_runs", 0) or 0) != 1:
+            errors.append("codex-restricted maximum_runs must equal 1 in Phase 3.7A")
+    else:
+        if codex_restricted.get("supports_execution"):
+            errors.append("codex-restricted must have supports_execution=false in Phase 3.5")
+        if codex_restricted.get("promotion_state") != "restricted_candidate":
+            errors.append("codex-restricted promotion_state must be restricted_candidate")
     if codex_restricted.get("approval_level") != "human":
         errors.append("codex-restricted approval_level must be human")
     if not codex_restricted.get("worktree_required"):
@@ -979,8 +999,20 @@ def validate_phase35_adapter_boundaries(errors: list[str], adapters: list[Any]) 
     if not isinstance(dedicated, dict):
         errors.append("agents/codex_restricted_adapter.yaml: root must be a mapping")
         return
-    if dedicated.get("supports_execution"):
-        errors.append("agents/codex_restricted_adapter.yaml: supports_execution must be false")
+    if phase37a:
+        if not dedicated.get("supports_execution"):
+            errors.append("agents/codex_restricted_adapter.yaml: supports_execution must be true in Phase 3.7A")
+        if dedicated.get("promotion_state") != "activation_candidate":
+            errors.append("agents/codex_restricted_adapter.yaml: promotion_state must be activation_candidate")
+        if dedicated.get("execution_scope") != "canary_only":
+            errors.append("agents/codex_restricted_adapter.yaml: execution_scope must be canary_only")
+        if dedicated.get("live_run_authorized"):
+            errors.append("agents/codex_restricted_adapter.yaml: live_run_authorized must be false")
+        if not dedicated.get("phase3_7b_authorization_required"):
+            errors.append("agents/codex_restricted_adapter.yaml: phase3_7b_authorization_required must be true")
+    else:
+        if dedicated.get("supports_execution"):
+            errors.append("agents/codex_restricted_adapter.yaml: supports_execution must be false")
     if dedicated.get("id") != "codex-restricted":
         errors.append("agents/codex_restricted_adapter.yaml: id must be codex-restricted")
 
@@ -1029,7 +1061,7 @@ def validate_phase36_codex_activation_readiness(errors: list[str]) -> None:
         errors.append(f"Phase 3.6: codex adapter config unavailable: {exc}")
         return
 
-    if adapter.get("supports_execution"):
+    if not _phase37a_active() and adapter.get("supports_execution"):
         errors.append("Phase 3.6: codex-restricted supports_execution must remain false")
 
     sample_argv = append_codex_prompt(
@@ -1057,6 +1089,68 @@ def validate_phase36_codex_activation_readiness(errors: list[str]) -> None:
             errors.append("Phase 3.6: run_codex_canary.py must refuse before Codex subprocess")
         if "return 3" not in canary_source:
             errors.append("Phase 3.6: run_codex_canary.py must exit refused")
+        if _phase37a_active() and "phase3_7b" not in canary_source.lower():
+            errors.append("Phase 3.7A: run_codex_canary.py must require Phase 3.7B authorization")
+
+
+def validate_phase37a_codex_canary_activation(errors: list[str]) -> None:
+    """Phase 3.7A: activation candidate package, live-run prohibition, gate module."""
+    if not _phase37a_active():
+        return
+
+    required_docs = (
+        "docs/PHASE_3_7A_BASELINE.md",
+        "docs/PHASE_3_7A_CODEX_ACTIVATION_CANDIDATE.md",
+        "docs/PHASE_3_7A_CANARY_PREFLIGHT.md",
+        "docs/PHASE_3_7A_HUMAN_APPROVAL_REQUEST.md",
+        "docs/PHASE_3_7A_LIVE_RUN_PROHIBITION.md",
+        "docs/PHASE_3_7A_HARDENING_REPORT.md",
+        "docs/PHASE_3_7A_REVIEW_PACKET.md",
+    )
+    for rel in required_docs:
+        if not (ROOT / rel).exists():
+            errors.append(f"Phase 3.7A: missing document {rel}")
+
+    required_artifacts = (
+        "dispatch/codex_activation_gate.py",
+        "scripts/disable_codex_canary.py",
+        "scripts/verify_codex_canary_package.py",
+        "schemas/codex_human_approval_request.schema.json",
+        "tasks/active/T-PHASE3-7A-CODEX-CANARY-ACTIVATION.yaml",
+    )
+    for rel in required_artifacts:
+        if not (ROOT / rel).exists():
+            errors.append(f"Phase 3.7A: missing artifact {rel}")
+
+    required_tests = (
+        "tests/test_phase3_7a_activation_state.py",
+        "tests/test_phase3_7a_cli_preflight.py",
+        "tests/test_phase3_7a_activation_manifest.py",
+        "tests/test_phase3_7a_canary_package.py",
+        "tests/test_phase3_7a_human_gate.py",
+        "tests/test_phase3_7a_no_live_execution.py",
+        "tests/test_phase3_7a_safety_boundaries.py",
+    )
+    for rel in required_tests:
+        if not (ROOT / rel).exists():
+            errors.append(f"Phase 3.7A: missing test {rel}")
+
+    for rel in (
+        "decisions/ADR-0038-codex-canary-only-activation-state.md",
+        "decisions/ADR-0039-preflight-live-run-prohibited-boundary.md",
+        "decisions/ADR-0040-human-authorization-one-shot-canary.md",
+        "decisions/ADR-0041-automatic-post-canary-suspension.md",
+    ):
+        if not (ROOT / rel).exists():
+            errors.append(f"Phase 3.7A: missing ADR {rel}")
+
+    runner_source = (ROOT / "scripts" / "run_codex_canary.py").read_text(encoding="utf-8")
+    if "subprocess" in runner_source and "subprocess.run" in runner_source:
+        errors.append("Phase 3.7A: run_codex_canary.py must not invoke subprocess.run")
+
+    gate_source = (ROOT / "dispatch" / "codex_activation_gate.py").read_text(encoding="utf-8")
+    if "PHASE3_7B_BLOCKED_REASON" not in gate_source:
+        errors.append("Phase 3.7A: codex_activation_gate.py must define Phase 3.7B blocked reason")
 
 
 def validate_skill_mcp_references(errors: list[str]) -> None:

@@ -25,4 +25,4 @@ The first live Codex run must prove worktree isolation with minimal blast radius
 ## Reviewer sign-off
 
 - [x] composer (implementer)
-- [ ] claude (reviewer)
+- [x] claude (reviewer)

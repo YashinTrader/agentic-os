@@ -24,8 +24,9 @@ class CodexAdapterTests(unittest.TestCase):
 
     def test_adapter_contract_fields(self) -> None:
         self.assertEqual(self.adapter["id"], "codex-restricted")
-        self.assertFalse(self.adapter["supports_execution"])
-        self.assertEqual(self.adapter["promotion_state"], "restricted_candidate")
+        self.assertTrue(self.adapter["supports_execution"])
+        self.assertEqual(self.adapter["promotion_state"], "activation_candidate")
+        self.assertEqual(self.adapter["execution_scope"], "canary_only")
         self.assertEqual(self.adapter["approval_level"], "human")
 
     def test_version_at_least(self) -> None:
@@ -63,8 +64,8 @@ class CodexAdapterTests(unittest.TestCase):
             (REPO_ROOT / "agents" / "adapter_registry.yaml").read_text(encoding="utf-8")
         )
         entry = next(a for a in registry["adapters"] if a["id"] == "codex-restricted")
-        self.assertFalse(entry["supports_execution"])
-        self.assertEqual(entry["promotion_state"], "restricted_candidate")
+        self.assertTrue(entry["supports_execution"])
+        self.assertEqual(entry["promotion_state"], "activation_candidate")
 
 
 if __name__ == "__main__":

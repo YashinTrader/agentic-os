@@ -76,10 +76,16 @@ def _validate_adapter_contract(adapter: dict[str, Any]) -> list[str]:
     blocked: list[str] = []
     if adapter.get("id") != "codex-restricted":
         blocked.append("adapter id must be codex-restricted")
-    if adapter.get("supports_execution"):
-        blocked.append("codex-restricted must remain supports_execution=false")
-    if adapter.get("promotion_state") != "restricted_candidate":
-        blocked.append("promotion_state must be restricted_candidate")
+    promotion = str(adapter.get("promotion_state", ""))
+    if promotion == "restricted_candidate" and adapter.get("supports_execution"):
+        blocked.append("restricted_candidate must have supports_execution=false")
+    if promotion == "activation_candidate":
+        if not adapter.get("supports_execution"):
+            blocked.append("activation_candidate requires supports_execution=true")
+        if adapter.get("execution_scope") != "canary_only":
+            blocked.append("activation_candidate execution_scope must be canary_only")
+    elif promotion not in {"restricted_candidate", "activation_candidate"}:
+        blocked.append(f"unsupported promotion_state: {promotion}")
     if adapter.get("approval_level") != "human":
         blocked.append("approval_level must be human")
     if not adapter.get("worktree_required"):
@@ -323,6 +329,6 @@ def evaluate_codex_preview_gate(
         cli_version, str(adapter.get("minimum_version", CODEX_MINIMUM_VERSION))
     ):
         blocked.append("installed Codex CLI below minimum supported version")
-    if adapter.get("supports_execution"):
-        blocked.append("supports_execution must remain false until separate activation")
+    if adapter.get("promotion_state") == "restricted_candidate" and adapter.get("supports_execution"):
+        blocked.append("supports_execution must remain false for restricted_candidate")
     return blocked

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate Codex activation readiness only — does not activate or execute."""
+"""Validate Codex activation preflight — Phase 3.7A stops at READY_FOR_CLAUDE_REVIEW."""
 
 from __future__ import annotations
 
@@ -12,26 +12,40 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
 from dispatch.codex_activation import (  # noqa: E402
-    build_draft_activation_manifest,
-    validate_activation_manifest,
+    activation_bundle_dir,
+    build_activation_manifest_v2,
+    build_human_approval_request,
+    validate_activation_manifest_v2,
+    validate_human_approval_request,
 )
+from dispatch.codex_activation_gate import phase3_7b_authorization_path  # noqa: E402
 from dispatch.codex_adapter import (  # noqa: E402
+    append_codex_prompt,
+    build_codex_exec_options,
     compute_command_contract_hash,
     load_codex_restricted_adapter,
     validate_codex_argv_contract,
-    build_codex_exec_options,
-    append_codex_prompt,
     CODEX_EXECUTABLE,
 )
 from dispatch.codex_canary_contract import compute_canary_contract_hash  # noqa: E402
 from dispatch.codex_cli_compatibility import evaluate_cli_compatibility  # noqa: E402
-from dispatch.execution_gate import adapter_supports_execution  # noqa: E402
 from dispatch.preview import get_adapter_by_id, load_adapter_registry  # noqa: E402
+
+PHASE37A_DOCS = (
+    "docs/PHASE_3_7A_BASELINE.md",
+    "docs/PHASE_3_7A_CODEX_ACTIVATION_CANDIDATE.md",
+    "docs/PHASE_3_7A_CANARY_PREFLIGHT.md",
+    "docs/PHASE_3_7A_HUMAN_APPROVAL_REQUEST.md",
+    "docs/PHASE_3_7A_LIVE_RUN_PROHIBITION.md",
+    "docs/PHASE_3_7A_HARDENING_REPORT.md",
+    "docs/PHASE_3_7A_REVIEW_PACKET.md",
+)
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Validate Codex activation readiness (no activation).")
+    parser = argparse.ArgumentParser(description="Validate Codex activation preflight.")
     parser.add_argument("--root", default=str(REPO_ROOT))
+    parser.add_argument("--activation", default="activation-phase37a-review")
     parser.add_argument("--manifest", help="Activation manifest JSON path")
     parser.add_argument("--compatibility", help="CLI compatibility JSON path")
     parser.add_argument("--reviewed-sha", help="Reviewed commit SHA")
@@ -40,15 +54,24 @@ def main() -> int:
 
     root = Path(args.root).resolve()
     blockers: list[str] = []
+    informational: list[str] = [
+        "awaiting Claude review",
+        "awaiting explicit human approval",
+        "awaiting Phase 3.7B authorization",
+    ]
 
     dedicated = load_codex_restricted_adapter(root)
     registry = load_adapter_registry(root)
     registry_adapter = get_adapter_by_id(registry, "codex-restricted") or {}
 
-    if dedicated.get("supports_execution") or adapter_supports_execution(registry_adapter):
-        blockers.append("supports_execution must remain false")
-    if dedicated.get("promotion_state") != "restricted_candidate":
-        blockers.append("promotion_state must be restricted_candidate")
+    if not registry_adapter.get("supports_execution"):
+        blockers.append("codex-restricted supports_execution must be true for activation candidate")
+    if dedicated.get("promotion_state") != "activation_candidate":
+        blockers.append("promotion_state must be activation_candidate")
+    if dedicated.get("execution_scope") != "canary_only":
+        blockers.append("execution_scope must be canary_only")
+    if int(dedicated.get("maximum_runs", 0) or 0) != 1:
+        blockers.append("maximum_runs must equal 1")
 
     sample_argv = append_codex_prompt(
         [CODEX_EXECUTABLE, *build_codex_exec_options(dedicated, worktree_path="/wt", agent_output_path="/out/msg.txt")],
@@ -62,62 +85,73 @@ def main() -> int:
         )
     )
 
-    for rel in (
-        "docs/PHASE_3_6_CODEX_ROLLBACK.md",
-        "docs/PHASE_3_6_CODEX_ACTIVATION_READINESS.md",
-        "docs/PHASE_3_6_HUMAN_APPROVAL_CHECKLIST.md",
-        "docs/PHASE_3_6_CODEX_CANARY_RUNBOOK.md",
-        "schemas/codex_activation_manifest.schema.json",
-        "schemas/codex_canary_record.schema.json",
+    for rel in PHASE37A_DOCS + (
+        "schemas/codex_human_approval_request.schema.json",
+        "dispatch/codex_activation_gate.py",
+        "scripts/disable_codex_canary.py",
+        "scripts/verify_codex_canary_package.py",
     ):
         if not (root / rel).exists():
-            blockers.append(f"missing activation package artifact: {rel}")
+            blockers.append(f"missing artifact: {rel}")
 
     compat_path = Path(args.compatibility) if args.compatibility else root / "runtime" / "registry" / "codex_cli_compatibility.json"
     cli_help_hash = None
     compat_data: dict = {}
     if compat_path.exists():
         compat_data = json.loads(compat_path.read_text(encoding="utf-8"))
-        compat = evaluate_cli_compatibility(
-            {"version_text": compat_data.get("version_raw", ""), "executable_path": compat_data.get("executable_path", ""), "non_interactive_subcommand": "exec", "invocations": []},
-            require_installed=False,
-        )
         if compat_data.get("help_hash"):
             cli_help_hash = str(compat_data["help_hash"])
-        if compat_path.exists() and compat_data.get("compatible") is False and compat_data.get("executable_path"):
+        if compat_data.get("executable_path") and compat_data.get("compatible") is False:
             blockers.extend(compat_data.get("incompatibility_reasons") or ["CLI incompatible"])
 
-    manifest_path = Path(args.manifest) if args.manifest else None
-    if manifest_path and manifest_path.exists():
+    reviewed = args.reviewed_sha or "d9f203c39c3a85613ef4c7f76e110e3f4734d9c1"
+    manifest_path = Path(args.manifest) if args.manifest else activation_bundle_dir(root, args.activation) / "activation_manifest.json"
+    if manifest_path.exists():
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     else:
-        reviewed = args.reviewed_sha or "2af82a9e7e812e05059b69653583d1c78dfa43b1"
-        manifest = build_draft_activation_manifest(
+        manifest = build_activation_manifest_v2(
             root,
-            activation_id="activation-readiness-check",
+            activation_id=args.activation,
             reviewed_commit_sha=reviewed,
-            base_sha=reviewed,
-            cli_version=str(compat_data.get("parsed_version", "0.136.0") if compat_path.exists() else "0.136.0"),
+            cli_version=str(compat_data.get("parsed_version", "0.136.0")),
             cli_help_hash=cli_help_hash or "unreviewed",
-            status="reviewer_approved",
+            status="awaiting_claude_review",
         )
-    result = validate_activation_manifest(
+
+    result = validate_activation_manifest_v2(
         manifest,
         repo_root=root,
-        current_reviewed_sha=args.reviewed_sha,
+        current_reviewed_sha=reviewed,
         cli_help_hash=cli_help_hash,
+        phase="3.7A",
     )
     blockers.extend(result.blockers)
 
-    if compute_canary_contract_hash() != compute_canary_contract_hash():
-        blockers.append("canary contract hash unstable")
+    request = build_human_approval_request(
+        root,
+        activation_id=args.activation,
+        reviewed_commit_sha=reviewed,
+        cli_version=str(compat_data.get("parsed_version", "")),
+    )
+    blockers.extend(validate_human_approval_request(request))
+
+    if phase3_7b_authorization_path(root, args.activation).exists():
+        blockers.append("phase3_7b_authorization must not exist in Phase 3.7A")
+
+    status = "READY_FOR_CLAUDE_REVIEW" if not blockers else "BLOCKED"
+    if status == "READY_FOR_CLAUDE_REVIEW":
+        status = "READY_FOR_CLAUDE_REVIEW"
 
     report = {
-        "status": "READY_FOR_REVIEW" if not blockers else "BLOCKED",
+        "status": status,
         "blockers": blockers,
+        "informational_blockers": informational,
         "command_contract_hash": compute_command_contract_hash(),
-        "canary_contract_hash": compute_canary_contract_hash(),
-        "supports_execution": False,
+        "canary_contract_hash": compute_canary_contract_hash(reviewed_commit_sha=reviewed),
+        "supports_execution": registry_adapter.get("supports_execution"),
+        "execution_scope": dedicated.get("execution_scope"),
+        "phase3_7b_authorization_required": True,
+        "live_run_authorized": False,
     }
 
     if args.json:
@@ -126,10 +160,12 @@ def main() -> int:
         print(report["status"])
         for item in blockers:
             print(f"  - {item}")
+        for item in informational:
+            print(f"  (pending) {item}")
 
-    if report["status"] == "ACTIVE" or report["status"] == "EXECUTABLE":
+    if report["status"] in {"READY_FOR_PHASE3_7B", "ACTIVE", "EXECUTABLE"}:
         return 2
-    return 0 if report["status"] == "READY_FOR_REVIEW" else 1
+    return 0 if report["status"] == "READY_FOR_CLAUDE_REVIEW" else 1
 
 
 if __name__ == "__main__":

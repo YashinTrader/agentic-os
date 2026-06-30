@@ -33,7 +33,12 @@ class Phase34SafetyBoundaryTests(unittest.TestCase):
             else:
                 self.assertFalse(adapter_supports_execution(adapter), adapter["id"])
 
-        self.assertEqual(execution_capable, ["local-python-exec-test"])
+        expected = (
+            ["codex-restricted", "local-python-exec-test"]
+            if (REPO_ROOT / "dispatch" / "codex_activation_gate.py").is_file()
+            else ["local-python-exec-test"]
+        )
+        self.assertEqual(sorted(execution_capable), sorted(expected))
 
     def test_phase34_modules_never_use_shell_true(self) -> None:
         for rel in PHASE_3_4_MODULES:

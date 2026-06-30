@@ -25,4 +25,4 @@ Real-agent canaries require operator stop controls and evidence preservation.
 ## Reviewer sign-off
 
 - [x] composer (implementer)
-- [ ] claude (reviewer)
+- [x] claude (reviewer)
