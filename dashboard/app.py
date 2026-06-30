@@ -248,6 +248,135 @@ def load_dispatch_execution_result(root_dir: Path) -> tuple[dict | None, list[st
         return None, [f"runtime/dispatch/latest_result.json: failed to parse: {exc}"]
 
 
+def _load_json_object(path: Path, label: str) -> tuple[dict[str, Any] | None, str | None]:
+    if not path.exists():
+        return None, None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        return None, f"{label}: failed to parse: {exc}"
+    if not isinstance(data, dict):
+        return None, f"{label}: root must be a JSON object"
+    return data, None
+
+
+def _infer_run_task_id(run_dir: Path) -> str:
+    task_path = run_dir / "task.yaml"
+    if not task_path.exists():
+        return ""
+    try:
+        data = yaml.safe_load(task_path.read_text(encoding="utf-8"))
+    except Exception:
+        return ""
+    if isinstance(data, dict):
+        return str(data.get("id") or "")
+    return ""
+
+
+def _summarize_verification_status(run_dir: Path, result: dict[str, Any]) -> tuple[str, str | None]:
+    verification_path = run_dir / "verification_results.json"
+    verification, error = _load_json_object(
+        verification_path,
+        f"runtime/dispatch/runs/{run_dir.name}/verification_results.json",
+    )
+    if error:
+        return "parse_error", error
+    if verification is not None:
+        commands = verification.get("commands", [])
+        if not isinstance(commands, list) or not commands:
+            return "not_recorded", None
+        if any(isinstance(cmd, dict) and cmd.get("timed_out") for cmd in commands):
+            return "timed_out", None
+        if all(isinstance(cmd, dict) and cmd.get("exit_code") == 0 for cmd in commands):
+            return "passed", None
+        return "failed", None
+
+    status = str(result.get("status") or "")
+    if status == "completed_verified":
+        return "passed", None
+    if status == "completed_unverified":
+        return "failed", None
+    return "not_recorded", None
+
+
+def load_execution_runs(root_dir: Path, *, limit: int = 50) -> tuple[list[dict[str, Any]], list[str]]:
+    """Load recent local-builder runs from runtime/dispatch/runs without side effects."""
+    runs_root = root_dir / "runtime" / "dispatch" / "runs"
+    if not runs_root.exists():
+        return [], []
+    if not runs_root.is_dir():
+        return [], ["runtime/dispatch/runs: path exists but is not a directory"]
+
+    errors: list[str] = []
+    try:
+        run_dirs = [p for p in runs_root.iterdir() if p.is_dir()]
+    except Exception as exc:
+        return [], [f"runtime/dispatch/runs: failed to list directory: {exc}"]
+
+    def run_sort_key(path: Path) -> tuple[float, str]:
+        try:
+            return (path.stat().st_mtime, path.name)
+        except OSError:
+            return (0.0, path.name)
+
+    runs: list[dict[str, Any]] = []
+    for run_dir in sorted(run_dirs, key=run_sort_key, reverse=True)[:limit]:
+        result_path = run_dir / "result.json"
+        result, error = _load_json_object(result_path, f"runtime/dispatch/runs/{run_dir.name}/result.json")
+        run_errors: list[str] = []
+        if error:
+            run_errors.append(error)
+            errors.append(error)
+        if result is None:
+            result = {}
+            if not result_path.exists():
+                run_errors.append(f"runtime/dispatch/runs/{run_dir.name}/result.json: file does not exist")
+
+        allocation, allocation_error = _load_json_object(
+            run_dir / "worktree_allocation.json",
+            f"runtime/dispatch/runs/{run_dir.name}/worktree_allocation.json",
+        )
+        if allocation_error:
+            run_errors.append(allocation_error)
+            errors.append(allocation_error)
+
+        verification_status, verification_error = _summarize_verification_status(run_dir, result)
+        if verification_error:
+            run_errors.append(verification_error)
+            errors.append(verification_error)
+
+        handoff_path = str(result.get("handoff_path") or "")
+        handoff_rel = str(result.get("handoff_rel") or "")
+        if not handoff_path and handoff_rel:
+            handoff_path = handoff_rel
+        elif not handoff_path and (run_dir / "handoff.md").exists():
+            handoff_path = f"runtime/dispatch/runs/{run_dir.name}/handoff.md"
+
+        worktree_path = str(result.get("worktree_path") or "")
+        if not worktree_path and allocation:
+            worktree_path = str(allocation.get("worktree_path") or "")
+
+        runs.append(
+            {
+                "run_id": str(result.get("run_id") or run_dir.name),
+                "task_id": str(result.get("task_id") or _infer_run_task_id(run_dir) or ""),
+                "adapter_id": str(result.get("adapter_id") or ""),
+                "route": str(result.get("route") or result.get("execution_route") or ""),
+                "status": str(result.get("status") or "unknown"),
+                "started_at": str(result.get("started_at") or ""),
+                "finished_at": str(result.get("finished_at") or ""),
+                "worktree_path": worktree_path,
+                "verification_status": verification_status,
+                "blocked_reasons": result.get("blocked_reasons") if isinstance(result.get("blocked_reasons"), list) else [],
+                "handoff_path": handoff_path,
+                "run_dir": f"runtime/dispatch/runs/{run_dir.name}",
+                "errors": run_errors,
+            }
+        )
+
+    return runs, errors
+
+
 def load_orchestrator_latest(root_dir: Path) -> tuple[dict | None, dict | None, list[str]]:
     """Load latest orchestrator plan and state JSON if present."""
     errors: list[str] = []
@@ -667,6 +796,7 @@ def generate_dashboard_html(query_params: dict[str, list[str]]) -> str:
     dispatch_preview, dispatch_preview_errors = load_dispatch_latest(ROOT_DIR)
     dispatch_exec_request, dispatch_exec_request_errors = load_dispatch_execution_request(ROOT_DIR)
     dispatch_exec_result, dispatch_exec_result_errors = load_dispatch_execution_result(ROOT_DIR)
+    execution_runs, execution_run_errors = load_execution_runs(ROOT_DIR)
     obsidian_last_sync, obsidian_sync_errors = load_obsidian_last_sync_report(ROOT_DIR, obsidian_mapping)
     obsidian_notes_planned = count_obsidian_notes_planned(ROOT_DIR)
     
@@ -1381,6 +1511,7 @@ def generate_dashboard_html(query_params: dict[str, list[str]]) -> str:
                 <a href="/?tab=obsidian" class="tab-link {'active' if active_tab == 'obsidian' else ''}">📓 Obsidian Sync</a>
                 <a href="/?tab=orchestrator" class="tab-link {'active' if active_tab == 'orchestrator' else ''}">🧭 Orchestrator</a>
                 <a href="/?tab=dispatch" class="tab-link {'active' if active_tab == 'dispatch' else ''}">🚀 Dispatch Preview</a>
+                <a href="/?tab=execution_runs" class="tab-link {'active' if active_tab == 'execution_runs' else ''}">Execution Runs</a>
                 <a href="/?tab=health" class="tab-link {'active' if active_tab == 'health' else ''}">🏥 Health Panel</a>
             </div>
     """)
@@ -2591,6 +2722,96 @@ python scripts/execute_dispatch.py --preview ... --execute --approval runtime/di
         html_out.append('<div style="margin-top:8px; font-size:11px; color:#f87171;">Blocked: ' + escape("; ".join(str(e) for e in de_blocked[:5])) + '</div>')
     if not dispatch_preview:
         html_out.append('<div style="margin-top:12px; font-size:12px; color:#64748b;">No dispatch preview yet. Run orchestration then <code>python scripts/preview_dispatch.py</code>.</div>')
+    html_out.append("""
+            </div>
+    """)
+
+    # ==========================================
+    # TAB PANEL: EXECUTION RUNS (Phase 3.7C local builder)
+    # ==========================================
+    html_out.append(f"""
+            <div class="tab-panel {'active' if active_tab == 'execution_runs' else ''}">
+                <h3>Execution Runs</h3>
+                <p style="font-size:12px; color:#94a3b8; margin-bottom:16px;">
+                    <strong>Read-only.</strong> Recent local-builder run artifacts from
+                    <code>runtime/dispatch/runs/</code>. This page does not execute,
+                    retry, approve, merge, push, or deploy anything.
+                </p>
+    """)
+
+    if execution_run_errors:
+        html_out.append(
+            '<div class="event-type-warn">Run artifact warnings: '
+            + escape("; ".join(execution_run_errors[:5]))
+            + (" ..." if len(execution_run_errors) > 5 else "")
+            + "</div>"
+        )
+
+    if execution_runs:
+        html_out.append("""
+                <table class="tools-table">
+                    <thead>
+                        <tr>
+                            <th>Run</th>
+                            <th>Task / Adapter</th>
+                            <th>Route</th>
+                            <th>Status</th>
+                            <th>Timestamps</th>
+                            <th>Worktree</th>
+                            <th>Verification</th>
+                            <th>Blocked Reasons</th>
+                            <th>Handoff</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        """)
+        for run in execution_runs:
+            blocked = run.get("blocked_reasons") or []
+            blocked_text = "; ".join(str(reason) for reason in blocked) if blocked else "-"
+            status = str(run.get("status") or "unknown")
+            status_color = "#94a3b8"
+            if status == "completed_verified":
+                status_color = "#34d399"
+            elif status in {"completed_unverified", "blocked", "failed", "timed_out", "scope_violation"}:
+                status_color = "#f87171"
+            verification_status = str(run.get("verification_status") or "not_recorded")
+            verification_color = "#94a3b8"
+            if verification_status == "passed":
+                verification_color = "#34d399"
+            elif verification_status in {"failed", "timed_out", "parse_error"}:
+                verification_color = "#f87171"
+            run_warnings = run.get("errors") or []
+            warning_html = ""
+            if run_warnings:
+                warning_html = (
+                    '<br/><span style="font-size:10px; color:#fbbf24;">'
+                    + escape("; ".join(str(err) for err in run_warnings[:2]))
+                    + "</span>"
+                )
+            html_out.append(f"""
+                        <tr>
+                            <td><b>{escape(run.get('run_id') or '-')}</b><br/><code style="font-size:10px; color:#64748b;">{escape(run.get('run_dir') or '')}</code>{warning_html}</td>
+                            <td>{escape(run.get('task_id') or '-')}<br/><code style="font-size:10px; color:#94a3b8;">{escape(run.get('adapter_id') or '-')}</code></td>
+                            <td><code style="font-size:10px;">{escape(run.get('route') or '-')}</code></td>
+                            <td><span style="color:{status_color}; font-weight:700;">{escape(status)}</span></td>
+                            <td style="font-size:11px; color:#cbd5e1;">Start: {escape(run.get('started_at') or '-')}<br/>Finish: {escape(run.get('finished_at') or '-')}</td>
+                            <td><code style="font-size:10px; word-break:break-all;">{escape(run.get('worktree_path') or '-')}</code></td>
+                            <td><span style="color:{verification_color}; font-weight:700;">{escape(verification_status)}</span></td>
+                            <td style="font-size:11px; color:#fca5a5;">{escape(blocked_text)}</td>
+                            <td><code style="font-size:10px; word-break:break-all;">{escape(run.get('handoff_path') or '-')}</code></td>
+                        </tr>
+            """)
+        html_out.append("""
+                    </tbody>
+                </table>
+        """)
+    else:
+        html_out.append("""
+                <div style="color:#475569; padding:40px 0; text-align:center; font-style:italic; border:1px dashed rgba(255,255,255,0.05); border-radius:8px;">
+                    No local-builder runs found under <code>runtime/dispatch/runs/</code>.
+                </div>
+        """)
+
     html_out.append("""
             </div>
     """)

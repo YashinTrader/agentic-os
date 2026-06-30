@@ -16,6 +16,7 @@ from dashboard.app import (
     load_handoffs,
     load_adrs,
     get_health_metrics,
+    load_execution_runs,
     append_note_event,
     update_task_file,
     create_task_file,
@@ -120,6 +121,69 @@ class TestDashboardParsing(unittest.TestCase):
         self.assertEqual(metrics["last_event_ts"], "2026-05-23T09:00:00Z")
         self.assertEqual(metrics["tasks_state"], "ok")
         self.assertEqual(metrics["events_state"], "ok")
+
+    def test_load_execution_runs_tolerates_missing_runtime(self) -> None:
+        runs, errors = load_execution_runs(self.root)
+        self.assertEqual(runs, [])
+        self.assertEqual(errors, [])
+
+    def test_load_execution_runs_parses_required_metadata(self) -> None:
+        run_dir = self.root / "runtime" / "dispatch" / "runs" / "build-test"
+        run_dir.mkdir(parents=True, exist_ok=True)
+        (run_dir / "result.json").write_text(
+            json.dumps(
+                {
+                    "run_id": "build-test",
+                    "task_id": "T-TEST",
+                    "adapter_id": "codex-restricted",
+                    "route": "codex_local_builder",
+                    "status": "completed_verified",
+                    "started_at": "2026-06-30T12:00:00Z",
+                    "finished_at": "2026-06-30T12:05:00Z",
+                    "worktree_path": "C:/tmp/worktree",
+                    "handoff_path": "C:/tmp/worktree/handoffs/T-TEST__codex__to__claude.md",
+                    "blocked_reasons": [],
+                }
+            ),
+            encoding="utf-8",
+        )
+        (run_dir / "verification_results.json").write_text(
+            json.dumps(
+                {
+                    "commands": [
+                        {
+                            "command": "python scripts/validate.py",
+                            "exit_code": 0,
+                            "timed_out": False,
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        runs, errors = load_execution_runs(self.root)
+        self.assertEqual(errors, [])
+        self.assertEqual(len(runs), 1)
+        self.assertEqual(runs[0]["task_id"], "T-TEST")
+        self.assertEqual(runs[0]["adapter_id"], "codex-restricted")
+        self.assertEqual(runs[0]["route"], "codex_local_builder")
+        self.assertEqual(runs[0]["status"], "completed_verified")
+        self.assertEqual(runs[0]["verification_status"], "passed")
+        self.assertEqual(runs[0]["blocked_reasons"], [])
+        self.assertEqual(runs[0]["handoff_path"], "C:/tmp/worktree/handoffs/T-TEST__codex__to__claude.md")
+
+    def test_load_execution_runs_reports_malformed_result(self) -> None:
+        run_dir = self.root / "runtime" / "dispatch" / "runs" / "bad-run"
+        run_dir.mkdir(parents=True, exist_ok=True)
+        (run_dir / "result.json").write_text("{not-json", encoding="utf-8")
+
+        runs, errors = load_execution_runs(self.root)
+        self.assertEqual(len(runs), 1)
+        self.assertEqual(runs[0]["run_id"], "bad-run")
+        self.assertEqual(runs[0]["status"], "unknown")
+        self.assertTrue(errors)
+        self.assertTrue(runs[0]["errors"])
 
     def test_append_note_event(self) -> None:
         append_note_event(self.root, "human", "T-TEST", "This is a test comment")
