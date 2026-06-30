@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -9,20 +11,19 @@ from typing import Any
 
 from dispatch.agent_context_bundle import bundle_root, compute_bundle_hash
 from dispatch.agent_environment import environment_preview
-from dispatch.path_containment import path_is_inside
 from dispatch.worktree_allocator import evaluate_allocation_for_execution
 
 CODEX_EXECUTABLE = "codex"
 CODEX_MINIMUM_VERSION = "0.136.0"
 CODEX_ALLOWED_SUBCOMMAND = "exec"
 CODEX_SANDBOX_MODE = "workspace-write"
+CODEX_OUTPUT_FLAG = "-o"
+CODEX_PROMPT_MODE = "positional_trailing"
 
 FORBIDDEN_FLAGS = frozenset(
     {
         "--dangerously-bypass-approvals-and-sandbox",
         "--dangerously-bypass-hook-trust",
-        "-s",
-        "--sandbox",
     }
 )
 
@@ -41,6 +42,7 @@ class CodexCommandPlan:
     blocked_reasons: list[str] = field(default_factory=list)
     context_bundle_dir: str = ""
     context_bundle_hash: str = ""
+    prompt: str = ""
 
 
 def parse_semver(version_text: str) -> tuple[int, int, int] | None:
@@ -75,7 +77,7 @@ def _validate_adapter_contract(adapter: dict[str, Any]) -> list[str]:
     if adapter.get("id") != "codex-restricted":
         blocked.append("adapter id must be codex-restricted")
     if adapter.get("supports_execution"):
-        blocked.append("codex-restricted must remain supports_execution=false in Phase 3.5")
+        blocked.append("codex-restricted must remain supports_execution=false")
     if adapter.get("promotion_state") != "restricted_candidate":
         blocked.append("promotion_state must be restricted_candidate")
     if adapter.get("approval_level") != "human":
@@ -87,6 +89,107 @@ def _validate_adapter_contract(adapter: dict[str, Any]) -> list[str]:
     if not adapter.get("secrets_required"):
         blocked.append("secrets_required must be true")
     return blocked
+
+
+def build_codex_exec_options(
+    adapter: dict[str, Any],
+    *,
+    worktree_path: str,
+    agent_output_path: str,
+) -> list[str]:
+    """Validated option tokens before positional prompt (no prompt)."""
+    return [
+        CODEX_ALLOWED_SUBCOMMAND,
+        "-C",
+        str(worktree_path),
+        "-s",
+        CODEX_SANDBOX_MODE,
+        "--json",
+        CODEX_OUTPUT_FLAG,
+        agent_output_path,
+    ]
+
+
+def append_codex_prompt(argv: list[str], prompt: str) -> list[str]:
+    """Append positional prompt; never overwrite flag values."""
+    if not prompt or not str(prompt).strip():
+        raise ValueError("prompt must be non-empty")
+    return [*argv, prompt]
+
+
+def validate_codex_argv_contract(
+    argv: list[str],
+    *,
+    executable: str = CODEX_EXECUTABLE,
+    agent_output_path: str,
+    prompt: str,
+) -> list[str]:
+    """Pure contract validation for codex exec argv shape."""
+    blocked: list[str] = []
+    if not argv:
+        return ["argv must not be empty"]
+    if argv[0] != executable:
+        blocked.append(f"argv[0] must be {executable!r}")
+    if CODEX_ALLOWED_SUBCOMMAND not in argv:
+        blocked.append("missing exec subcommand")
+
+    o_indices = [i for i, token in enumerate(argv) if token == CODEX_OUTPUT_FLAG]
+    if len(o_indices) != 1:
+        blocked.append(f"-o must appear exactly once; found {len(o_indices)}")
+    else:
+        o_idx = o_indices[0]
+        if o_idx + 1 >= len(argv):
+            blocked.append("missing value after -o")
+        elif argv[o_idx + 1] != agent_output_path:
+            blocked.append("token after -o must be agent output path")
+        elif argv[o_idx + 1] == prompt:
+            blocked.append("output path must not equal prompt")
+
+    if prompt not in argv:
+        blocked.append("prompt must appear in argv")
+    elif argv.count(prompt) != 1:
+        blocked.append("prompt must appear exactly once")
+    elif argv[-1] != prompt:
+        blocked.append("prompt must be trailing positional argument")
+
+    for forbidden in FORBIDDEN_FLAGS:
+        if forbidden in argv:
+            blocked.append(f"forbidden flag present: {forbidden}")
+
+    allowed_flags = {
+        CODEX_ALLOWED_SUBCOMMAND,
+        "-C",
+        "-s",
+        "--json",
+        CODEX_OUTPUT_FLAG,
+    }
+    i = 1
+    while i < len(argv):
+        token = argv[i]
+        if token == prompt:
+            break
+        if token.startswith("-") and token not in allowed_flags:
+            blocked.append(f"unknown or unsupported option: {token}")
+            break
+        if token in allowed_flags and token not in {CODEX_ALLOWED_SUBCOMMAND, "--json"}:
+            i += 2
+            continue
+        i += 1
+
+    return blocked
+
+
+def compute_command_contract_hash() -> str:
+    """Hash of the canonical argv template (options only, no paths/prompt)."""
+    template = {
+        "executable": CODEX_EXECUTABLE,
+        "subcommand": CODEX_ALLOWED_SUBCOMMAND,
+        "options": ["-C", "-s", CODEX_SANDBOX_MODE, "--json", CODEX_OUTPUT_FLAG],
+        "prompt_mode": CODEX_PROMPT_MODE,
+        "output_flag": CODEX_OUTPUT_FLAG,
+    }
+    payload = json.dumps(template, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def build_codex_command(
@@ -104,6 +207,7 @@ def build_codex_command(
     task_id: str = "",
     base_sha: str = "",
     scope_paths: list[str] | None = None,
+    prompt: str | None = None,
 ) -> CodexCommandPlan:
     """Construct argv-only Codex exec invocation; does not execute."""
     blocked = _validate_adapter_contract(adapter)
@@ -113,7 +217,9 @@ def build_codex_command(
     if not worktree.exists():
         blocked.append(f"worktree path does not exist: {worktree}")
 
-    if cli_version is not None and not version_at_least(cli_version, str(adapter.get("minimum_version", CODEX_MINIMUM_VERSION))):
+    if cli_version is not None and not version_at_least(
+        cli_version, str(adapter.get("minimum_version", CODEX_MINIMUM_VERSION))
+    ):
         blocked.append(
             f"installed Codex version {cli_version!r} below minimum "
             f"{adapter.get('minimum_version', CODEX_MINIMUM_VERSION)!r}"
@@ -146,46 +252,36 @@ def build_codex_command(
     env_preview = environment_preview(adapter)
     blocked.extend(env_preview.get("blocked_reasons") or [])
 
-    allowed_flags = set(adapter.get("allowed_flags") or [])
-    required_argv_tail = [
-        CODEX_ALLOWED_SUBCOMMAND,
-        "-C",
-        str(worktree),
-        "-s",
-        CODEX_SANDBOX_MODE,
-        "--json",
-        "-o",
-        agent_output_path,
-    ]
-    for token in required_argv_tail:
-        if token.startswith("-") and token not in allowed_flags and token not in {"exec", CODEX_ALLOWED_SUBCOMMAND}:
-            # exec subcommand and paths are structural, not free-form flags
-            if token in FORBIDDEN_FLAGS:
-                blocked.append(f"forbidden flag requested: {token}")
-
     for forbidden in adapter.get("forbidden_flags") or []:
-        if forbidden in required_argv_tail:
+        if forbidden in FORBIDDEN_FLAGS:
             blocked.append(f"adapter forbids required structural token: {forbidden}")
 
     if timeout_seconds <= 0 or timeout_seconds > int(adapter.get("maximum_timeout_seconds", 3600)):
         blocked.append("timeout out of adapter bounds")
 
-    argv = [
-        str(adapter.get("executable", CODEX_EXECUTABLE)),
-        CODEX_ALLOWED_SUBCOMMAND,
-        "-C",
-        str(worktree),
-        "-s",
-        CODEX_SANDBOX_MODE,
-        "--json",
-        "-o",
-        agent_output_path,
-    ]
-
-    prompt_arg = f"Follow instructions in {instructions}"
+    prompt_arg = prompt if prompt is not None else f"Follow instructions in {instructions}"
     if len(prompt_arg) > 4000:
         blocked.append("constructed prompt exceeds size bound")
-    argv[-1] = prompt_arg
+
+    argv = append_codex_prompt(
+        [
+            str(adapter.get("executable", CODEX_EXECUTABLE)),
+            *build_codex_exec_options(
+                adapter,
+                worktree_path=str(worktree),
+                agent_output_path=agent_output_path,
+            ),
+        ],
+        prompt_arg,
+    )
+    blocked.extend(
+        validate_codex_argv_contract(
+            argv,
+            executable=str(adapter.get("executable", CODEX_EXECUTABLE)),
+            agent_output_path=agent_output_path,
+            prompt=prompt_arg,
+        )
+    )
 
     expected = {
         "stdout_path": stdout_path,
@@ -202,6 +298,7 @@ def build_codex_command(
         blocked_reasons=blocked,
         context_bundle_dir=str(bundle_dir),
         context_bundle_hash=bundle_hash,
+        prompt=prompt_arg,
     )
 
 
@@ -222,7 +319,9 @@ def evaluate_codex_preview_gate(
     for token in DANGEROUS_SANDBOX_VALUES:
         if token in command:
             blocked.append(f"dangerous sandbox mode in preview: {token}")
-    if cli_version is not None and not version_at_least(cli_version, str(adapter.get("minimum_version", CODEX_MINIMUM_VERSION))):
+    if cli_version is not None and not version_at_least(
+        cli_version, str(adapter.get("minimum_version", CODEX_MINIMUM_VERSION))
+    ):
         blocked.append("installed Codex CLI below minimum supported version")
     if adapter.get("supports_execution"):
         blocked.append("supports_execution must remain false until separate activation")

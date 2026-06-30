@@ -1,0 +1,13 @@
+Execute a non-interactive Codex task.
+
+Usage: codex exec [OPTIONS] [PROMPT]
+
+Options:
+  -C, --cd <DIR>                 Working directory for the agent
+  -s, --sandbox <MODE>           Sandbox mode (workspace-write, read-only, ...)
+      --json                     Emit JSONL events
+  -o, --output-last-message <FILE>
+                                 Write the agent's final message to a file
+  -h, --help                     Print help
+
+PROMPT is passed as a trailing positional argument when provided.

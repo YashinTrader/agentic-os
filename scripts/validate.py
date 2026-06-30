@@ -901,6 +901,7 @@ def validate_adapter_registry(errors: list[str]) -> None:
         errors.append(f"{rel}: at least one active adapter is required for Phase 3.0 preview")
 
     validate_phase35_adapter_boundaries(errors, adapters)
+    validate_phase36_codex_activation_readiness(errors)
 
 
 PROMOTION_EXECUTION_STATES = {
@@ -982,6 +983,80 @@ def validate_phase35_adapter_boundaries(errors: list[str], adapters: list[Any]) 
         errors.append("agents/codex_restricted_adapter.yaml: supports_execution must be false")
     if dedicated.get("id") != "codex-restricted":
         errors.append("agents/codex_restricted_adapter.yaml: id must be codex-restricted")
+
+
+def validate_phase36_codex_activation_readiness(errors: list[str]) -> None:
+    """Phase 3.6: MA1 command contract, activation package, canary refusal boundary."""
+    if not (ROOT / "dispatch" / "codex_activation.py").is_file():
+        return
+    from dispatch.codex_adapter import (
+        append_codex_prompt,
+        build_codex_exec_options,
+        compute_command_contract_hash,
+        load_codex_restricted_adapter,
+        validate_codex_argv_contract,
+        CODEX_EXECUTABLE,
+    )
+    from dispatch.codex_canary_contract import compute_canary_contract_hash
+
+    required_docs = (
+        "docs/PHASE_3_6_CODEX_ACTIVATION_READINESS.md",
+        "docs/PHASE_3_6_CODEX_COMMAND_CONTRACT.md",
+        "docs/PHASE_3_6_CODEX_CANARY_RUNBOOK.md",
+        "docs/PHASE_3_6_CODEX_ROLLBACK.md",
+        "docs/PHASE_3_6_HUMAN_APPROVAL_CHECKLIST.md",
+    )
+    for rel in required_docs:
+        if not (ROOT / rel).exists():
+            errors.append(f"Phase 3.6: missing document {rel}")
+
+    for rel in (
+        "schemas/codex_activation_manifest.schema.json",
+        "schemas/codex_canary_record.schema.json",
+        "dispatch/codex_activation.py",
+        "dispatch/codex_canary_contract.py",
+        "dispatch/codex_cli_compatibility.py",
+        "dispatch/codex_canary_gates.py",
+        "scripts/validate_codex_activation.py",
+        "scripts/prepare_codex_canary.py",
+    ):
+        if not (ROOT / rel).exists():
+            errors.append(f"Phase 3.6: missing artifact {rel}")
+
+    try:
+        adapter = load_codex_restricted_adapter(ROOT)
+    except (OSError, ValueError) as exc:
+        errors.append(f"Phase 3.6: codex adapter config unavailable: {exc}")
+        return
+
+    if adapter.get("supports_execution"):
+        errors.append("Phase 3.6: codex-restricted supports_execution must remain false")
+
+    sample_argv = append_codex_prompt(
+        [
+            CODEX_EXECUTABLE,
+            *build_codex_exec_options(adapter, worktree_path="/wt", agent_output_path="/out/msg.txt"),
+        ],
+        "contract validation prompt",
+    )
+    contract_blocked = validate_codex_argv_contract(
+        sample_argv,
+        agent_output_path="/out/msg.txt",
+        prompt="contract validation prompt",
+    )
+    if contract_blocked:
+        errors.append(f"Phase 3.6: codex argv contract failed: {contract_blocked}")
+
+    if not compute_command_contract_hash() or not compute_canary_contract_hash():
+        errors.append("Phase 3.6: contract hashes must be non-empty")
+
+    canary_script = ROOT / "scripts" / "run_codex_canary.py"
+    if canary_script.is_file():
+        canary_source = canary_script.read_text(encoding="utf-8")
+        if "codex_subprocess_invoked" not in canary_source:
+            errors.append("Phase 3.6: run_codex_canary.py must refuse before Codex subprocess")
+        if "return 3" not in canary_source:
+            errors.append("Phase 3.6: run_codex_canary.py must exit refused")
 
 
 def validate_skill_mcp_references(errors: list[str]) -> None:
