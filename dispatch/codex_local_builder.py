@@ -85,19 +85,46 @@ def _git_porcelain_status(worktree: Path) -> str:
     return out if code == 0 else ""
 
 
+def _unquote_git_path(path_part: str) -> str:
+    path_part = path_part.strip()
+    if len(path_part) >= 2 and path_part[0] == '"' and path_part[-1] == '"':
+        return path_part[1:-1].replace('\\"', '"')
+    return path_part
+
+
+def _parse_porcelain_changed_path(line: str) -> str | None:
+    """Extract the normalized repo-relative path from one `git status --porcelain` line."""
+    if not line:
+        return None
+    # Porcelain v1: "XY PATH" or "?? PATH" — never strip the full line first (leading space is status).
+    if line.startswith("??"):
+        path_part = line[2:].lstrip()
+    elif len(line) >= 4 and line[2] == " ":
+        path_part = line[3:].strip()
+    else:
+        return None
+
+    if not path_part:
+        return None
+
+    if " -> " in path_part:
+        _src, _sep, dest = path_part.partition(" -> ")
+        path_part = _unquote_git_path(dest)
+    else:
+        path_part = _unquote_git_path(path_part)
+
+    return path_part.replace("\\", "/")
+
+
 def _git_changed_files(worktree: Path) -> list[str]:
     code, out, _ = run_git(worktree, ["status", "--porcelain"])
     if code != 0:
         return []
     files: list[str] = []
     for raw_line in out.splitlines():
-        # Porcelain format is "XY path" — do not strip the line first (leading space is status).
-        if len(raw_line) < 4:
-            continue
-        path_part = raw_line[3:].strip()
-        if " -> " in path_part:
-            path_part = path_part.split(" -> ", 1)[1].strip()
-        files.append(path_part.replace("\\", "/"))
+        parsed = _parse_porcelain_changed_path(raw_line)
+        if parsed:
+            files.append(parsed)
     return sorted(set(files))
 
 
