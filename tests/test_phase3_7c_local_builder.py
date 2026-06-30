@@ -34,6 +34,7 @@ from dispatch.execution_route_policy import (  # noqa: E402
 )
 from dispatch.codex_adapter import load_codex_restricted_adapter  # noqa: E402
 from dispatch.execution_gate import evaluate_execution_gates  # noqa: E402
+from dispatch.agent_environment import codex_authentication_available, environment_preview  # noqa: E402
 from dispatch.local_builder_runs import list_run_summaries  # noqa: E402
 
 
@@ -233,6 +234,16 @@ class RunListingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             self.assertEqual(list_run_summaries(root), [])
+
+
+class CodexAuthTests(unittest.TestCase):
+    def test_chatgpt_session_auth_does_not_require_openai_api_key_env(self) -> None:
+        adapter = load_codex_restricted_adapter(REPO_ROOT)
+        auth_ok, _ = codex_authentication_available()
+        if not auth_ok:
+            self.skipTest("Codex authentication not available in this environment")
+        preview = environment_preview(adapter)
+        self.assertEqual(preview.get("blocked_reasons"), [])
 
 
 class AdapterConfigTests(unittest.TestCase):

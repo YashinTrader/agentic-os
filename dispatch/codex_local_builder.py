@@ -14,7 +14,12 @@ from pathlib import Path
 from typing import Any, Callable
 
 from dispatch.agent_context_bundle import build_context_bundle
-from dispatch.agent_environment import build_minimal_environment, merge_allowlists
+from dispatch.agent_environment import (
+    augment_codex_cli_environment,
+    build_minimal_environment,
+    codex_authentication_available,
+    merge_allowlists,
+)
 from dispatch.codex_adapter import build_codex_command, load_codex_restricted_adapter
 from dispatch.codex_local_builder_gate import (
     evaluate_changed_paths_scope,
@@ -315,7 +320,13 @@ def run_local_builder(
     allow = merge_allowlists(adapter.get("environment_allowlist"))
     deny = frozenset(adapter.get("environment_denylist") or [])
     env, env_names = build_minimal_environment(allowlist=allow, denylist=deny)
-    (run_dir / "environment_names.json").write_text(json.dumps(env_names, indent=2), encoding="utf-8")
+    auth_ok, auth_source = codex_authentication_available()
+    if auth_ok:
+        env, env_names = augment_codex_cli_environment(env)
+    (run_dir / "environment_names.json").write_text(
+        json.dumps({"names": env_names, "authentication_source": auth_source}, indent=2),
+        encoding="utf-8",
+    )
 
     exit_code: int | None = None
     timed_out = False
