@@ -97,6 +97,28 @@ working_copy_path: <absolute canonical clone path>
 
 `scripts/validate.py` performs offline structural checks. `scripts/verify_repository_verification.py` performs Git-backed checks (ancestor, post-test diff, HEAD equality), cross-checks `runtime/unittest_last_run.txt`, and **re-runs** `scripts/validate.py` at actual HEAD (`sys.executable`, `shell=False`). Status values: `verified`, `structurally_valid`, `failed`.
 
+### Builder / reviewer definition of done (mandatory)
+
+Before reporting a v2 handoff task **complete** or pushing a closeout branch:
+
+1. Regenerate `runtime/unittest_last_run.txt` with `python scripts/run_tests.py` at `tests_commit_sha` (single-threaded full suite, exit 0).
+2. Rewrite `## Repository Verification` using `python scripts/handoff_verification_block.py` (full 40-character hex SHAs only).
+3. Register the handoff path in `POST_TEST_ALLOWLIST_EXACT` (`scripts/repository_verification.py`) **before** post-test handoff edits.
+4. Run the closeout gate — **both must pass** (do not push otherwise):
+
+```bash
+python scripts/handoff_closeout_gate.py handoffs/<task>__<from>__to__<to>.md
+```
+
+Equivalent manual checks:
+
+```bash
+python scripts/verify_repository_verification.py handoffs/<task>__<from>__to__<to>.md
+python scripts/validate.py
+```
+
+A handoff is **not complete** when `Status: failed` or `validate.py` exits non-zero.
+
 When self-reference prevents embedding `final_head_sha` literally inside the commit that creates the handoff, use `final_head_ref: branch HEAD` in prose and record `artifact_parent_sha` as the tested implementation commit; run `git rev-parse HEAD` after push for authoritative SHAs.
 
 **Future:** Git notes or CI attestations can attach test results to a final commit without changing that commit's tree hash. Not implemented in Phase 3.3.2.
