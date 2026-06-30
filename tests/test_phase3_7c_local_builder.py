@@ -21,6 +21,7 @@ from dispatch.codex_local_builder import (  # noqa: E402
     RESULT_BLOCKED,
     RESULT_COMPLETED_UNVERIFIED,
     RESULT_COMPLETED_VERIFIED,
+    _git_changed_files,
     run_local_builder,
 )
 from dispatch.codex_local_builder_gate import task_execution_mode  # noqa: E402
@@ -227,6 +228,23 @@ class WorkerTests(LocalBuilderFixtureMixin, unittest.TestCase):
         self.assertEqual(completed.returncode, 0)
         report = json.loads(completed.stdout)
         self.assertIn(report["status"], {"processed", "idle", "skipped"})
+
+
+class GitPorcelainParsingTests(LocalBuilderFixtureMixin, unittest.TestCase):
+    def test_changed_files_preserves_path_prefix_after_modified_status(self) -> None:
+        test_file = self.root / "dashboard" / "app.py"
+        test_file.parent.mkdir(parents=True, exist_ok=True)
+        test_file.write_text("# original\n", encoding="utf-8")
+        subprocess.run(["git", "add", "dashboard/app.py"], cwd=self.root, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", "add dashboard"],
+            cwd=self.root,
+            check=True,
+            capture_output=True,
+        )
+        test_file.write_text("# modified\n", encoding="utf-8")
+        changed = _git_changed_files(self.root)
+        self.assertIn("dashboard/app.py", changed)
 
 
 class RunListingTests(unittest.TestCase):

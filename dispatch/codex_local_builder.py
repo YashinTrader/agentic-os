@@ -90,11 +90,11 @@ def _git_changed_files(worktree: Path) -> list[str]:
     if code != 0:
         return []
     files: list[str] = []
-    for line in out.splitlines():
-        line = line.strip()
-        if len(line) < 4:
+    for raw_line in out.splitlines():
+        # Porcelain format is "XY path" — do not strip the line first (leading space is status).
+        if len(raw_line) < 4:
             continue
-        path_part = line[3:].strip()
+        path_part = raw_line[3:].strip()
         if " -> " in path_part:
             path_part = path_part.split(" -> ", 1)[1].strip()
         files.append(path_part.replace("\\", "/"))
