@@ -7,7 +7,7 @@
 
 ## What I Did
 
-- Created branch `agent/composer/T-PHASE3-7C-DASH-RUNS-INTEGRATION` from base `177b9a3` (porcelain parser fix verified present).
+- Created branch `agent/composer/T-PHASE3-7C-DASH-RUNS-INTEGRATION` from base `177b9a3` (porcelain parser fix verified present). Dashboard feature commit: `54a86e1`.
 - Integrated Codex autonomous build output into canonical repo:
   - `dashboard/app.py`: `load_execution_runs`, `_load_json_object`, `_infer_run_task_id`, `_summarize_verification_status`, Execution Runs tab panel.
   - `dashboard/README.md`: documents Execution Runs page and "No Execution Controls" boundary.
@@ -89,7 +89,7 @@ Codex handoff recorded exit 1 from `python scripts/run_tests.py` due to:
 repo_root: C:/Users/gabot/agentic-os
 branch: agent/composer/T-PHASE3-7C-DASH-RUNS-INTEGRATION
 base_sha: 177b9a350608f5b45aa496e1be14db468c76c72b
-implementation_sha: 54a86e112dfcdacabfa9f504cbf66818ee0aa43c
+implementation_sha: 22ab8292cb9e3bf37bcc09526c7127423701f7cb
 tests_commit_sha: 22ab8292cb9e3bf37bcc09526c7127423701f7cb
 final_head_sha: c9d3e034decc0eb8cb629826cf59f4c01eab47c6
 remote_head_sha: c9d3e034decc0eb8cb629826cf59f4c01eab47c6
