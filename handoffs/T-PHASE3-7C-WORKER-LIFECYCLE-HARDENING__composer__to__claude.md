@@ -24,6 +24,15 @@
 - Unknown statuses are rejected (not in eligible set).
 - No changes to execution_route_policy, execution_gate, or activation gating.
 
+## Open Questions
+
+- Should stale claim files under `runtime/dispatch/local_builder_claims/` be auto-expired in a follow-up task?
+
+## Risks / Caveats
+
+- Stale claim files still count toward `maximum_concurrent_runs` (unchanged behavior); worker may exit `skipped` instead of `idle` when claims exist.
+- Prior-run detection is fail-closed: any historical `result.json` with matching `task_id` blocks re-selection even if the task returns to `ready`.
+
 ## How to Verify My Work
 
 ```bash
