@@ -905,6 +905,7 @@ def validate_adapter_registry(errors: list[str]) -> None:
     validate_phase37a_codex_canary_activation(errors)
     validate_phase37a1_executor_bypass(errors)
     validate_phase37c_local_builder(errors)
+    validate_phase38_composer_integration(errors)
 
 
 PROMOTION_EXECUTION_STATES = {
@@ -1315,8 +1316,74 @@ def validate_phase37c_local_builder(errors: list[str]) -> None:
     builder_source = (ROOT / "scripts" / "run_codex_builder.py").read_text(encoding="utf-8")
     if "approval_signing" in builder_source or "try_claim_approval" in builder_source:
         errors.append("Phase 3.7C: run_codex_builder.py must not use approval signing or replay")
-    if "subprocess.run" not in (ROOT / "dispatch" / "codex_local_builder.py").read_text(encoding="utf-8"):
-        errors.append("Phase 3.7C: codex_local_builder must invoke subprocess.run for Codex")
+    core_path = ROOT / "dispatch" / "local_builder_core.py"
+    builder_path = ROOT / "dispatch" / "codex_local_builder.py"
+    subprocess_ok = (
+        core_path.is_file() and "subprocess.run" in core_path.read_text(encoding="utf-8")
+    ) or "subprocess.run" in builder_path.read_text(encoding="utf-8")
+    if not subprocess_ok:
+        errors.append("Phase 3.7C: local builder core must invoke subprocess.run for agent CLI")
+
+
+def validate_phase38_composer_integration(errors: list[str]) -> None:
+    """Phase 3.8: Composer preview scaffolding — route, adapter, assignment channel."""
+    required = (
+        "decisions/ADR-0043-composer-grok-build-integration.md",
+        "agents/composer_restricted_adapter.yaml",
+        "dispatch/composer_adapter.py",
+        "dispatch/assignment_channel.py",
+        "dispatch/local_builder_core.py",
+        "docs/COMPOSER_LOCAL_BUILDER_PREVIEW.md",
+        "tests/test_phase3_8_composer_integration.py",
+        "tests/test_assignment_channel.py",
+    )
+    for rel in required:
+        if not (ROOT / rel).exists():
+            errors.append(f"Phase 3.8: missing artifact {rel}")
+
+    from dispatch.composer_adapter import (
+        load_composer_restricted_adapter,
+        validate_composer_preview_contract,
+    )
+    from dispatch.execution_route_policy import (
+        ROUTE_COMPOSER_LOCAL_BUILDER,
+        evaluate_execution_route,
+        validate_adapter_route_policy,
+    )
+
+    try:
+        composer = load_composer_restricted_adapter(ROOT)
+    except (OSError, ValueError) as exc:
+        errors.append(f"Phase 3.8: composer adapter unavailable: {exc}")
+        return
+
+    errors.extend(validate_composer_preview_contract(composer))
+    errors.extend(validate_adapter_route_policy(composer))
+    route = evaluate_execution_route(composer, ROUTE_COMPOSER_LOCAL_BUILDER)
+    if not route.allowed:
+        errors.append(f"Phase 3.8: composer_local_builder route blocked: {route.reasons}")
+
+    try:
+        registry = yaml.safe_load((ROOT / "agents" / "adapter_registry.yaml").read_text(encoding="utf-8"))
+        entry = next(a for a in registry["adapters"] if a["id"] == "composer-restricted")
+    except Exception as exc:
+        errors.append(f"Phase 3.8: composer-restricted registry entry missing: {exc}")
+        return
+
+    if entry.get("supports_execution"):
+        errors.append("Phase 3.8: composer-restricted registry supports_execution must be false")
+    errors.extend(validate_adapter_route_policy(entry))
+
+    policy_path = ROOT / "config" / "execution-policy.yaml"
+    if policy_path.is_file():
+        policy = yaml.safe_load(policy_path.read_text(encoding="utf-8"))
+        enabled = policy.get("enabled_adapters") or []
+        if "composer-restricted" in enabled:
+            errors.append("Phase 3.8: composer-restricted must not be in enabled_adapters yet")
+
+    policy_source = (ROOT / "dispatch" / "execution_route_policy.py").read_text(encoding="utf-8")
+    if "ROUTE_COMPOSER_LOCAL_BUILDER" not in policy_source:
+        errors.append("Phase 3.8: ROUTE_COMPOSER_LOCAL_BUILDER missing from execution_route_policy.py")
 
 
 def validate_skill_mcp_references(errors: list[str]) -> None:

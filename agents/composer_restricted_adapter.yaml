@@ -1,0 +1,78 @@
+schema_version: "1.0"
+updated_at: 2026-07-01T12:00:00Z
+id: composer-restricted
+display_name: Composer 2.5 restricted adapter (Grok Build — preview scaffolding)
+adapter_type: agent_cli
+provider: xai
+executable: composer
+agent_id: composer
+status: preview
+promotion_state: restricted_candidate
+command_template: "composer agent run --task-id {task_id} --worktree {worktree_path} --output {agent_output_path}"
+allowed_commands:
+  - composer
+required_clis:
+  - composer
+minimum_version: "0.0.0"
+active: true
+supports_preview: true
+supports_dry_run: true
+supports_execution: false
+execution_scope: local_worktree
+dedicated_runner_required: true
+required_execution_route: composer_local_builder
+maximum_runs: 0
+automatic_disable_after_run: false
+live_run_authorized: false
+phase3_7b_authorization_required: false
+writes_files: true
+worktree_required: true
+network_required: false
+secrets_required: false
+mcp_required: false
+approval_level: none
+risk_level: high
+timeout_seconds: 1800
+maximum_timeout_seconds: 1800
+allowed_subcommands:
+  - agent
+allowed_flags:
+  - "--task-id"
+  - "--worktree"
+  - "--output"
+forbidden_flags:
+  - "--dangerously-bypass-approvals-and-sandbox"
+  - "--dangerously-bypass-hook-trust"
+  - "--dangerously-bypass-approvals"
+  - "--execute"
+  - "--force"
+environment_allowlist:
+  - PATH
+  - HOME
+  - USERPROFILE
+  - TEMP
+  - TMP
+  - SYSTEMROOT
+  - XAI_API_KEY
+  - GROK_API_KEY
+environment_denylist:
+  - AGENTIC_OS_HUMAN_APPROVAL_KEY
+  - AGENTIC_OS_REVIEWER_APPROVAL_KEY
+  - GITHUB_TOKEN
+  - SUPABASE_KEY
+output_format: json
+context_bundle_required: true
+handoff_required: true
+rollback_required: true
+working_directory_policy: worktree
+env_vars_required: []
+forbidden_args:
+  - "--dangerously-bypass-approvals-and-sandbox"
+  - "--dangerously-bypass-hook-trust"
+  - "--execute"
+  - "--force"
+supports_streaming: false
+notes: >
+  Preview-only Composer / Grok Build adapter. File-based assignment bridge (inbox/outbox)
+  enables Claude to assign tasks; live subprocess invocation is a follow-up after credential
+  approval. Generic dispatch remains blocked. Merge, push, and deploy are manual operator steps.

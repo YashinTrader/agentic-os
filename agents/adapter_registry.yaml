@@ -127,6 +127,49 @@ adapters:
     notes: >
       Autonomous local builder. Standing policy auto_local_worktree authorizes bounded
       Codex work in isolated worktrees. Generic dispatch blocked. See codex_restricted_adapter.yaml.
+  - id: composer-restricted
+    display_name: Composer 2.5 restricted adapter (Grok Build — preview scaffolding)
+    agent_id: composer
+    adapter_type: cli
+    status: planned
+    command_template: "composer agent run --task-id {task_id} --worktree {worktree_path} --output {agent_output_path}"
+    allowed_commands:
+      - composer
+    forbidden_args:
+      - "--dangerously-bypass-approvals-and-sandbox"
+      - "--dangerously-bypass-hook-trust"
+      - "--execute"
+      - "--force"
+    required_clis:
+      - composer
+    env_vars_required: []
+    secrets_required: false
+    timeout_seconds: 1800
+    working_directory_policy: worktree
+    supports_dry_run: true
+    supports_streaming: false
+    supports_execution: false
+    execution_scope: local_worktree
+    dedicated_runner_required: true
+    required_execution_route: composer_local_builder
+    maximum_runs: 0
+    automatic_disable_after_run: false
+    live_run_authorized: false
+    phase3_7b_authorization_required: false
+    writes_files: true
+    approval_level: none
+    risk_level: high
+    promotion_state: restricted_candidate
+    supports_preview: true
+    worktree_required: true
+    network_required: false
+    mcp_required: false
+    context_bundle_required: true
+    handoff_required: true
+    rollback_required: true
+    notes: >
+      Preview-only Composer adapter. File-based assignment bridge; live Grok execution
+      is a follow-up. See composer_restricted_adapter.yaml and ADR-0043.
   - id: claude-cli-preview
     display_name: Claude Code CLI (dry-run preview)
     agent_id: claude

@@ -8,10 +8,24 @@ from typing import Any, Literal
 ROUTE_GENERIC_DISPATCH = "generic_dispatch"
 ROUTE_CODEX_CANARY = "codex_canary"
 ROUTE_CODEX_LOCAL_BUILDER = "codex_local_builder"
+ROUTE_COMPOSER_LOCAL_BUILDER = "composer_local_builder"
 ROUTE_PREVIEW_ONLY = "preview_only"
 
+LOCAL_BUILDER_ROUTES = frozenset({ROUTE_CODEX_LOCAL_BUILDER, ROUTE_COMPOSER_LOCAL_BUILDER})
+
+ADAPTER_LOCAL_BUILDER_ROUTES: dict[str, str] = {
+    "codex-restricted": ROUTE_CODEX_LOCAL_BUILDER,
+    "composer-restricted": ROUTE_COMPOSER_LOCAL_BUILDER,
+}
+
 RECOGNIZED_EXECUTION_ROUTES = frozenset(
-    {ROUTE_GENERIC_DISPATCH, ROUTE_CODEX_CANARY, ROUTE_CODEX_LOCAL_BUILDER, ROUTE_PREVIEW_ONLY}
+    {
+        ROUTE_GENERIC_DISPATCH,
+        ROUTE_CODEX_CANARY,
+        ROUTE_CODEX_LOCAL_BUILDER,
+        ROUTE_COMPOSER_LOCAL_BUILDER,
+        ROUTE_PREVIEW_ONLY,
+    }
 )
 
 DEDICATED_CANARY_RUNNER_REASON = (
@@ -47,13 +61,24 @@ def required_execution_route_for_adapter(adapter: dict[str, Any]) -> str | None:
     explicit = str(adapter.get("required_execution_route", "")).strip()
     if explicit:
         return explicit
+    adapter_id = str(adapter.get("id", ""))
+    if adapter_id in ADAPTER_LOCAL_BUILDER_ROUTES:
+        return ADAPTER_LOCAL_BUILDER_ROUTES[adapter_id]
     scope = str(adapter.get("execution_scope", ""))
-    if adapter.get("id") == "codex-restricted":
+    if adapter_id == "codex-restricted":
         if scope == "local_worktree":
             return ROUTE_CODEX_LOCAL_BUILDER
         return ROUTE_CODEX_CANARY
     if adapter.get("execution_scope") == "canary_only":
         return ROUTE_CODEX_CANARY
+    return None
+
+
+def local_builder_route_for_adapter(adapter: dict[str, Any]) -> str | None:
+    """Return the dedicated local-builder route for a local_worktree adapter."""
+    required = required_execution_route_for_adapter(adapter)
+    if required in LOCAL_BUILDER_ROUTES:
+        return required
     return None
 
 
@@ -77,8 +102,16 @@ def validate_adapter_route_policy(adapter: dict[str, Any]) -> list[str]:
     if scope == "local_worktree":
         if not adapter.get("dedicated_runner_required"):
             blockers.append(f"{adapter_id}: local_worktree requires dedicated_runner_required=true")
-        if required != ROUTE_CODEX_LOCAL_BUILDER:
-            blockers.append(f"{adapter_id}: local_worktree requires required_execution_route=codex_local_builder")
+        if required not in LOCAL_BUILDER_ROUTES:
+            blockers.append(
+                f"{adapter_id}: local_worktree requires required_execution_route "
+                f"in {sorted(LOCAL_BUILDER_ROUTES)!r}"
+            )
+        expected = ADAPTER_LOCAL_BUILDER_ROUTES.get(adapter_id)
+        if expected and required != expected:
+            blockers.append(
+                f"{adapter_id}: local_worktree required_execution_route must be {expected!r}"
+            )
         if adapter.get("phase3_7b_authorization_required"):
             blockers.append(f"{adapter_id}: local_worktree must not require phase3_7b authorization")
 
@@ -90,14 +123,48 @@ def validate_adapter_route_policy(adapter: dict[str, Any]) -> list[str]:
         if max_runs != 1:
             blockers.append(f"{adapter_id}: canary_only maximum_runs must equal 1")
 
-    if adapter_id != "codex-restricted" and adapter.get("supports_execution"):
+    if adapter_id not in {"codex-restricted", "local-python-exec-test"} and adapter.get("supports_execution"):
         if adapter_requires_dedicated_runner(adapter):
-            blockers.append(f"{adapter_id}: only codex-restricted may be canary-capable with supports_execution")
+            blockers.append(
+                f"{adapter_id}: only codex-restricted may be canary-capable with supports_execution"
+            )
 
     if adapter_id == "local-python-exec-test" and scope == "canary_only":
         blockers.append("local-python-exec-test cannot be canary_only")
 
     return blockers
+
+
+def _evaluate_local_builder_route(
+    adapter: dict[str, Any],
+    requested_route: str,
+    *,
+    expected_adapter_id: str,
+) -> ExecutionRouteDecision:
+    reasons: list[str] = []
+    adapter_id = str(adapter.get("id", ""))
+    required = required_execution_route_for_adapter(adapter)
+
+    if adapter_id != expected_adapter_id:
+        reasons.append(f"route {requested_route} is not valid for adapter {adapter_id!r}")
+    if str(adapter.get("execution_scope", "")) != "local_worktree":
+        reasons.append(f"execution_scope must be local_worktree for {requested_route} route")
+    if required and required != requested_route:
+        reasons.append(f"adapter required_execution_route must be {requested_route} (got {required!r})")
+
+    if reasons:
+        return ExecutionRouteDecision(
+            allowed=False,
+            required_route=requested_route,
+            status="blocked",
+            reasons=reasons,
+        )
+    return ExecutionRouteDecision(
+        allowed=True,
+        required_route=requested_route,
+        status="allowed",
+        reasons=[],
+    )
 
 
 def evaluate_execution_route(
@@ -162,27 +229,13 @@ def evaluate_execution_route(
         )
 
     if requested_route == ROUTE_CODEX_LOCAL_BUILDER:
-        reasons_lb: list[str] = []
-        if adapter_id != "codex-restricted":
-            reasons_lb.append(f"route codex_local_builder is not valid for adapter {adapter_id!r}")
-        if str(adapter.get("execution_scope", "")) != "local_worktree":
-            reasons_lb.append("execution_scope must be local_worktree for codex_local_builder route")
-        if required and required != ROUTE_CODEX_LOCAL_BUILDER:
-            reasons_lb.append(
-                f"adapter required_execution_route must be codex_local_builder (got {required!r})"
-            )
-        if reasons_lb:
-            return ExecutionRouteDecision(
-                allowed=False,
-                required_route=ROUTE_CODEX_LOCAL_BUILDER,
-                status="blocked",
-                reasons=reasons_lb,
-            )
-        return ExecutionRouteDecision(
-            allowed=True,
-            required_route=ROUTE_CODEX_LOCAL_BUILDER,
-            status="allowed",
-            reasons=[],
+        return _evaluate_local_builder_route(
+            adapter, requested_route, expected_adapter_id="codex-restricted"
+        )
+
+    if requested_route == ROUTE_COMPOSER_LOCAL_BUILDER:
+        return _evaluate_local_builder_route(
+            adapter, requested_route, expected_adapter_id="composer-restricted"
         )
 
     return ExecutionRouteDecision(

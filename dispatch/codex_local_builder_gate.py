@@ -14,7 +14,11 @@ from dispatch.execution_policy import (
     policy_enabled_for_adapter,
     validate_execution_policy,
 )
-from dispatch.execution_route_policy import ROUTE_CODEX_LOCAL_BUILDER, evaluate_execution_route
+from dispatch.execution_route_policy import (
+    LOCAL_BUILDER_ROUTES,
+    evaluate_execution_route,
+    local_builder_route_for_adapter,
+)
 from dispatch.path_containment import path_is_inside
 
 WORKER_ELIGIBLE_TASK_STATUSES = frozenset({"ready", "queued"})
@@ -189,14 +193,22 @@ def evaluate_local_builder_gates(
     if not gates["policy_adapter_enabled"]:
         blocked.append(f"adapter {adapter_id!r} not enabled in standing policy")
 
-    route = evaluate_execution_route(adapter, ROUTE_CODEX_LOCAL_BUILDER)
-    gates["execution_route"] = route.allowed
-    if not route.allowed:
-        blocked.extend(route.reasons)
+    builder_route = local_builder_route_for_adapter(adapter)
+    gates["local_builder_route"] = builder_route is not None
+    if not builder_route:
+        blocked.append("adapter must declare a recognized local_worktree execution route")
+    else:
+        route = evaluate_execution_route(adapter, builder_route)
+        gates["execution_route"] = route.allowed
+        if not route.allowed:
+            blocked.extend(route.reasons)
 
-    gates["adapter_id"] = adapter_id == "codex-restricted"
-    if not gates["adapter_id"]:
-        blocked.append("local builder requires codex-restricted adapter")
+    gates["adapter_local_worktree"] = str(adapter.get("execution_scope", "")) == "local_worktree"
+    if not gates["adapter_local_worktree"]:
+        blocked.append("local builder requires execution_scope local_worktree")
+
+    if builder_route and builder_route not in LOCAL_BUILDER_ROUTES:
+        blocked.append(f"unrecognized local builder route: {builder_route!r}")
 
     mode = task_execution_mode(task)
     gates["task_execution_mode"] = mode == MODE_AUTO_LOCAL_WORKTREE

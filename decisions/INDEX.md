@@ -43,3 +43,4 @@
 | ADR-0040 | Human authorization record for one-shot canary            | accepted | 2026-06-28 |
 | ADR-0041 | Automatic post-canary suspension policy                   | accepted | 2026-06-28 |
 | ADR-0042 | Canary-only dedicated execution route (Phase 3.7A.1)      | accepted | 2026-06-29 |
+| ADR-0043 | Composer 2.5 (Grok Build) integration — preview scaffolding | accepted | 2026-07-01 |

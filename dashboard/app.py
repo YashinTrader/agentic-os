@@ -472,14 +472,91 @@ def load_execution_runs(root_dir: Path, *, limit: int = 50) -> tuple[list[dict[s
     claims, claim_errors = load_local_builder_claims(root_dir)
     errors.extend(claim_errors)
     task_lifecycle = load_task_lifecycle_index(root_dir)
+    assignment_index, assignment_errors = load_composer_assignment_index(root_dir)
+    errors.extend(assignment_errors)
+
     for run in runs:
         task_id = str(run.get("task_id") or "")
         run["task_lifecycle_status"] = task_lifecycle.get(task_id, "")
         run["claim_state"] = derive_run_claim_state(run, claims, task_lifecycle)
         active_claim = claims.get(task_id)
         run["active_claim_run_id"] = str(active_claim.get("run_id") or "") if active_claim else ""
+        assignment = assignment_index.get("by_task_id", {}).get(task_id)
+        if assignment:
+            run["assignment_id"] = assignment.get("assignment_id", "")
+            run["assignment_status"] = assignment.get("assignment_status", "")
+            run["outbox_status"] = assignment.get("outbox_status", "")
+
+    seen_tasks = {str(run.get("task_id") or "") for run in runs}
+    for assignment in assignment_index.get("pending_only", []):
+        task_id = str(assignment.get("task_id") or "")
+        if not task_id or task_id in seen_tasks:
+            continue
+        runs.append(
+            {
+                "run_id": str(assignment.get("assignment_id") or ""),
+                "task_id": task_id,
+                "adapter_id": str(assignment.get("adapter_id") or "composer-restricted"),
+                "route": str(assignment.get("execution_route") or "composer_local_builder"),
+                "status": "assignment_pending",
+                "started_at": str(assignment.get("created_at") or ""),
+                "finished_at": "",
+                "worktree_path": "",
+                "verification_status": "not_applicable",
+                "blocked_reasons": [],
+                "handoff_path": str(assignment.get("handoff_rel") or ""),
+                "run_dir": str(assignment.get("source_path") or ""),
+                "errors": assignment.get("errors") or [],
+                "assignment_id": str(assignment.get("assignment_id") or ""),
+                "assignment_status": str(assignment.get("status") or "pending"),
+                "outbox_status": "",
+                "task_lifecycle_status": task_lifecycle.get(task_id, ""),
+                "claim_state": "unknown",
+                "active_claim_run_id": "",
+            }
+        )
 
     return runs, errors
+
+
+def load_composer_assignment_index(root_dir: Path) -> tuple[dict[str, Any], list[str]]:
+    """Read-only index of Composer inbox/outbox assignments (preview scaffolding)."""
+    from dispatch.assignment_channel import list_inbox_assignments, list_outbox_results
+
+    errors: list[str] = []
+    inbox_records, inbox_errors = list_inbox_assignments(root_dir)
+    outbox_records, outbox_errors = list_outbox_results(root_dir)
+    errors.extend(inbox_errors)
+    errors.extend(outbox_errors)
+
+    outbox_by_id = {r.assignment_id: r for r in outbox_records if r.assignment_id}
+    by_task_id: dict[str, dict[str, Any]] = {}
+    pending_only: list[dict[str, Any]] = []
+
+    for record in inbox_records:
+        entry = {
+            "assignment_id": record.assignment_id,
+            "task_id": record.task_id,
+            "adapter_id": record.adapter_id,
+            "status": record.status,
+            "execution_route": record.execution_route,
+            "created_at": record.created_at,
+            "handoff_rel": record.handoff_rel,
+            "source_path": record.source_path,
+            "errors": record.parse_errors,
+            "assignment_status": record.status,
+            "outbox_status": "",
+        }
+        outbox = outbox_by_id.get(record.assignment_id)
+        if outbox:
+            entry["outbox_status"] = outbox.status
+            entry["assignment_status"] = outbox.status
+        if record.task_id:
+            by_task_id[record.task_id] = entry
+        if record.status == "pending" and not outbox:
+            pending_only.append(entry)
+
+    return {"by_task_id": by_task_id, "pending_only": pending_only}, errors
 
 
 def load_orchestrator_latest(root_dir: Path) -> tuple[dict | None, dict | None, list[str]]:
@@ -2846,9 +2923,11 @@ python scripts/execute_dispatch.py --preview ... --execute --approval runtime/di
                 <h3>Execution Runs</h3>
                 <p style="font-size:12px; color:#94a3b8; margin-bottom:16px;">
                     <strong>Read-only.</strong> Recent local-builder run artifacts from
-                    <code>runtime/dispatch/runs/</code> plus claim/lifecycle state from
-                    <code>runtime/dispatch/local_builder_claims/</code> and task YAML.
+                    <code>runtime/dispatch/runs/</code>, Composer assignments from
+                    <code>runtime/dispatch/assignments/</code> (inbox/outbox), plus claim/lifecycle
+                    state from <code>runtime/dispatch/local_builder_claims/</code> and task YAML.
                     This page does not execute, retry, approve, merge, push, or deploy anything.
+                    Composer route is preview scaffolding only (ADR-0043).
                 </p>
                 <form method="GET" class="filter-bar" style="margin-bottom:16px;" id="execution-runs-filter-form">
                     <input type="hidden" name="tab" value="execution_runs">
