@@ -55,6 +55,7 @@ from dispatch.codex_preflight_37b import (  # noqa: E402
 from dispatch.execution_route_policy import (  # noqa: E402
     DEDICATED_CANARY_RUNNER_REASON,
     ROUTE_CODEX_CANARY,
+    ROUTE_CODEX_LOCAL_BUILDER,
     ROUTE_GENERIC_DISPATCH,
     evaluate_execution_route,
 )
@@ -81,6 +82,39 @@ def _cli_compat_fixture() -> dict:
             }
         ],
     }
+
+
+def _phase37c_active() -> bool:
+    return (
+        (REPO_ROOT / "config" / "execution-policy.yaml").is_file()
+        and (REPO_ROOT / "dispatch" / "codex_local_builder.py").is_file()
+    )
+
+
+def _pin_adapter_to_phase37b_canary(root: Path) -> None:
+    """Isolate Phase 3.7B preflight fixtures from Phase 3.7C local_worktree promotion."""
+    adapter_path = root / "agents" / "codex_restricted_adapter.yaml"
+    adapter = yaml.safe_load(adapter_path.read_text(encoding="utf-8"))
+    adapter["promotion_state"] = "activation_candidate"
+    adapter["execution_scope"] = "canary_only"
+    adapter["required_execution_route"] = "codex_canary"
+    adapter["maximum_runs"] = 1
+    adapter["phase3_7b_authorization_required"] = True
+    adapter["live_run_authorized"] = False
+    adapter_path.write_text(yaml.safe_dump(adapter, sort_keys=False), encoding="utf-8")
+
+    registry_path = root / "agents" / "adapter_registry.yaml"
+    registry = yaml.safe_load(registry_path.read_text(encoding="utf-8"))
+    for entry in registry.get("adapters", []):
+        if entry.get("id") == "codex-restricted":
+            entry["promotion_state"] = "activation_candidate"
+            entry["execution_scope"] = "canary_only"
+            entry["required_execution_route"] = "codex_canary"
+            entry["maximum_runs"] = 1
+            entry["phase3_7b_authorization_required"] = True
+            entry["live_run_authorized"] = False
+            break
+    registry_path.write_text(yaml.safe_dump(registry, sort_keys=False), encoding="utf-8")
 
 
 def _allocation_fixture(root: Path, run_id: str) -> dict:
@@ -120,6 +154,7 @@ class Phase37bPreflightFixtureMixin:
         compat_path = self.root / "runtime" / "registry" / "codex_cli_compatibility.json"
         compat_path.parent.mkdir(parents=True, exist_ok=True)
         compat_path.write_text(json.dumps(self.cli_compat, indent=2), encoding="utf-8")
+        _pin_adapter_to_phase37b_canary(self.root)
 
     def tearDown(self) -> None:
         self.tmp.cleanup()
@@ -466,7 +501,10 @@ class Phase37bRepositorySafetyTests(unittest.TestCase):
             (REPO_ROOT / "agents" / "adapter_registry.yaml").read_text(encoding="utf-8")
         )
         codex = next(a for a in registry["adapters"] if a["id"] == "codex-restricted")
-        decision = evaluate_execution_route(codex, ROUTE_CODEX_CANARY)
+        if _phase37c_active():
+            decision = evaluate_execution_route(codex, ROUTE_CODEX_LOCAL_BUILDER)
+        else:
+            decision = evaluate_execution_route(codex, ROUTE_CODEX_CANARY)
         self.assertTrue(decision.allowed)
 
 
