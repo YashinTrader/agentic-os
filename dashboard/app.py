@@ -2850,11 +2850,11 @@ python scripts/execute_dispatch.py --preview ... --execute --approval runtime/di
                     <code>runtime/dispatch/local_builder_claims/</code> and task YAML.
                     This page does not execute, retry, approve, merge, push, or deploy anything.
                 </p>
-                <form method="GET" class="filter-bar" style="margin-bottom:16px;">
+                <form method="GET" class="filter-bar" style="margin-bottom:16px;" id="execution-runs-filter-form">
                     <input type="hidden" name="tab" value="execution_runs">
                     <input type="text" name="run_adapter" class="filter-input" placeholder="Filter by adapter" value="{escape(run_filter_adapter)}">
                     <input type="text" name="run_status" class="filter-input" placeholder="Filter by run status" value="{escape(run_filter_status)}">
-                    <button type="submit" class="filter-btn">Apply</button>
+                    <a href="#" class="filter-btn" onclick="document.getElementById('execution-runs-filter-form').submit(); return false;">Apply</a>
                     {(f'<a href="/?tab=execution_runs" class="clear-link">Clear</a>' if run_filter_adapter or run_filter_status else '')}
                 </form>
     """)
