@@ -18,6 +18,12 @@
 - Claude review and merge when approved.
 - Optional: stale claim files still count toward `maximum_concurrent_runs` (existing behavior); separate cleanup task if needed.
 
+## Integrity Closeout (T-PHASE3-7C-HANDOFF-INTEGRITY-FIX)
+
+- Registered handoff path in `POST_TEST_ALLOWLIST_EXACT`.
+- Regenerated `runtime/unittest_last_run.txt` via `python scripts/run_tests.py` (488 tests, exit 0).
+- Added `scripts/handoff_verification_block.py` and `scripts/handoff_closeout_gate.py`; wired DoD into `docs/HANDOFF_PROTOCOL.md`.
+
 ## Decisions Made
 
 - Prior-run detection uses any `result.json` with matching `task_id` (fail closed on rerun).
@@ -50,25 +56,30 @@ python scripts/validate.py
 
 ## Verification Results
 
-- Worker lifecycle tests: exit 0
-- `scripts/validate.py`: exit 0
+| Command | Exit code |
+|---------|-----------|
+| `python scripts/run_tests.py` (488 tests, 3 skipped) | 0 |
+| `python scripts/validate.py` | 0 |
+| `python scripts/handoff_closeout_gate.py handoffs/T-PHASE3-7C-WORKER-LIFECYCLE-HARDENING__composer__to__claude.md` | 0 |
+
+Feature implementation (approved, unchanged): `3cfe24308f3fb5322006d1909349f8f5f61c5fc9`.
 
 ## Repository Verification
 
 repo_root: C:/Users/gabot/agentic-os
 branch: agent/composer/T-PHASE3-7C-WORKER-LIFECYCLE-HARDENING
 base_sha: ae04098fbab0935f2b7ecf1bef7b67cce43532e9
-implementation_sha: 3cfe24308f3fb5322006d1909349f8f5f61c5fc9
-tests_commit_sha: 3cfe24308f3fb5322006d1909349f8f5f61c5fc9
-final_head_sha: 81a77c0d90d6a645d34532a9adfdf973cd01958f
-remote_head_sha: 81a77c0d90d6a645d34532a9adfdf973cd01958f
+implementation_sha: 921846583ec6e58c38cb12c8d16ffda511743719
+tests_commit_sha: 921846583ec6e58c38cb12c8d16ffda511743719
+final_head_sha: 99220f0e0c434c818e9b4cc7f0441c5cd9c0c40f
+remote_head_sha: 99220f0e0c434c818e9b4cc7f0441c5cd9c0c40f
 git_status_clean: false
-validator_commit_sha: 81a77c0d90d6a645d34532a9adfdf973cd01958f
-test_count: 22
+validator_commit_sha: 921846583ec6e58c38cb12c8d16ffda511743719
+test_count: 488
 test_exit_code: 0
 validator_exit_code: 0
 post_test_diff_policy: POST_TEST_ALLOWLIST_EXACT
-post_test_files: handoffs/T-PHASE3-7C-WORKER-LIFECYCLE-HARDENING__composer__to__claude.md
+post_test_files: handoffs/T-PHASE3-7C-WORKER-LIFECYCLE-HARDENING__composer__to__claude.md, runtime/unittest_last_run.txt
 working_copy_path: C:/Users/gabot/agentic-os
 
 ## Recommended Next Action for Receiver
