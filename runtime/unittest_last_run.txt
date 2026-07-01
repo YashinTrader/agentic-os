@@ -1,12 +1,33 @@
-timestamp: 2026-06-30T17:30:02Z
+timestamp: 2026-07-01T00:01:37Z
 repo_root: C:/Users/gabot/agentic-os
-commit: 22ab829
-commit_full: 22ab8292cb9e3bf37bcc09526c7127423701f7cb
+commit: unknown
+commit_full: 921846583ec6e58c38cb12c8d16ffda511743719
 python: C:\Users\gabot\AppData\Local\hermes\hermes-agent\venv\Scripts\python.exe
-test_count: 479
+test_count: 488
 exit_code: 0
 --- tail ---
+test_list_skills_cli_json_output (test_skills_registry.SkillsRegistryTests.test_list_skills_cli_json_output) ... ok
+test_list_skills_filters_by_agent (test_skills_registry.SkillsRegistryTests.test_list_skills_filters_by_agent) ... ok
+test_list_skills_filters_by_risk (test_skills_registry.SkillsRegistryTests.test_list_skills_filters_by_risk) ... ok
+test_required_skill_fields_exist (test_skills_registry.SkillsRegistryTests.test_required_skill_fields_exist) ... ok
+test_skills_registry_loads (test_skills_registry.SkillsRegistryTests.test_skills_registry_loads) ... ok
+test_suggest_team_by_dashboard_skill (test_team_suggestion.TeamSuggestionTests.test_suggest_team_by_dashboard_skill) ... ok
+test_suggest_team_by_python_cli_skill (test_team_suggestion.TeamSuggestionTests.test_suggest_team_by_python_cli_skill) ... ok
+test_suggest_team_cli_json_output (test_team_suggestion.TeamSuggestionTests.test_suggest_team_cli_json_output) ... ok
+test_suggest_team_for_cli_task (test_team_suggestion.TeamSuggestionTests.test_suggest_team_for_cli_task) ... ok
+test_suggest_team_for_dashboard_task (test_team_suggestion.TeamSuggestionTests.test_suggest_team_for_dashboard_task) ... ok
+test_suggest_team_is_deterministic (test_team_suggestion.TeamSuggestionTests.test_suggest_team_is_deterministic) ... ok
+test_dashboard_loader_handles_missing_teams_registry (test_teams_registry.TeamsRegistryTests.test_dashboard_loader_handles_missing_teams_registry) ... ok
+test_invalid_team_status_fails_validation (test_teams_registry.TeamsRegistryTests.test_invalid_team_status_fails_validation) ... ok
+test_list_teams_filters_by_status (test_teams_registry.TeamsRegistryTests.test_list_teams_filters_by_status) ... ok
+test_missing_mcp_cross_reference_fails (test_teams_registry.TeamsRegistryTests.test_missing_mcp_cross_reference_fails) ... ok
+test_missing_role_cross_reference_fails (test_teams_registry.TeamsRegistryTests.test_missing_role_cross_reference_fails) ... ok
+test_missing_skill_cross_reference_fails (test_teams_registry.TeamsRegistryTests.test_missing_skill_cross_reference_fails) ... ok
+test_required_team_fields_exist (test_teams_registry.TeamsRegistryTests.test_required_team_fields_exist) ... ok
+test_teams_registry_loads (test_teams_registry.TeamsRegistryTests.test_teams_registry_loads) ... ok
+test_teams_tab_rejects_path_traversal_suggest_task (test_teams_registry.TeamsRegistryTests.test_teams_tab_rejects_path_traversal_suggest_task) ... ok
+
 ----------------------------------------------------------------------
-Ran 479 tests in 1906.026s
+Ran 488 tests in 1797.247s
 
 OK (skipped=3)
