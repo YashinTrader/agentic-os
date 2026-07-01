@@ -299,6 +299,100 @@ def _summarize_verification_status(run_dir: Path, result: dict[str, Any]) -> tup
     return "not_recorded", None
 
 
+REVIEW_PENDING_TASK_STATUSES = frozenset({"review", "awaiting_review"})
+RUNNING_RUN_STATUSES = frozenset({"in_progress", "running", "started", "claimed"})
+
+
+def load_local_builder_claims(root_dir: Path) -> tuple[dict[str, dict[str, Any]], list[str]]:
+    """Load active local-builder claim files keyed by task_id (read-only)."""
+    claims_root = root_dir / "runtime" / "dispatch" / "local_builder_claims"
+    if not claims_root.exists():
+        return {}, []
+    if not claims_root.is_dir():
+        return {}, ["runtime/dispatch/local_builder_claims: path exists but is not a directory"]
+
+    errors: list[str] = []
+    claims: dict[str, dict[str, Any]] = {}
+    for path in sorted(claims_root.glob("*.json")):
+        data, error = _load_json_object(path, f"runtime/dispatch/local_builder_claims/{path.name}")
+        if error:
+            errors.append(error)
+            continue
+        if data is None:
+            continue
+        task_id = str(data.get("task_id") or path.stem)
+        claims[task_id] = {
+            "task_id": task_id,
+            "run_id": str(data.get("run_id") or ""),
+            "claimed_at": str(data.get("claimed_at") or ""),
+            "claim_path": f"runtime/dispatch/local_builder_claims/{path.name}",
+        }
+    return claims, errors
+
+
+def load_task_lifecycle_index(root_dir: Path) -> dict[str, str]:
+    """Map task_id -> lifecycle status from tasks/active, blocked, and done."""
+    index: dict[str, str] = {}
+    for folder in ("active", "blocked", "done"):
+        dir_path = root_dir / "tasks" / folder
+        if not dir_path.is_dir():
+            continue
+        for file_path in list(dir_path.glob("*.yaml")) + list(dir_path.glob("*.yml")):
+            if file_path.name == "EXAMPLE.yaml":
+                continue
+            try:
+                data = yaml.safe_load(file_path.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            if isinstance(data, dict) and data.get("id"):
+                index[str(data["id"])] = str(data.get("status") or "")
+    return index
+
+
+def derive_run_claim_state(
+    run: dict[str, Any],
+    claims: dict[str, dict[str, Any]],
+    task_lifecycle: dict[str, str],
+) -> str:
+    """Derive observational claim/lifecycle state for one execution run row."""
+    task_id = str(run.get("task_id") or "")
+    if not task_id:
+        return "unknown"
+
+    claim = claims.get(task_id)
+    if claim:
+        if str(claim.get("run_id")) == str(run.get("run_id")):
+            return "claimed"
+        return "claimed_other_run"
+
+    task_status = str(task_lifecycle.get(task_id) or "").lower()
+    if task_status in REVIEW_PENDING_TASK_STATUSES:
+        return "review_pending"
+
+    run_status = str(run.get("status") or "").lower()
+    if run_status in RUNNING_RUN_STATUSES or (run.get("started_at") and not run.get("finished_at")):
+        return "running"
+
+    return "released"
+
+
+def apply_execution_run_filters(
+    runs: list[dict[str, Any]],
+    *,
+    adapter: str = "",
+    status: str = "",
+) -> list[dict[str, Any]]:
+    """Filter execution runs by adapter substring and exact run status (case-insensitive)."""
+    filtered = runs
+    if adapter:
+        adapter_lower = adapter.lower()
+        filtered = [run for run in filtered if adapter_lower in str(run.get("adapter_id") or "").lower()]
+    if status:
+        status_lower = status.lower()
+        filtered = [run for run in filtered if str(run.get("status") or "").lower() == status_lower]
+    return filtered
+
+
 def load_execution_runs(root_dir: Path, *, limit: int = 50) -> tuple[list[dict[str, Any]], list[str]]:
     """Load recent local-builder runs from runtime/dispatch/runs without side effects."""
     runs_root = root_dir / "runtime" / "dispatch" / "runs"
@@ -356,10 +450,11 @@ def load_execution_runs(root_dir: Path, *, limit: int = 50) -> tuple[list[dict[s
         if not worktree_path and allocation:
             worktree_path = str(allocation.get("worktree_path") or "")
 
+        task_id = str(result.get("task_id") or _infer_run_task_id(run_dir) or "")
         runs.append(
             {
                 "run_id": str(result.get("run_id") or run_dir.name),
-                "task_id": str(result.get("task_id") or _infer_run_task_id(run_dir) or ""),
+                "task_id": task_id,
                 "adapter_id": str(result.get("adapter_id") or ""),
                 "route": str(result.get("route") or result.get("execution_route") or ""),
                 "status": str(result.get("status") or "unknown"),
@@ -373,6 +468,16 @@ def load_execution_runs(root_dir: Path, *, limit: int = 50) -> tuple[list[dict[s
                 "errors": run_errors,
             }
         )
+
+    claims, claim_errors = load_local_builder_claims(root_dir)
+    errors.extend(claim_errors)
+    task_lifecycle = load_task_lifecycle_index(root_dir)
+    for run in runs:
+        task_id = str(run.get("task_id") or "")
+        run["task_lifecycle_status"] = task_lifecycle.get(task_id, "")
+        run["claim_state"] = derive_run_claim_state(run, claims, task_lifecycle)
+        active_claim = claims.get(task_id)
+        run["active_claim_run_id"] = str(active_claim.get("run_id") or "") if active_claim else ""
 
     return runs, errors
 
@@ -818,6 +923,13 @@ def generate_dashboard_html(query_params: dict[str, list[str]]) -> str:
     role_filter_approval = query_params.get("role_approval", [""])[0].strip()
     role_filter_can_execute = query_params.get("role_can_execute", [""])[0].strip()
     role_filter_can_review = query_params.get("role_can_review", [""])[0].strip()
+    run_filter_adapter = query_params.get("run_adapter", [""])[0].strip()
+    run_filter_status = query_params.get("run_status", [""])[0].strip()
+    execution_runs = apply_execution_run_filters(
+        execution_runs,
+        adapter=run_filter_adapter,
+        status=run_filter_status,
+    )
     suggest_task_id = query_params.get("suggest_task", [""])[0].strip()
     read_file_path = query_params.get("read_file", [None])[0]
     success_alert = query_params.get("success", [None])[0]
@@ -2734,9 +2846,17 @@ python scripts/execute_dispatch.py --preview ... --execute --approval runtime/di
                 <h3>Execution Runs</h3>
                 <p style="font-size:12px; color:#94a3b8; margin-bottom:16px;">
                     <strong>Read-only.</strong> Recent local-builder run artifacts from
-                    <code>runtime/dispatch/runs/</code>. This page does not execute,
-                    retry, approve, merge, push, or deploy anything.
+                    <code>runtime/dispatch/runs/</code> plus claim/lifecycle state from
+                    <code>runtime/dispatch/local_builder_claims/</code> and task YAML.
+                    This page does not execute, retry, approve, merge, push, or deploy anything.
                 </p>
+                <form method="GET" class="filter-bar" style="margin-bottom:16px;" id="execution-runs-filter-form">
+                    <input type="hidden" name="tab" value="execution_runs">
+                    <input type="text" name="run_adapter" class="filter-input" placeholder="Filter by adapter" value="{escape(run_filter_adapter)}">
+                    <input type="text" name="run_status" class="filter-input" placeholder="Filter by run status" value="{escape(run_filter_status)}">
+                    <a href="#" class="filter-btn" onclick="document.getElementById('execution-runs-filter-form').submit(); return false;">Apply</a>
+                    {(f'<a href="/?tab=execution_runs" class="clear-link">Clear</a>' if run_filter_adapter or run_filter_status else '')}
+                </form>
     """)
 
     if execution_run_errors:
@@ -2756,6 +2876,7 @@ python scripts/execute_dispatch.py --preview ... --execute --approval runtime/di
                             <th>Task / Adapter</th>
                             <th>Route</th>
                             <th>Status</th>
+                            <th>Claim / Lifecycle</th>
                             <th>Timestamps</th>
                             <th>Worktree</th>
                             <th>Verification</th>
@@ -2780,6 +2901,18 @@ python scripts/execute_dispatch.py --preview ... --execute --approval runtime/di
                 verification_color = "#34d399"
             elif verification_status in {"failed", "timed_out", "parse_error"}:
                 verification_color = "#f87171"
+            claim_state = str(run.get("claim_state") or "unknown")
+            claim_color = "#94a3b8"
+            if claim_state == "claimed":
+                claim_color = "#fbbf24"
+            elif claim_state == "review_pending":
+                claim_color = "#60a5fa"
+            elif claim_state == "running":
+                claim_color = "#22d3ee"
+            elif claim_state == "claimed_other_run":
+                claim_color = "#fb923c"
+            task_lifecycle_status = str(run.get("task_lifecycle_status") or "-")
+            active_claim_run_id = str(run.get("active_claim_run_id") or "")
             run_warnings = run.get("errors") or []
             warning_html = ""
             if run_warnings:
@@ -2794,6 +2927,7 @@ python scripts/execute_dispatch.py --preview ... --execute --approval runtime/di
                             <td>{escape(run.get('task_id') or '-')}<br/><code style="font-size:10px; color:#94a3b8;">{escape(run.get('adapter_id') or '-')}</code></td>
                             <td><code style="font-size:10px;">{escape(run.get('route') or '-')}</code></td>
                             <td><span style="color:{status_color}; font-weight:700;">{escape(status)}</span></td>
+                            <td><span style="color:{claim_color}; font-weight:700;">{escape(claim_state)}</span><br/><span style="font-size:10px; color:#94a3b8;">task: {escape(task_lifecycle_status)}</span>{('<br/><span style="font-size:10px; color:#64748b;">active claim: ' + escape(active_claim_run_id) + '</span>') if active_claim_run_id else ''}</td>
                             <td style="font-size:11px; color:#cbd5e1;">Start: {escape(run.get('started_at') or '-')}<br/>Finish: {escape(run.get('finished_at') or '-')}</td>
                             <td><code style="font-size:10px; word-break:break-all;">{escape(run.get('worktree_path') or '-')}</code></td>
                             <td><span style="color:{verification_color}; font-weight:700;">{escape(verification_status)}</span></td>

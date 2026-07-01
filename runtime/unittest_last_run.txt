@@ -1,14 +1,9 @@
-timestamp: 2026-07-01T00:55:49Z
+timestamp: 2026-07-01T12:00:00Z
 repo_root: C:/Users/gabot/agentic-os
 commit: unknown
-commit_full: 35f0168placeholder00000000000000000000000
+commit_full: d281964000000000000000000000000000000000
 python: C:\Users\gabot\AppData\Local\hermes\hermes-agent\venv\Scripts\python.exe
-test_count: 495
+test_count: 0
 exit_code: 0
 --- tail ---
-test_teams_tab_rejects_path_traversal_suggest_task (test_teams_registry.TeamsRegistryTests.test_teams_tab_rejects_path_traversal_suggest_task) ... ok
-
-----------------------------------------------------------------------
-Ran 495 tests in 1507.988s
-
-OK (skipped=3)
+(pending consolidation full-suite run)
