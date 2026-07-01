@@ -50,7 +50,7 @@ python scripts/handoff_closeout_gate.py handoffs/T-PHASE3-7C-PORCELAIN-PARSER-HA
 | Command | Exit code |
 |---------|-----------|
 | `PorcelainLineParserTests` + `GitPorcelainParsingTests` (17 tests) | 0 |
-| `python scripts/run_tests.py` (full suite) | 0 |
+| `python scripts/run_tests.py` (495 tests, 3 skipped) | 0 |
 | `python scripts/handoff_closeout_gate.py` | 0 |
 
 ## Integrity Closeout (T-PHASE3-7C-HANDOFF-INTEGRITY-FIX)
@@ -64,12 +64,12 @@ python scripts/handoff_closeout_gate.py handoffs/T-PHASE3-7C-PORCELAIN-PARSER-HA
 repo_root: C:/Users/gabot/agentic-os
 branch: agent/composer/T-PHASE3-7C-PORCELAIN-PARSER-HARDENING
 base_sha: ae04098fbab0935f2b7ecf1bef7b67cce43532e9
-implementation_sha: 39805fe782af0fe2770cd412a3d43a66f3d05712
-tests_commit_sha: 39805fe782af0fe2770cd412a3d43a66f3d05712
-final_head_sha: 39805fe782af0fe2770cd412a3d43a66f3d05712
-remote_head_sha: 39805fe782af0fe2770cd412a3d43a66f3d05712
+implementation_sha: 2bffed173523f2e06159f2c846a796b868b108b2
+tests_commit_sha: 2bffed173523f2e06159f2c846a796b868b108b2
+final_head_sha: ad66be2c85d71699c6097e5b8aada43b5a201184
+remote_head_sha: ad66be2c85d71699c6097e5b8aada43b5a201184
 git_status_clean: false
-validator_commit_sha: 39805fe782af0fe2770cd412a3d43a66f3d05712
+validator_commit_sha: 2bffed173523f2e06159f2c846a796b868b108b2
 test_count: 495
 test_exit_code: 0
 validator_exit_code: 0
