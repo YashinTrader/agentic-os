@@ -66,12 +66,12 @@ python scripts/handoff_closeout_gate.py handoffs/T-PHASE3-7C-DASH-RUN-VISIBILITY
 repo_root: C:/Users/gabot/agentic-os
 branch: agent/composer/T-PHASE3-7C-DASH-RUN-VISIBILITY
 base_sha: ae04098fbab0935f2b7ecf1bef7b67cce43532e9
-implementation_sha: 23f421670451ed054f289a7824cddd15d065915a
-tests_commit_sha: 23f421670451ed054f289a7824cddd15d065915a
-final_head_sha: 23f421670451ed054f289a7824cddd15d065915a
-remote_head_sha: 23f421670451ed054f289a7824cddd15d065915a
+implementation_sha: af5d8a3698970330a3677196f20a457ae2b77723
+tests_commit_sha: af5d8a3698970330a3677196f20a457ae2b77723
+final_head_sha: 5c5a8bea58b1f1876acbd866e7065d31a84f7bef
+remote_head_sha: 5c5a8bea58b1f1876acbd866e7065d31a84f7bef
 git_status_clean: true
-validator_commit_sha: 23f421670451ed054f289a7824cddd15d065915a
+validator_commit_sha: af5d8a3698970330a3677196f20a457ae2b77723
 test_count: 483
 test_exit_code: 0
 validator_exit_code: 0
