@@ -7,7 +7,7 @@
 
 ## What I Did
 
-- Branch `agent/composer/T-PHASE3-7C-PORCELAIN-PARSER-HARDENING` from base `ae04098`.
+- Branch `agent/composer/T-PHASE3-7C-PORCELAIN-PARSER-HARDENING` from base `ae04098fbab0935f2b7ecf1bef7b67cce43532e9`.
 - Hardened `_git_changed_files()` in `dispatch/codex_local_builder.py`:
   - Added `_unquote_git_path()` and `_parse_porcelain_changed_path()` for per-line porcelain parsing.
   - Preserved 177b9a3 behavior: never strip the full line before reading status (leading space is significant for ` M` vs `M `).
@@ -16,6 +16,8 @@
 - Added regression tests in `tests/test_phase3_7c_local_builder.py`:
   - `PorcelainLineParserTests` — one unit test per porcelain status form.
   - Extended `GitPorcelainParsingTests` — git integration for staged add, untracked, rename, deletion, spaced filename.
+
+Feature implementation (approved, unchanged): `20aa651becf0feb82c3a41a4b91826a32f800d5d`.
 
 ## What Remains
 
@@ -38,13 +40,9 @@
 cd C:/Users/gabot/agentic-os
 git fetch origin
 git checkout agent/composer/T-PHASE3-7C-PORCELAIN-PARSER-HARDENING
-git rev-parse HEAD
-git rev-parse origin/agent/composer/T-PHASE3-7C-PORCELAIN-PARSER-HARDENING
-
 python -m unittest tests.test_phase3_7c_local_builder.PorcelainLineParserTests tests.test_phase3_7c_local_builder.GitPorcelainParsingTests -v
-python -m unittest tests.test_phase3_7c_local_builder -v
-
-python scripts/validate.py
+python scripts/run_tests.py
+python scripts/handoff_closeout_gate.py handoffs/T-PHASE3-7C-PORCELAIN-PARSER-HARDENING__composer__to__claude.md
 ```
 
 ## Verification Results
@@ -52,19 +50,32 @@ python scripts/validate.py
 | Command | Exit code |
 |---------|-----------|
 | `PorcelainLineParserTests` + `GitPorcelainParsingTests` (17 tests) | 0 |
+| `python scripts/run_tests.py` (full suite) | 0 |
+| `python scripts/handoff_closeout_gate.py` | 0 |
+
+## Integrity Closeout (T-PHASE3-7C-HANDOFF-INTEGRITY-FIX)
+
+- Registered handoff path in `POST_TEST_ALLOWLIST_EXACT`.
+- Regenerated `runtime/unittest_last_run.txt` via `python scripts/run_tests.py`.
+- Reused handoff integrity scaffolding from worker-lifecycle branch.
 
 ## Repository Verification
 
 repo_root: C:/Users/gabot/agentic-os
 branch: agent/composer/T-PHASE3-7C-PORCELAIN-PARSER-HARDENING
-base_sha: ae04098
-implementation_sha: 20aa651
-tests_commit_sha: 20aa651
-final_head_sha: c144b32
-remote_head_sha: c144b32
+base_sha: ae04098fbab0935f2b7ecf1bef7b67cce43532e9
+implementation_sha: 39805fe782af0fe2770cd412a3d43a66f3d05712
+tests_commit_sha: 39805fe782af0fe2770cd412a3d43a66f3d05712
+final_head_sha: 39805fe782af0fe2770cd412a3d43a66f3d05712
+remote_head_sha: 39805fe782af0fe2770cd412a3d43a66f3d05712
 git_status_clean: false
+validator_commit_sha: 39805fe782af0fe2770cd412a3d43a66f3d05712
+test_count: 495
 test_exit_code: 0
 validator_exit_code: 0
+post_test_diff_policy: POST_TEST_ALLOWLIST_EXACT
+post_test_files: handoffs/T-PHASE3-7C-PORCELAIN-PARSER-HARDENING__composer__to__claude.md, runtime/unittest_last_run.txt
+working_copy_path: C:/Users/gabot/agentic-os
 
 ## Risks / Caveats
 
