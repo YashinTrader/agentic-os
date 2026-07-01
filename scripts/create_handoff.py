@@ -83,6 +83,7 @@ def main() -> int:
 **To:** {args.to_agent}
 **Date:** {args.date or utc_now()}
 **Task Status After Handoff:** {args.status}
+**Handoff Protocol:** v2
 
 ## What I Did
 {bullets(args.what_i_did)}
@@ -104,6 +105,26 @@ def main() -> int:
 
 ## Recommended Next Action for Receiver
 {bullets(args.next_action)}
+
+## Repository Verification
+
+repo_root: REPLACE_WITH_GIT_TOPLEVEL
+branch: REPLACE_WITH_BRANCH
+base_sha: REPLACE_WITH_40_CHAR_BASE_SHA
+implementation_sha: REPLACE_WITH_40_CHAR_IMPLEMENTATION_SHA
+tests_commit_sha: REPLACE_WITH_40_CHAR_TESTS_COMMIT_SHA
+final_head_sha: REPLACE_WITH_40_CHAR_FINAL_HEAD_SHA
+remote_head_sha: REPLACE_WITH_40_CHAR_REMOTE_HEAD_SHA
+git_status_clean: false
+validator_commit_sha: REPLACE_WITH_40_CHAR_VALIDATOR_COMMIT_SHA
+test_count: REPLACE_WITH_DISCOVERED_TEST_COUNT
+test_exit_code: 0
+validator_exit_code: 0
+post_test_diff_policy: POST_TEST_ALLOWLIST_EXACT
+post_test_files: none
+working_copy_path: REPLACE_WITH_CANONICAL_CLONE_PATH
+
+<!-- Generate the block with: python scripts/handoff_verification_block.py --base-sha ... -->
 """
 
     path.parent.mkdir(parents=True, exist_ok=True)
