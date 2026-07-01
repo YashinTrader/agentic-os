@@ -22,6 +22,7 @@ from dispatch.codex_local_builder import (  # noqa: E402
     RESULT_COMPLETED_UNVERIFIED,
     RESULT_COMPLETED_VERIFIED,
     _git_changed_files,
+    _parse_porcelain_changed_path,
     run_local_builder,
 )
 from dispatch.codex_local_builder_gate import (  # noqa: E402
@@ -400,21 +401,104 @@ class WorkerTests(LocalBuilderFixtureMixin, unittest.TestCase):
         self.assertEqual(report["status"], "idle")
 
 
+class PorcelainLineParserTests(unittest.TestCase):
+    def test_parse_modified_unstaged(self) -> None:
+        self.assertEqual(_parse_porcelain_changed_path(" M dashboard/app.py"), "dashboard/app.py")
+
+    def test_parse_modified_staged(self) -> None:
+        self.assertEqual(_parse_porcelain_changed_path("M  dashboard/app.py"), "dashboard/app.py")
+
+    def test_parse_added(self) -> None:
+        self.assertEqual(_parse_porcelain_changed_path("A  docs/new.md"), "docs/new.md")
+
+    def test_parse_untracked(self) -> None:
+        self.assertEqual(_parse_porcelain_changed_path("?? runtime/tmp.txt"), "runtime/tmp.txt")
+
+    def test_parse_renamed(self) -> None:
+        line = "R  dashboard/old.py -> dashboard/new.py"
+        self.assertEqual(_parse_porcelain_changed_path(line), "dashboard/new.py")
+
+    def test_parse_copied(self) -> None:
+        line = "C  docs/template.md -> docs/copy.md"
+        self.assertEqual(_parse_porcelain_changed_path(line), "docs/copy.md")
+
+    def test_parse_deleted_unstaged(self) -> None:
+        self.assertEqual(_parse_porcelain_changed_path(" D docs/remove.md"), "docs/remove.md")
+
+    def test_parse_deleted_staged(self) -> None:
+        self.assertEqual(_parse_porcelain_changed_path("D  docs/remove.md"), "docs/remove.md")
+
+    def test_parse_quoted_path_with_spaces(self) -> None:
+        self.assertEqual(_parse_porcelain_changed_path(' M "docs/my doc.md"'), "docs/my doc.md")
+
+    def test_parse_windows_backslash_path(self) -> None:
+        self.assertEqual(_parse_porcelain_changed_path(" M dashboard\\app.py"), "dashboard/app.py")
+
+    def test_parse_rename_with_quoted_paths(self) -> None:
+        line = 'R  "old name.txt" -> "new name.txt"'
+        self.assertEqual(_parse_porcelain_changed_path(line), "new name.txt")
+
+
 class GitPorcelainParsingTests(LocalBuilderFixtureMixin, unittest.TestCase):
+    def _commit_all(self, message: str) -> None:
+        subprocess.run(["git", "add", "-A"], cwd=self.root, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", message],
+            cwd=self.root,
+            check=True,
+            capture_output=True,
+        )
+
     def test_changed_files_preserves_path_prefix_after_modified_status(self) -> None:
         test_file = self.root / "dashboard" / "app.py"
         test_file.parent.mkdir(parents=True, exist_ok=True)
         test_file.write_text("# original\n", encoding="utf-8")
         subprocess.run(["git", "add", "dashboard/app.py"], cwd=self.root, check=True, capture_output=True)
-        subprocess.run(
-            ["git", "commit", "-m", "add dashboard"],
-            cwd=self.root,
-            check=True,
-            capture_output=True,
-        )
+        self._commit_all("add dashboard")
         test_file.write_text("# modified\n", encoding="utf-8")
         changed = _git_changed_files(self.root)
         self.assertIn("dashboard/app.py", changed)
+
+    def test_changed_files_detects_staged_add(self) -> None:
+        new_file = self.root / "docs" / "porcelain-add.md"
+        new_file.parent.mkdir(parents=True, exist_ok=True)
+        new_file.write_text("# added\n", encoding="utf-8")
+        subprocess.run(["git", "add", "docs/porcelain-add.md"], cwd=self.root, check=True, capture_output=True)
+        changed = _git_changed_files(self.root)
+        self.assertIn("docs/porcelain-add.md", changed)
+
+    def test_changed_files_detects_untracked(self) -> None:
+        untracked = self.root / "docs" / "porcelain-untracked.md"
+        untracked.parent.mkdir(parents=True, exist_ok=True)
+        untracked.write_text("# untracked\n", encoding="utf-8")
+        changed = _git_changed_files(self.root)
+        self.assertIn("docs/porcelain-untracked.md", changed)
+
+    def test_changed_files_detects_rename(self) -> None:
+        src = self.root / "docs" / "before.md"
+        src.parent.mkdir(parents=True, exist_ok=True)
+        src.write_text("# rename\n", encoding="utf-8")
+        self._commit_all("add before")
+        dest = self.root / "docs" / "after.md"
+        subprocess.run(["git", "mv", "docs/before.md", "docs/after.md"], cwd=self.root, check=True, capture_output=True)
+        changed = _git_changed_files(self.root)
+        self.assertIn("docs/after.md", changed)
+
+    def test_changed_files_detects_deletion(self) -> None:
+        doomed = self.root / "docs" / "delete-me.md"
+        doomed.parent.mkdir(parents=True, exist_ok=True)
+        doomed.write_text("# delete\n", encoding="utf-8")
+        self._commit_all("add doomed")
+        doomed.unlink()
+        changed = _git_changed_files(self.root)
+        self.assertIn("docs/delete-me.md", changed)
+
+    def test_changed_files_detects_spaced_path(self) -> None:
+        spaced = self.root / "docs" / "spaced file.md"
+        spaced.parent.mkdir(parents=True, exist_ok=True)
+        spaced.write_text("# spaced\n", encoding="utf-8")
+        changed = _git_changed_files(self.root)
+        self.assertIn("docs/spaced file.md", changed)
 
 
 class RunListingTests(unittest.TestCase):

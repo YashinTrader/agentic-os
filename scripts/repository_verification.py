@@ -43,6 +43,7 @@ POST_TEST_ALLOWLIST_EXACT = frozenset(
         "tasks/active/T-PHASE3-7B-CODEX-CANARY-PREFLIGHT.yaml",
         "handoffs/T-PHASE3-7C-DASH-RUNS-INTEGRATION__composer__to__claude.md",
         "handoffs/T-PHASE3-7C-WORKER-LIFECYCLE-HARDENING__composer__to__claude.md",
+        "handoffs/T-PHASE3-7C-PORCELAIN-PARSER-HARDENING__composer__to__claude.md",
         "tasks/active/T-FIRST-AUTONOMOUS-CODEX-BUILD.yaml",
     }
 )
