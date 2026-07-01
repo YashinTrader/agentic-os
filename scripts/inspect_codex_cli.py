@@ -28,8 +28,13 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
-def run_readonly(argv: list[str]) -> dict[str, object]:
-    full = [CODEX_EXECUTABLE, *argv]
+def _combined_output(stdout: str, stderr: str) -> str:
+    parts = [part.strip() for part in (stdout, stderr) if part and part.strip()]
+    return "\n".join(parts)
+
+
+def run_readonly(executable: str, argv: list[str]) -> dict[str, object]:
+    full = [executable, *argv]
     try:
         completed = subprocess.run(
             full,
@@ -52,7 +57,7 @@ def run_readonly(argv: list[str]) -> dict[str, object]:
             "argv": full,
             "exit_code": None,
             "stdout": "",
-            "stderr": f"executable not found: {CODEX_EXECUTABLE}",
+            "stderr": f"executable not found: {executable}",
             "timed_out": False,
         }
 
@@ -61,12 +66,20 @@ def discover() -> dict[str, object]:
     import shutil
 
     executable_path = shutil.which(CODEX_EXECUTABLE) or ""
-    results = [run_readonly(list(args)) for args in FIXED_INVOCATIONS]
+    invocation_executable = executable_path or CODEX_EXECUTABLE
+    results = [run_readonly(invocation_executable, list(args)) for args in FIXED_INVOCATIONS]
     version_text = ""
     for item in results:
-        if item["argv"][-1] == "--version" and isinstance(item.get("stdout"), str):
-            version_text = item["stdout"].strip()
-            break
+        if item["argv"][-1] == "--version":
+            version_text = _combined_output(
+                str(item.get("stdout") or ""),
+                str(item.get("stderr") or ""),
+            ).splitlines()[0] if _combined_output(
+                str(item.get("stdout") or ""),
+                str(item.get("stderr") or ""),
+            ) else ""
+            if version_text:
+                break
     discovery = {
         "discovered_at": utc_now(),
         "executable": CODEX_EXECUTABLE,
@@ -106,7 +119,8 @@ def main() -> int:
     out.parent.mkdir(parents=True, exist_ok=True)
     compat_out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
-    compat_record = report.get("compatibility") or {}
+    compat_record = dict(report.get("compatibility") or {})
+    compat_record["invocations"] = report.get("invocations") or []
     compat_out.write_text(json.dumps(compat_record, indent=2, sort_keys=True), encoding="utf-8")
     print(json.dumps(report, indent=2, sort_keys=True))
     return 0 if report.get("executable_path") else 2

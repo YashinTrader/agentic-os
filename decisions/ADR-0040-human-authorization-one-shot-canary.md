@@ -24,4 +24,4 @@ Gabriel must receive a precise decision package without the request itself autho
 ## Reviewer sign-off
 
 - [x] composer (implementer)
-- [ ] claude (reviewer)
+- [x] claude (reviewer)

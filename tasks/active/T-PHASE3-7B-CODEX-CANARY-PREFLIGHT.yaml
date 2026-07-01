@@ -1,0 +1,102 @@
+id: T-PHASE3-7B-CODEX-CANARY-PREFLIGHT
+title: Phase 3.7B — First Live Codex Canary Preflight (preparation only)
+owner: composer
+reviewer: claude
+created_by: composer
+status: review
+phase: "3.7B"
+created_at: 2026-06-29T20:00:00Z
+updated_at: 2026-06-29T20:00:00Z
+priority: high
+risk_level: high
+requires_human_approval: true
+human_approval_checklist:
+  - Review exact canary package (contract, context, preview, worktree allocation)
+  - Confirm documentation-only scope (one new docs/codex-canary-*.md file)
+  - Acknowledge one-run maximum and 10-minute timeout
+  - Acknowledge failed/timed-out run still consumes approval
+  - Explicitly authorize live run after Claude review of this preflight package
+objective: >
+  Prepare every artifact required for the one-shot documentation-only Codex canary
+  without invoking Codex, consuming approval, or recording Phase 3.7B authorization.
+  Deliver the exact canary package to Gabriel for explicit human authorization.
+context: |
+  Phase 3.7A.1 closed the main-executor bypass (H1). Claude approved 3.7A.1 at
+  base SHA 2fa6424675899cb3d89a6f7f266086751fdf5975 with 460 tests passing.
+
+  This milestone is preparation only:
+  - NO `codex exec` with a prompt
+  - NO live canary run
+  - NO approval consumption
+  - NO completed phase3_7b_authorization.json
+  - NO claim that human approval has been granted
+
+  After Gabriel reviews and signs approval, the future live run is limited to exactly
+  one documentation file inside an isolated Phase 3.4 worktree. Claude review of the
+  live result is required before any further Codex execution.
+goals:
+  - Record Phase 3.7B baseline (460+ tests, validator exit 0)
+  - Read-only Codex CLI inspection and compatibility record
+  - Operator-commanded isolated worktree allocation (preserved, clean, no Codex inside)
+  - Deterministic canary contract, context bundle, and execution preview
+  - Human approval request and Phase 3.7B authorization template (not activated)
+  - Activation manifest in awaiting_human_approval state
+  - Dry-run gate stack blocked on human approval and Phase 3.7B authorization
+  - Emergency-disable preflight verification
+  - Live command preview without secrets
+  - Regression tests and validator extensions
+non_goals:
+  - Live Codex execution or `codex exec` with prompt
+  - Human approval signature, HMAC, or consumption
+  - Completed or activated phase3_7b_authorization.json
+  - Creating docs/codex-canary-*.md from a real run
+  - Merge, push, or deployment from canary worktree
+  - Autonomy level change (remains Level 1)
+inputs:
+  - agent/composer/T-PHASE3-7A-1-EXECUTOR-BYPASS-FIX @ 2fa6424675899cb3d89a6f7f266086751fdf5975
+  - decisions/ADR-0038 through ADR-0042
+  - dispatch/codex_preflight_37b.py
+  - scripts/prepare_codex_canary_37b.py
+  - scripts/inspect_codex_cli.py
+  - scripts/run_codex_canary.py
+  - dispatch/worktree_allocator.py
+outputs:
+  - dispatch/codex_preflight_37b.py
+  - scripts/prepare_codex_canary_37b.py
+  - scripts/inspect_codex_cli.py
+  - runtime/registry/codex_cli_compatibility.json
+  - runtime/dispatch/codex_activation/activation-phase37b-preflight/
+  - docs/PHASE_3_7B_BASELINE.md
+  - docs/PHASE_3_7B_HUMAN_APPROVAL_REQUEST.md
+  - docs/REVIEW_COMPOSER_PHASE_3_7B_PREFLIGHT_SELF_REVIEW.md
+  - tests/test_phase3_7b_preflight.py
+  - runtime/unittest_last_run.txt
+  - tasks/active/T-PHASE3-7B-CODEX-CANARY-PREFLIGHT.yaml
+  - handoffs/T-PHASE3-7B-CODEX-CANARY-PREFLIGHT__composer__to__claude.md
+constraints:
+  - Absolute stop before Codex subprocess with prompt
+  - Validator exit 0 at final HEAD; test count greater than 460
+  - Canonical clone C:\Users\gabot\agentic-os only
+  - Worktree preserved; no forced cleanup of allocation branch
+acceptance:
+  - Dry-run gate stack returns BLOCKED (human approval + Phase 3.7B authorization)
+  - Generic executor refuses codex-restricted; dedicated runner refuses without authorization
+  - Authorization template cannot satisfy runner; live authorization file absent
+  - Human approval request status awaiting_human_decision with no signature fields
+  - Canary contract binds exact expected file path and one-run maximum
+  - python scripts/validate.py exit 0
+  - python scripts/run_tests.py exit 0 with test count > 460
+  - python scripts/verify_repository_verification.py --handoff <handoff> -> Status: verified
+notes: >
+  Final line of operator handoff: NO LIVE CODEX EXECUTION WAS PERFORMED.
+labels:
+  - phase-3.7B
+  - codex-canary
+  - preflight
+  - human-gate
+related_decisions:
+  - ADR-0038
+  - ADR-0039
+  - ADR-0040
+  - ADR-0041
+  - ADR-0042

@@ -905,6 +905,7 @@ def validate_adapter_registry(errors: list[str]) -> None:
     validate_phase37a_codex_canary_activation(errors)
     validate_phase37a1_executor_bypass(errors)
     validate_phase37c_local_builder(errors)
+    validate_phase37b_codex_canary_preflight(errors)
 
 
 PROMOTION_EXECUTION_STATES = {
@@ -929,6 +930,8 @@ def _phase37c_active() -> bool:
         (ROOT / "config" / "execution-policy.yaml").is_file()
         and (ROOT / "dispatch" / "codex_local_builder.py").is_file()
     )
+def _phase37b_active() -> bool:
+    return (ROOT / "dispatch" / "codex_preflight_37b.py").is_file()
 
 
 def validate_phase35_adapter_boundaries(errors: list[str], adapters: list[Any]) -> None:
@@ -1317,6 +1320,116 @@ def validate_phase37c_local_builder(errors: list[str]) -> None:
         errors.append("Phase 3.7C: run_codex_builder.py must not use approval signing or replay")
     if "subprocess.run" not in (ROOT / "dispatch" / "codex_local_builder.py").read_text(encoding="utf-8"):
         errors.append("Phase 3.7C: codex_local_builder must invoke subprocess.run for Codex")
+def validate_phase37b_codex_canary_preflight(errors: list[str]) -> None:
+    """Phase 3.7B: preflight package only — no live authorization, approval, or canary result."""
+    if not _phase37b_active():
+        return
+
+    required_artifacts = (
+        "dispatch/codex_preflight_37b.py",
+        "scripts/prepare_codex_canary_37b.py",
+        "scripts/inspect_codex_cli.py",
+        "tasks/active/T-PHASE3-7B-CODEX-CANARY-PREFLIGHT.yaml",
+        "docs/PHASE_3_7B_BASELINE.md",
+    )
+    for rel in required_artifacts:
+        if not (ROOT / rel).exists():
+            errors.append(f"Phase 3.7B: missing artifact {rel}")
+
+    required_tests = ("tests/test_phase3_7b_preflight.py",)
+    for rel in required_tests:
+        if not (ROOT / rel).exists():
+            errors.append(f"Phase 3.7B: missing test {rel}")
+
+    preflight_source = (ROOT / "scripts" / "prepare_codex_canary_37b.py").read_text(encoding="utf-8")
+    if "codex exec" in preflight_source.lower() and "exec --help" not in preflight_source:
+        errors.append("Phase 3.7B: prepare script must not invoke codex exec with prompt")
+
+    inspect_source = (ROOT / "scripts" / "inspect_codex_cli.py").read_text(encoding="utf-8")
+    if "shell=True" in inspect_source:
+        errors.append("Phase 3.7B: inspect_codex_cli.py must not use shell=True")
+
+    activation_root = ROOT / "runtime" / "dispatch" / "codex_activation"
+    if activation_root.is_dir():
+        for bundle in activation_root.iterdir():
+            if not bundle.is_dir():
+                continue
+            live_auth = bundle / "phase3_7b_authorization.json"
+            if live_auth.is_file():
+                errors.append(
+                    f"Phase 3.7B: committed live authorization forbidden: {live_auth.relative_to(ROOT)}"
+                )
+            template = bundle / "phase3_7b_authorization.template.json"
+            if template.is_file():
+                try:
+                    data = json.loads(template.read_text(encoding="utf-8"))
+                except json.JSONDecodeError:
+                    errors.append(f"Phase 3.7B: invalid authorization template JSON in {bundle.name}")
+                    continue
+                if data.get("status") != "awaiting_human_authorization":
+                    errors.append(
+                        f"Phase 3.7B: authorization template must be awaiting_human_authorization ({bundle.name})"
+                    )
+                if data.get("human_approval_reference"):
+                    errors.append(f"Phase 3.7B: template must not include human_approval_reference ({bundle.name})")
+
+            request = bundle / "human_approval_request.json"
+            if request.is_file():
+                try:
+                    req = json.loads(request.read_text(encoding="utf-8"))
+                except json.JSONDecodeError:
+                    errors.append(f"Phase 3.7B: invalid human approval request in {bundle.name}")
+                    continue
+                if req.get("status") != "awaiting_human_decision":
+                    errors.append(f"Phase 3.7B: human request must await_human_decision ({bundle.name})")
+                for forbidden in ("signature", "approved", "approval_hmac"):
+                    if forbidden in req:
+                        errors.append(f"Phase 3.7B: forbidden field {forbidden!r} in human request ({bundle.name})")
+
+            manifest_path = bundle / "activation_manifest.json"
+            if manifest_path.is_file():
+                try:
+                    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                except json.JSONDecodeError:
+                    errors.append(f"Phase 3.7B: invalid activation manifest in {bundle.name}")
+                    continue
+                if manifest.get("status") == "human_approved":
+                    errors.append(f"Phase 3.7B: manifest must not be human_approved ({bundle.name})")
+                if int(manifest.get("runs_consumed", 0) or 0) != 0:
+                    errors.append(f"Phase 3.7B: runs_consumed must be 0 ({bundle.name})")
+
+    for rel in ROOT.rglob("docs/codex-canary-*.md"):
+        if rel.is_file() and "runtime" not in rel.parts:
+            errors.append(f"Phase 3.7B: live canary result file must not be committed: {rel.relative_to(ROOT)}")
+
+    from dispatch.codex_activation_gate import evaluate_phase3_7b_authorization
+    from dispatch.execution_route_policy import (
+        DEDICATED_CANARY_RUNNER_REASON,
+        ROUTE_CODEX_CANARY,
+        ROUTE_GENERIC_DISPATCH,
+        evaluate_execution_route,
+    )
+
+    try:
+        registry = yaml.safe_load((ROOT / "agents" / "adapter_registry.yaml").read_text(encoding="utf-8"))
+        codex = next(a for a in registry["adapters"] if a["id"] == "codex-restricted")
+    except Exception as exc:
+        errors.append(f"Phase 3.7B: cannot load codex-restricted adapter: {exc}")
+        return
+
+    generic_block = evaluate_execution_route(codex, ROUTE_GENERIC_DISPATCH)
+    if generic_block.allowed:
+        errors.append("Phase 3.7B: generic_dispatch must block codex-restricted")
+    if DEDICATED_CANARY_RUNNER_REASON not in generic_block.reasons:
+        errors.append("Phase 3.7B: generic_dispatch block must cite dedicated canary runner reason")
+
+    canary_route = evaluate_execution_route(codex, ROUTE_CODEX_CANARY)
+    if not canary_route.allowed:
+        errors.append(f"Phase 3.7B: codex_canary route must be allowed at policy layer: {canary_route.reasons}")
+
+    ok, _ = evaluate_phase3_7b_authorization(ROOT, "activation-phase37b-preflight")
+    if ok:
+        errors.append("Phase 3.7B: evaluate_phase3_7b_authorization must refuse without live authorization file")
 
 
 def validate_skill_mcp_references(errors: list[str]) -> None:
