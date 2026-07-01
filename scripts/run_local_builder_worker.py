@@ -17,8 +17,8 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from dispatch.atomic_io import atomic_create_json  # noqa: E402
 from dispatch.codex_local_builder import run_local_builder  # noqa: E402
-from dispatch.codex_local_builder_gate import task_execution_mode  # noqa: E402
-from dispatch.execution_policy import MODE_AUTO_LOCAL_WORKTREE, load_execution_policy  # noqa: E402
+from dispatch.codex_local_builder_gate import evaluate_worker_task_eligibility  # noqa: E402
+from dispatch.execution_policy import load_execution_policy  # noqa: E402
 from orchestrator.loaders import load_task_yaml  # noqa: E402
 
 CLAIM_DIR_NAME = "local_builder_claims"
@@ -48,15 +48,11 @@ def _eligible_tasks(repo_root: Path) -> list[Path]:
             task = load_task_yaml(path)
         except (OSError, ValueError, yaml.YAMLError):
             continue
-        if task_execution_mode(task) != MODE_AUTO_LOCAL_WORKTREE:
-            continue
-        status = str(task.get("status", "")).lower()
-        if status not in {"ready", "queued"}:
-            continue
         task_id = str(task.get("id", path.stem))
-        if (_claim_dir(repo_root) / f"{task_id}.json").exists():
-            continue
-        eligible.append(path)
+        has_claim = (_claim_dir(repo_root) / f"{task_id}.json").exists()
+        ok, _ = evaluate_worker_task_eligibility(repo_root, task, has_active_claim=has_claim)
+        if ok:
+            eligible.append(path)
     return eligible
 
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import fnmatch
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -15,6 +16,23 @@ from dispatch.execution_policy import (
 )
 from dispatch.execution_route_policy import ROUTE_CODEX_LOCAL_BUILDER, evaluate_execution_route
 from dispatch.path_containment import path_is_inside
+
+WORKER_ELIGIBLE_TASK_STATUSES = frozenset({"ready", "queued"})
+
+WORKER_INELIGIBLE_TASK_STATUSES = frozenset(
+    {
+        "review",
+        "awaiting_review",
+        "in_progress",
+        "completed",
+        "done",
+        "rejected",
+        "blocked",
+        "blocked_external",
+        "blocked_policy",
+        "superseded",
+    }
+)
 
 FORBIDDEN_LOCAL_OPERATIONS = frozenset(
     {
@@ -42,6 +60,62 @@ def task_execution_mode(task: dict[str, Any]) -> str:
     if not isinstance(execution, dict):
         return ""
     return str(execution.get("mode", "")).strip()
+
+
+def normalize_task_status(task: dict[str, Any]) -> str:
+    return str(task.get("status", "")).strip().lower()
+
+
+def task_has_prior_local_builder_run(repo_root: Path, task_id: str) -> bool:
+    """True when any persisted local-builder run artifact references this task id."""
+    runs_root = repo_root / "runtime" / "dispatch" / "runs"
+    if not runs_root.is_dir():
+        return False
+    for run_dir in runs_root.iterdir():
+        if not run_dir.is_dir():
+            continue
+        result_path = run_dir / "result.json"
+        if not result_path.is_file():
+            continue
+        try:
+            data = json.loads(result_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(data, dict):
+            continue
+        if str(data.get("task_id", "")) == task_id:
+            return True
+    return False
+
+
+def evaluate_worker_task_eligibility(
+    repo_root: Path,
+    task: dict[str, Any],
+    *,
+    has_active_claim: bool,
+) -> tuple[bool, str]:
+    """Return (eligible, reason). Fail closed on unknown or ineligible lifecycle states."""
+    if task_execution_mode(task) != MODE_AUTO_LOCAL_WORKTREE:
+        return False, "task execution.mode must be auto_local_worktree"
+
+    task_id = str(task.get("id", "")).strip()
+    if not task_id:
+        return False, "task id missing"
+
+    if has_active_claim:
+        return False, f"task {task_id} already claimed"
+
+    status = normalize_task_status(task)
+    if status in WORKER_INELIGIBLE_TASK_STATUSES:
+        return False, f"task status {status!r} is worker-ineligible"
+
+    if status not in WORKER_ELIGIBLE_TASK_STATUSES:
+        return False, f"task status {status!r} is not worker-eligible"
+
+    if task_has_prior_local_builder_run(repo_root, task_id):
+        return False, f"task {task_id} has a prior local-builder run; will not auto-rerun"
+
+    return True, ""
 
 
 def task_adapter_id(task: dict[str, Any]) -> str:

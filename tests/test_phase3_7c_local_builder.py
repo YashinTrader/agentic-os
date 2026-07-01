@@ -24,8 +24,13 @@ from dispatch.codex_local_builder import (  # noqa: E402
     _git_changed_files,
     run_local_builder,
 )
-from dispatch.codex_local_builder_gate import task_execution_mode  # noqa: E402
-from dispatch.codex_local_builder_gate import evaluate_local_builder_gates  # noqa: E402
+from dispatch.codex_local_builder_gate import (  # noqa: E402
+    WORKER_INELIGIBLE_TASK_STATUSES,
+    evaluate_local_builder_gates,
+    evaluate_worker_task_eligibility,
+    task_execution_mode,
+    task_has_prior_local_builder_run,
+)
 from dispatch.execution_policy import load_execution_policy, validate_execution_policy  # noqa: E402
 from dispatch.execution_route_policy import (  # noqa: E402
     DEDICATED_CANARY_RUNNER_REASON,
@@ -223,12 +228,121 @@ class LocalBuilderRunnerTests(LocalBuilderFixtureMixin, unittest.TestCase):
         self.assertFalse(gate.execution_allowed)
 
 
-class WorkerTests(LocalBuilderFixtureMixin, unittest.TestCase):
-    def test_worker_once_idle_without_ready_task(self) -> None:
-        task = yaml.safe_load(self.task_path.read_text(encoding="utf-8"))
-        task["status"] = "in_progress"
-        self.task_path.write_text(yaml.safe_dump(task, sort_keys=False), encoding="utf-8")
+def _auto_local_task(**overrides: object) -> dict:
+    task = {
+        "id": "T-LBUILDER-TEST",
+        "title": "Local builder test task",
+        "status": "ready",
+        "owner": "codex",
+        "reviewer": "claude",
+        "created_by": "composer",
+        "created_at": "2026-06-30T12:00:00Z",
+        "updated_at": "2026-06-30T12:00:00Z",
+        "phase": "3.7C",
+        "priority": "low",
+        "risk_level": "low",
+        "requires_human_approval": False,
+        "objective": "Test local builder",
+        "context": "test",
+        "goals": [],
+        "non_goals": [],
+        "inputs": [],
+        "outputs": [],
+        "constraints": [],
+        "acceptance": [],
+        "execution": {
+            "mode": "auto_local_worktree",
+            "adapter": "codex-restricted",
+            "timeout_seconds": 120,
+            "allowed_paths": ["docs/**", "handoffs/**"],
+            "forbidden_operations": [
+                "git_push",
+                "git_merge",
+                "deploy",
+                "production_access",
+                "mcp_execution",
+                "mcp_invoke",
+                "browser_automation",
+                "email_side_effects",
+            ],
+        },
+        "verification": {
+            "commands": [f'{sys.executable} -c "print(1)"'],
+            "run_full_tests": False,
+        },
+    }
+    task.update(overrides)
+    return task
 
+
+class WorkerLifecycleEligibilityTests(LocalBuilderFixtureMixin, unittest.TestCase):
+    def test_ready_task_is_eligible_without_claim_or_prior_run(self) -> None:
+        task = yaml.safe_load(self.task_path.read_text(encoding="utf-8"))
+        ok, reason = evaluate_worker_task_eligibility(self.root, task, has_active_claim=False)
+        self.assertTrue(ok, reason)
+
+    def test_queued_task_is_eligible_without_claim_or_prior_run(self) -> None:
+        task = yaml.safe_load(self.task_path.read_text(encoding="utf-8"))
+        task["status"] = "queued"
+        ok, reason = evaluate_worker_task_eligibility(self.root, task, has_active_claim=False)
+        self.assertTrue(ok, reason)
+
+    def test_claimed_ready_task_is_ineligible(self) -> None:
+        task = yaml.safe_load(self.task_path.read_text(encoding="utf-8"))
+        ok, reason = evaluate_worker_task_eligibility(self.root, task, has_active_claim=True)
+        self.assertFalse(ok)
+        self.assertIn("claimed", reason)
+
+    def test_prior_run_blocks_ready_task_rerun(self) -> None:
+        task = yaml.safe_load(self.task_path.read_text(encoding="utf-8"))
+        run_dir = self.root / "runtime" / "dispatch" / "runs" / "build-prior"
+        run_dir.mkdir(parents=True, exist_ok=True)
+        (run_dir / "result.json").write_text(
+            json.dumps({"task_id": "T-LBUILDER-TEST", "status": "completed_verified"}),
+            encoding="utf-8",
+        )
+        self.assertTrue(task_has_prior_local_builder_run(self.root, "T-LBUILDER-TEST"))
+        ok, reason = evaluate_worker_task_eligibility(self.root, task, has_active_claim=False)
+        self.assertFalse(ok)
+        self.assertIn("prior local-builder run", reason)
+
+    def test_stale_ready_after_review_blocked_by_prior_run(self) -> None:
+        """A real task flipped back to ready after review must not be re-selected."""
+        stale = _auto_local_task(
+            id="T-STALE-REVIEWED",
+            status="ready",
+            notes="[2026-06-30 claude review] APPROVE; do not rerun.",
+        )
+        stale_path = self.root / "tasks" / "active" / "T-STALE-REVIEWED.yaml"
+        stale_path.write_text(yaml.safe_dump(stale, sort_keys=False), encoding="utf-8")
+        run_dir = self.root / "runtime" / "dispatch" / "runs" / "build-stale"
+        run_dir.mkdir(parents=True, exist_ok=True)
+        (run_dir / "result.json").write_text(
+            json.dumps(
+                {
+                    "task_id": "T-STALE-REVIEWED",
+                    "status": "completed_unverified",
+                    "handoff_path": "handoffs/T-STALE-REVIEWED__codex__to__claude.md",
+                }
+            ),
+            encoding="utf-8",
+        )
+        task = yaml.safe_load(stale_path.read_text(encoding="utf-8"))
+        ok, reason = evaluate_worker_task_eligibility(self.root, task, has_active_claim=False)
+        self.assertFalse(ok, reason)
+        self.assertIn("prior local-builder run", reason)
+
+    def test_each_ineligible_status_rejects_worker_selection(self) -> None:
+        for status in sorted(WORKER_INELIGIBLE_TASK_STATUSES):
+            with self.subTest(status=status):
+                task = _auto_local_task(status=status)
+                ok, reason = evaluate_worker_task_eligibility(self.root, task, has_active_claim=False)
+                self.assertFalse(ok, f"status {status!r} should be ineligible")
+                self.assertIn("worker-ineligible", reason)
+
+
+class WorkerTests(LocalBuilderFixtureMixin, unittest.TestCase):
+    def _run_worker_once(self, *, allow_skipped: bool = False) -> dict:
         completed = subprocess.run(
             [sys.executable, "scripts/run_local_builder_worker.py", "--once", "--json"],
             cwd=self.root,
@@ -236,9 +350,54 @@ class WorkerTests(LocalBuilderFixtureMixin, unittest.TestCase):
             text=True,
             timeout=60,
         )
-        self.assertEqual(completed.returncode, 0)
-        report = json.loads(completed.stdout)
-        self.assertIn(report["status"], {"processed", "idle", "skipped"})
+        if allow_skipped:
+            self.assertIn(completed.returncode, {0, 1})
+        else:
+            self.assertEqual(completed.returncode, 0)
+        return json.loads(completed.stdout)
+
+    def test_worker_once_idle_without_ready_task(self) -> None:
+        task = yaml.safe_load(self.task_path.read_text(encoding="utf-8"))
+        task["status"] = "in_progress"
+        self.task_path.write_text(yaml.safe_dump(task, sort_keys=False), encoding="utf-8")
+        report = self._run_worker_once()
+        self.assertEqual(report["status"], "idle")
+        self.assertEqual(report["reason"], "no eligible tasks")
+
+    def test_worker_idles_when_only_review_pending_real_task(self) -> None:
+        reviewed = _auto_local_task(
+            id="T-FIRST-AUTONOMOUS-CODEX-BUILD",
+            status="review",
+            notes="Codex build complete; awaiting Claude review.",
+        )
+        reviewed_path = self.root / "tasks" / "active" / "T-FIRST-AUTONOMOUS-CODEX-BUILD.yaml"
+        reviewed_path.write_text(yaml.safe_dump(reviewed, sort_keys=False), encoding="utf-8")
+        task = yaml.safe_load(self.task_path.read_text(encoding="utf-8"))
+        task["status"] = "review"
+        self.task_path.write_text(yaml.safe_dump(task, sort_keys=False), encoding="utf-8")
+        report = self._run_worker_once()
+        self.assertEqual(report["status"], "idle")
+
+    def test_worker_does_not_process_ready_task_with_active_claim(self) -> None:
+        claim_dir = self.root / "runtime" / "dispatch" / "local_builder_claims"
+        claim_dir.mkdir(parents=True, exist_ok=True)
+        (claim_dir / "T-LBUILDER-TEST.json").write_text(
+            json.dumps({"task_id": "T-LBUILDER-TEST", "run_id": "build-test"}),
+            encoding="utf-8",
+        )
+        report = self._run_worker_once(allow_skipped=True)
+        self.assertIn(report["status"], {"idle", "skipped"})
+        self.assertNotEqual(report["status"], "processed")
+
+    def test_worker_idles_when_ready_task_has_prior_run(self) -> None:
+        run_dir = self.root / "runtime" / "dispatch" / "runs" / "build-existing"
+        run_dir.mkdir(parents=True, exist_ok=True)
+        (run_dir / "result.json").write_text(
+            json.dumps({"task_id": "T-LBUILDER-TEST", "status": "completed_verified"}),
+            encoding="utf-8",
+        )
+        report = self._run_worker_once()
+        self.assertEqual(report["status"], "idle")
 
 
 class GitPorcelainParsingTests(LocalBuilderFixtureMixin, unittest.TestCase):
