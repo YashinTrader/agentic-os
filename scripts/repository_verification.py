@@ -37,6 +37,8 @@ POST_TEST_ALLOWLIST_EXACT = frozenset(
         "tasks/active/T-PHASE3-7A-1-EXECUTOR-BYPASS-FIX.yaml",
         "decisions/ADR-0042-canary-only-dedicated-execution-route.md",
         "handoffs/T-PHASE3-7C-DASH-RUNS-INTEGRATION__composer__to__claude.md",
+        "handoffs/T-PHASE3-7C-WORKER-LIFECYCLE-HARDENING__composer__to__claude.md",
+        "handoffs/T-PHASE3-7C-PORCELAIN-PARSER-HARDENING__composer__to__claude.md",
         "tasks/active/T-FIRST-AUTONOMOUS-CODEX-BUILD.yaml",
     }
 )
