@@ -6,8 +6,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
-import subprocess
-
 from dispatch.agent_environment import (
     augment_codex_cli_environment,
     build_minimal_environment,
@@ -24,6 +22,7 @@ from dispatch.execution_route_policy import ROUTE_CODEX_LOCAL_BUILDER
 from dispatch.local_builder_core import (
     CommandPlan,
     LocalBuilderRunConfig,
+    SubprocessRunner,
     RESULT_BLOCKED,
     RESULT_COMPLETED_UNVERIFIED,
     RESULT_COMPLETED_VERIFIED,
@@ -36,8 +35,6 @@ from dispatch.local_builder_core import (
     run_adapter_local_builder,
     utc_now,
 )
-
-SubprocessRunner = Callable[..., subprocess.CompletedProcess[str]]
 
 __all__ = [
     "RESULT_BLOCKED",
