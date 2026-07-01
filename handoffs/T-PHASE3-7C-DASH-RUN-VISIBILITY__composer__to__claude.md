@@ -7,7 +7,7 @@
 
 ## What I Did
 
-- Branch `agent/composer/T-PHASE3-7C-DASH-RUN-VISIBILITY` from base `ae04098`.
+- Branch `agent/composer/T-PHASE3-7C-DASH-RUN-VISIBILITY` from base `ae04098fbab0935f2b7ecf1bef7b67cce43532e9`.
 - Extended read-only Execution Runs tab in `dashboard/app.py`:
   - `load_local_builder_claims()` — reads `runtime/dispatch/local_builder_claims/*.json`.
   - `load_task_lifecycle_index()` — maps task YAML statuses from `tasks/{active,blocked,done}/`.
@@ -16,16 +16,14 @@
   - `apply_execution_run_filters()` — URL-driven adapter substring + exact run-status filters (`run_adapter`, `run_status`).
   - Execution Runs table column **Claim / Lifecycle** and filter form (GET, query state preserved).
 - Updated `dashboard/README.md` — documents claim/lifecycle visibility and reaffirms no execution controls.
-- Added tests in `tests/test_dashboard.py`:
-  - Claim state when active claim file matches run.
-  - `review_pending` when task YAML is `review` without claim.
-  - Adapter/status filter function.
-  - HTML rendering includes claim column, filters, and read-only boundary.
+- Added tests in `tests/test_dashboard.py` for claim state, filters, and read-only rendering.
+
+Feature implementation (approved, unchanged): `d65c407698d9c2ae70d25f6ca025086acae7166e`.
 
 ## What Remains
 
-- Claude independent verification of acceptance criteria on the pushed branch.
-- Merge when approved (no merge performed here).
+- Claude review and merge when approved.
+- Full-suite closeout: two Phase 3.4 dashboard safety tests fail because the read-only Execution Runs GET filter uses `type="submit"` (see Risks).
 
 ## Decisions Made
 
@@ -35,7 +33,7 @@
 
 ## Open Questions
 
-- None.
+- Should Execution Runs filters use link-based apply (no `type="submit"`) to satisfy `test_dispatch_executor` / `test_phase3_4_safety_boundaries` without changing read-only semantics?
 
 ## How to Verify My Work
 
@@ -43,13 +41,9 @@
 cd C:/Users/gabot/agentic-os
 git fetch origin
 git checkout agent/composer/T-PHASE3-7C-DASH-RUN-VISIBILITY
-git rev-parse HEAD
-git rev-parse origin/agent/composer/T-PHASE3-7C-DASH-RUN-VISIBILITY
-
 python -m unittest tests.test_dashboard -v
-python -c "from dashboard.app import generate_dashboard_html; h=generate_dashboard_html({'tab':['execution_runs']}); assert 'Claim / Lifecycle' in h and 'read-only' in h.lower()"
-
-python scripts/validate.py
+python scripts/run_tests.py
+python scripts/handoff_closeout_gate.py handoffs/T-PHASE3-7C-DASH-RUN-VISIBILITY__composer__to__claude.md
 ```
 
 ## Verification Results
@@ -57,31 +51,40 @@ python scripts/validate.py
 | Command | Exit code |
 |---------|-----------|
 | `tests.test_dashboard` (15 tests) | 0 |
+| `python scripts/run_tests.py` (483 tests, 2 failures, 3 skipped) | 1 |
+| `python scripts/validate.py` | 0 |
+
+## Integrity Closeout (T-PHASE3-7C-HANDOFF-INTEGRITY-FIX)
+
+- Registered handoff path in `POST_TEST_ALLOWLIST_EXACT`.
+- Regenerated `runtime/unittest_last_run.txt` via `python scripts/run_tests.py` at integrity prep commit.
+- Added handoff scaffolding (`scripts/handoff_verification_block.py`, `scripts/handoff_closeout_gate.py`) and DoD gate in `docs/HANDOFF_PROTOCOL.md`.
 
 ## Repository Verification
 
 repo_root: C:/Users/gabot/agentic-os
 branch: agent/composer/T-PHASE3-7C-DASH-RUN-VISIBILITY
 base_sha: ae04098fbab0935f2b7ecf1bef7b67cce43532e9
-implementation_sha: d65c407698d9c2ae70d25f6ca025086acae7166e
-tests_commit_sha: d65c407698d9c2ae70d25f6ca025086acae7166e
-final_head_sha: 656b444876ac0dc7d92fcce027e50a26380c3103
-remote_head_sha: 656b444876ac0dc7d92fcce027e50a26380c3103
+implementation_sha: 11f5f3088c0b7194791f30e9223b38d9810ed603
+tests_commit_sha: 11f5f3088c0b7194791f30e9223b38d9810ed603
+final_head_sha: 11f5f3088c0b7194791f30e9223b38d9810ed603
+remote_head_sha: 11f5f3088c0b7194791f30e9223b38d9810ed603
 git_status_clean: false
-validator_commit_sha: 656b444876ac0dc7d92fcce027e50a26380c3103
-test_count: 15
-test_exit_code: 0
+validator_commit_sha: 11f5f3088c0b7194791f30e9223b38d9810ed603
+test_count: 483
+test_exit_code: 1
 validator_exit_code: 0
 post_test_diff_policy: POST_TEST_ALLOWLIST_EXACT
-post_test_files: handoffs/T-PHASE3-7C-DASH-RUN-VISIBILITY__composer__to__claude.md
+post_test_files: handoffs/T-PHASE3-7C-DASH-RUN-VISIBILITY__composer__to__claude.md, runtime/unittest_last_run.txt
 working_copy_path: C:/Users/gabot/agentic-os
 
 ## Risks / Caveats
 
+- Full suite records exit 1: `test_dashboard_has_no_execution_actions` and `test_dashboard_has_no_execute_controls` detect the read-only Execution Runs GET filter `type="submit"` (approved Task C UI).
 - `generate_dashboard_html` test patches `ROOT_DIR` temporarily; production server uses repo root from module path.
 
 ## Recommended Next Action for Receiver
 
-Verify pushed branch SHAs and dashboard read-only acceptance criteria; if APPROVE, merge `agent/composer/T-PHASE3-7C-DASH-RUN-VISIBILITY`.
+Review dashboard read-only acceptance criteria. For integrity gate exit 0, either accept link-based filter apply (no submit) or narrow safety tests to the dispatch tab only. Merge when approved.
 
-No merge to protected branches, worker/parser/dispatch logic changes, execution controls, or new dependencies were performed.
+No merge to protected branches was performed.
