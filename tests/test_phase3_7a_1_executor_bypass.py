@@ -29,6 +29,7 @@ from dispatch.execution_gate import evaluate_execution_gates  # noqa: E402
 from dispatch.execution_route_policy import (  # noqa: E402
     DEDICATED_CANARY_RUNNER_REASON,
     ROUTE_CODEX_CANARY,
+    ROUTE_CODEX_LOCAL_BUILDER,
     ROUTE_GENERIC_DISPATCH,
     ROUTE_PREVIEW_ONLY,
     evaluate_execution_route,
@@ -56,6 +57,28 @@ def _local_adapter() -> dict:
         "allowed_commands": ["python"],
         "forbidden_args": ["--execute"],
         "required_clis": ["python"],
+        "command_template": "",
+    }
+
+
+def _canary_fixture_adapter() -> dict:
+    """Canary-era adapter shape for activation-gate regression (not live local-worktree config)."""
+    return {
+        "id": "codex-restricted",
+        "status": "active",
+        "supports_dry_run": True,
+        "supports_execution": True,
+        "execution_scope": "canary_only",
+        "dedicated_runner_required": True,
+        "required_execution_route": ROUTE_CODEX_CANARY,
+        "phase3_7b_authorization_required": True,
+        "promotion_state": "activation_candidate",
+        "adapter_type": "cli",
+        "writes_files": True,
+        "allowed_commands": ["codex"],
+        "forbidden_args": ["--dangerously-bypass-approvals-and-sandbox"],
+        "required_clis": ["codex"],
+        "approval_level": "human",
         "command_template": "",
     }
 
@@ -267,7 +290,7 @@ class GenericExecutorBypassTests(CodexH1FixtureMixin, unittest.TestCase):
         self.assertIn(DEDICATED_CANARY_RUNNER_REASON, gate.blocked_reasons)
         self.assertFalse(gate.execution_allowed)
         self.assertFalse(gate.execution_route_allowed)
-        self.assertEqual(gate.execution_route_required, ROUTE_CODEX_CANARY)
+        self.assertEqual(gate.execution_route_required, ROUTE_CODEX_LOCAL_BUILDER)
         self.assertEqual(non_route, [], gate.blocked_reasons)
 
         preview_path = self.root / "runtime" / "preview_codex_h1.json"
@@ -404,17 +427,25 @@ class GenericExecutorBypassTests(CodexH1FixtureMixin, unittest.TestCase):
 
 
 class CanaryRoutePolicyTests(CodexH1FixtureMixin, unittest.TestCase):
-    def test_canary_route_allowed_then_later_gates_block(self) -> None:
+    def test_local_builder_route_allowed(self) -> None:
+        dedicated = load_codex_restricted_adapter(REPO_ROOT)
+        route = evaluate_execution_route(dedicated, ROUTE_CODEX_LOCAL_BUILDER)
+        self.assertTrue(route.allowed, route.reasons)
+
+    def test_canary_route_blocked_for_local_worktree_adapter(self) -> None:
         dedicated = load_codex_restricted_adapter(REPO_ROOT)
         route = evaluate_execution_route(dedicated, ROUTE_CODEX_CANARY)
-        self.assertTrue(route.allowed, route.reasons)
+        self.assertFalse(route.allowed, route.reasons)
+
+    def test_activation_gates_still_block_canary_runner(self) -> None:
+        canary_adapter = _canary_fixture_adapter()
 
         registry_adapter = self._codex_adapter()
         with patch("subprocess.run") as mock_run:
             gate = evaluate_activation_gates(
                 REPO_ROOT,
                 registry_adapter=registry_adapter,
-                dedicated_adapter=dedicated,
+                dedicated_adapter=canary_adapter,
                 execute_flag=True,
                 require_phase3_7b=True,
             )
@@ -524,13 +555,13 @@ class PolicyMutationTests(unittest.TestCase):
     def _base_codex_policy(self) -> dict:
         return {
             "id": "codex-restricted",
-            "execution_scope": "canary_only",
+            "execution_scope": "local_worktree",
             "dedicated_runner_required": True,
-            "required_execution_route": ROUTE_CODEX_CANARY,
-            "phase3_7b_authorization_required": True,
-            "promotion_state": "activation_candidate",
+            "required_execution_route": ROUTE_CODEX_LOCAL_BUILDER,
+            "phase3_7b_authorization_required": False,
+            "promotion_state": "restricted_execution",
             "supports_execution": True,
-            "maximum_runs": 1,
+            "maximum_runs": 0,
         }
 
     def test_policy_mutations_fail_validation_or_block(self) -> None:
@@ -539,8 +570,7 @@ class PolicyMutationTests(unittest.TestCase):
             ("required_execution_route", ROUTE_GENERIC_DISPATCH),
             ("required_execution_route", ""),
             ("execution_scope", "general"),
-            ("maximum_runs", 2),
-            ("phase3_7b_authorization_required", False),
+            ("phase3_7b_authorization_required", True),
         ]
         for field, bad_value in cases:
             adapter = self._base_codex_policy()

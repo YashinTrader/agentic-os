@@ -25,9 +25,14 @@ class CodexAdapterTests(unittest.TestCase):
     def test_adapter_contract_fields(self) -> None:
         self.assertEqual(self.adapter["id"], "codex-restricted")
         self.assertTrue(self.adapter["supports_execution"])
-        self.assertEqual(self.adapter["promotion_state"], "activation_candidate")
-        self.assertEqual(self.adapter["execution_scope"], "canary_only")
-        self.assertEqual(self.adapter["approval_level"], "human")
+        if (REPO_ROOT / "config" / "execution-policy.yaml").is_file():
+            self.assertEqual(self.adapter["promotion_state"], "restricted_execution")
+            self.assertEqual(self.adapter["execution_scope"], "local_worktree")
+            self.assertEqual(self.adapter["approval_level"], "none")
+        else:
+            self.assertEqual(self.adapter["promotion_state"], "activation_candidate")
+            self.assertEqual(self.adapter["execution_scope"], "canary_only")
+            self.assertEqual(self.adapter["approval_level"], "human")
 
     def test_version_at_least(self) -> None:
         self.assertTrue(version_at_least("0.136.0", "0.136.0"))
@@ -65,7 +70,10 @@ class CodexAdapterTests(unittest.TestCase):
         )
         entry = next(a for a in registry["adapters"] if a["id"] == "codex-restricted")
         self.assertTrue(entry["supports_execution"])
-        self.assertEqual(entry["promotion_state"], "activation_candidate")
+        if (REPO_ROOT / "config" / "execution-policy.yaml").is_file():
+            self.assertEqual(entry["promotion_state"], "restricted_execution")
+        else:
+            self.assertEqual(entry["promotion_state"], "activation_candidate")
 
 
 if __name__ == "__main__":

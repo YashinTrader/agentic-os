@@ -17,18 +17,16 @@ class Phase37aActivationStateTests(unittest.TestCase):
     def test_adapter_activation_candidate_config(self) -> None:
         adapter = load_codex_restricted_adapter(REPO_ROOT)
         self.assertEqual(adapter["id"], "codex-restricted")
-        self.assertEqual(adapter["promotion_state"], "activation_candidate")
+        self.assertEqual(adapter["promotion_state"], "restricted_execution")
         self.assertTrue(adapter["supports_execution"])
-        self.assertEqual(adapter["execution_scope"], "canary_only")
-        self.assertEqual(adapter["maximum_runs"], 1)
-        self.assertTrue(adapter["automatic_disable_after_run"])
-        self.assertFalse(adapter["live_run_authorized"])
-        self.assertTrue(adapter["phase3_7b_authorization_required"])
+        self.assertEqual(adapter["execution_scope"], "local_worktree")
+        self.assertFalse(adapter["phase3_7b_authorization_required"])
+        self.assertTrue(adapter["live_run_authorized"])
         self.assertTrue(adapter["worktree_required"])
         self.assertTrue(adapter["network_required"])
         self.assertTrue(adapter["secrets_required"])
         self.assertFalse(adapter["mcp_required"])
-        self.assertEqual(adapter["approval_level"], "human")
+        self.assertEqual(adapter["approval_level"], "none")
 
     def test_registry_matches_dedicated_config(self) -> None:
         registry = yaml.safe_load(
@@ -51,7 +49,7 @@ class Phase37aActivationStateTests(unittest.TestCase):
         )
         entry = next(a for a in registry["adapters"] if a["id"] == "codex-restricted")
         self.assertTrue(adapter_supports_execution(entry))
-        self.assertFalse(entry.get("live_run_authorized", True))
+        self.assertTrue(entry.get("live_run_authorized", False))
 
 
 if __name__ == "__main__":

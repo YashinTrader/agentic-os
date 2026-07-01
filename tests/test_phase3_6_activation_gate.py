@@ -13,7 +13,12 @@ from dispatch.codex_activation import (  # noqa: E402
 )
 
 
+def _phase37c_active() -> bool:
+    return (REPO_ROOT / "config" / "execution-policy.yaml").is_file()
+
+
 class ActivationGateTests(unittest.TestCase):
+    @unittest.skipIf(_phase37c_active(), "legacy canary manifest validation not used in Phase 3.7C")
     def test_draft_manifest_pre_active_status(self) -> None:
         manifest = build_draft_activation_manifest(
             REPO_ROOT,
@@ -29,6 +34,7 @@ class ActivationGateTests(unittest.TestCase):
         self.assertEqual(manifest["version"], "2.0")
         self.assertEqual(manifest["maximum_runs"], 1)
 
+    @unittest.skipIf(_phase37c_active(), "legacy canary manifest validation not used in Phase 3.7C")
     def test_valid_manifest_passes(self) -> None:
         manifest = build_draft_activation_manifest(
             REPO_ROOT,

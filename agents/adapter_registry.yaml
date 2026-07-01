@@ -105,17 +105,17 @@ adapters:
     supports_dry_run: true
     supports_streaming: false
     supports_execution: true
-    execution_scope: canary_only
+    execution_scope: local_worktree
     dedicated_runner_required: true
-    required_execution_route: codex_canary
-    maximum_runs: 1
-    automatic_disable_after_run: true
-    live_run_authorized: false
-    phase3_7b_authorization_required: true
+    required_execution_route: codex_local_builder
+    maximum_runs: 0
+    automatic_disable_after_run: false
+    live_run_authorized: true
+    phase3_7b_authorization_required: false
     writes_files: true
-    approval_level: human
+    approval_level: none
     risk_level: high
-    promotion_state: activation_candidate
+    promotion_state: restricted_execution
     supports_preview: true
     worktree_required: true
     network_required: true
@@ -125,8 +125,8 @@ adapters:
     handoff_required: true
     rollback_required: true
     notes: >
-      Phase 3.7A activation candidate. supports_execution true with canary_only scope;
-      live run requires Phase 3.7B authorization. See codex_restricted_adapter.yaml and ADR-0038.
+      Autonomous local builder. Standing policy auto_local_worktree authorizes bounded
+      Codex work in isolated worktrees. Generic dispatch blocked. See codex_restricted_adapter.yaml.
   - id: claude-cli-preview
     display_name: Claude Code CLI (dry-run preview)
     agent_id: claude

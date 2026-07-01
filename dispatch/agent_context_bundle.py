@@ -36,7 +36,7 @@ def _atomic_write(path: Path, content: str) -> None:
 
 
 def _bounded_dump(data: Any, *, max_bytes: int = MAX_CONTEXT_FILE_BYTES) -> str:
-    text = json.dumps(data, indent=2, sort_keys=True, ensure_ascii=False)
+    text = json.dumps(data, indent=2, sort_keys=True, ensure_ascii=False, default=str)
     if len(text.encode("utf-8")) > max_bytes:
         raise ValueError(f"context payload exceeds {max_bytes} bytes")
     return text

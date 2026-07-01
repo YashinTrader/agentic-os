@@ -19,6 +19,7 @@ from dispatch.worktree_allocator import (  # noqa: E402
     resolve_worktree_root,
     run_git,
     sanitize_task_id,
+    unique_run_slug,
 )
 
 
@@ -73,6 +74,11 @@ class WorktreeAllocatorTests(unittest.TestCase):
         branch = build_branch_name("T-PHASE3-4", "run-abc123XYZ")
         self.assertEqual(branch, "agentic/t-phase3-4/run-abc123XY")
         self.assertRegex(branch, r"^agentic/[a-zA-Z0-9._/-]+$")
+
+    def test_build_run_ids_get_unique_slugs(self) -> None:
+        a = unique_run_slug("build-20260630T121818Z-T-FIRST-AUTONOMOUS-CODEX-b14a7ce2")
+        b = unique_run_slug("build-20260630T121927Z-T-FIRST-AUTONOMOUS-CODEX-95d42102")
+        self.assertNotEqual(a, b)
 
     def test_worktree_path_stays_inside_root(self) -> None:
         root = resolve_worktree_root(self.repo)

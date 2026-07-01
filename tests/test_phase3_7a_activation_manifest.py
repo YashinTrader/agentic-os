@@ -13,9 +13,14 @@ from dispatch.codex_activation import (  # noqa: E402
 )
 
 
+def _phase37c_active() -> bool:
+    return (REPO_ROOT / "config" / "execution-policy.yaml").is_file()
+
+
 class Phase37aActivationManifestTests(unittest.TestCase):
     REVIEWED = "d9f203c39c3a85613ef4c7f76e110e3f4734d9c1"
 
+    @unittest.skipIf(_phase37c_active(), "legacy canary manifest validation not used in Phase 3.7C")
     def test_manifest_permitted_status(self) -> None:
         manifest = build_activation_manifest_v2(
             REPO_ROOT,

@@ -45,8 +45,12 @@ class Phase36SafetyBoundaryTests(unittest.TestCase):
             if a["id"] == "codex-restricted"
         )
         self.assertTrue(entry["supports_execution"])
-        self.assertEqual(entry.get("execution_scope"), "canary_only")
-        self.assertFalse(entry.get("live_run_authorized", True))
+        if (REPO_ROOT / "config" / "execution-policy.yaml").is_file():
+            self.assertEqual(entry.get("execution_scope"), "local_worktree")
+            self.assertTrue(entry.get("live_run_authorized", False))
+        else:
+            self.assertEqual(entry.get("execution_scope"), "canary_only")
+            self.assertFalse(entry.get("live_run_authorized", True))
 
     def test_phase36_modules_no_shell_true(self) -> None:
         for rel in PHASE_3_6_MODULES:
