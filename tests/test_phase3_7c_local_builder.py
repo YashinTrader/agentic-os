@@ -39,14 +39,21 @@ from dispatch.agent_environment import codex_authentication_available, environme
 from dispatch.local_builder_runs import list_run_summaries  # noqa: E402
 
 
+def _copy_repo_ignore(dirpath: str, names: list[str]) -> set[str]:
+    ignored = set(shutil.ignore_patterns(".git", "__pycache__", "*.pyc")(dirpath, names))
+    if Path(dirpath).name == "active":
+        ignored.add("T-FIRST-AUTONOMOUS-CODEX-BUILD.yaml")
+    return ignored
+
+
 class LocalBuilderFixtureMixin:
     def setUp(self) -> None:
-        self.tmp = tempfile.TemporaryDirectory()
+        self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.root = Path(self.tmp.name) / "repo"
         shutil.copytree(
             REPO_ROOT,
             self.root,
-            ignore=shutil.ignore_patterns(".git", "__pycache__", "*.pyc"),
+            ignore=_copy_repo_ignore,
         )
         self._init_git()
         self._write_auto_task()
@@ -218,6 +225,10 @@ class LocalBuilderRunnerTests(LocalBuilderFixtureMixin, unittest.TestCase):
 
 class WorkerTests(LocalBuilderFixtureMixin, unittest.TestCase):
     def test_worker_once_idle_without_ready_task(self) -> None:
+        task = yaml.safe_load(self.task_path.read_text(encoding="utf-8"))
+        task["status"] = "in_progress"
+        self.task_path.write_text(yaml.safe_dump(task, sort_keys=False), encoding="utf-8")
+
         completed = subprocess.run(
             [sys.executable, "scripts/run_local_builder_worker.py", "--once", "--json"],
             cwd=self.root,
@@ -249,7 +260,7 @@ class GitPorcelainParsingTests(LocalBuilderFixtureMixin, unittest.TestCase):
 
 class RunListingTests(unittest.TestCase):
     def test_list_runs_tolerates_missing(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             root = Path(tmp)
             self.assertEqual(list_run_summaries(root), [])
 
