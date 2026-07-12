@@ -1,0 +1,15 @@
+{
+  "schema_version": "1.0",
+  "assignment_id": "assign-20260712T154435Z-T-PHASE3-8B-DOGFOOD-39c5a953",
+  "task_id": "T-PHASE3-8B-DOGFOOD",
+  "adapter_id": "composer-restricted",
+  "status": "awaiting_review",
+  "finished_at": "2026-07-12T15:44:50Z",
+  "run_id": null,
+  "handoff_path": "handoffs/T-PHASE3-8B-DOGFOOD__composer__to__claude.md",
+  "branch_tip_sha": "5f27b0ca2c920297ccc9330d4ef50700e320e514",
+  "branch_name": "agent/composer/T-PHASE3-8B-ASSIGNMENT-LOOP-ACTIVATION",
+  "blocked_reasons": [],
+  "result_summary": "Dogfood docs artifact docs/GROK_BUILD_LOOP_DOGFOOD.md; assignment loop exercised",
+  "claim_path": "runtime/dispatch/assignments/claims/assign-20260712T154435Z-T-PHASE3-8B-DOGFOOD-39c5a953.json"
+}

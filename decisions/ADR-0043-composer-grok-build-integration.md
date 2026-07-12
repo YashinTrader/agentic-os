@@ -1,15 +1,18 @@
-# ADR-0043: Composer 2.5 (Grok Build) integration — design and preview scaffolding
+# ADR-0043: Composer / Grok Build integration — design, preview, and assignment loop
 
 - Status: accepted
 - Date: 2026-07-01
-- Deciders: composer (implementer), pending claude review
-- Related: `dispatch/execution_route_policy.py`, `dispatch/local_builder_core.py`, `dispatch/assignment_channel.py`, `agents/composer_restricted_adapter.yaml`
+- Updated: 2026-07-12 — builder display identity → Grok Build (Grok 4.5); Phase 3.8B activates file-based assignment loop
+- Deciders: composer/grok (implementer), pending claude review
+- Related: `dispatch/execution_route_policy.py`, `dispatch/local_builder_core.py`, `dispatch/assignment_channel.py`, `agents/composer_restricted_adapter.yaml`, `scripts/assignments.py`, `docs/GROK_BUILD_LOOP.md`
 
 ## Context
 
-Phase 3.7C made `codex-restricted` dispatchable as an autonomous local builder with a dedicated execution route (`codex_local_builder`), standing policy, and read-only dashboard visibility. Claude (Development Director) must assign work to Composer 2.5 (Grok Build) and ingest branches/handoffs without human message relay.
+Phase 3.7C made `codex-restricted` dispatchable as an autonomous local builder with a dedicated execution route (`codex_local_builder`), standing policy, and read-only dashboard visibility. Claude (Development Director) must assign work to the Primary Builder/Integrator and ingest branches/handoffs without human message relay.
 
-Composer runs inside Grok Build (Cursor-hosted). There is no stable, documented headless Grok/Composer CLI equivalent to `codex exec -C {worktree} --json -o {out}` in this repository today.
+**Builder identity (2026-07-12):** The Primary Builder/Integrator role is now filled by **Grok Build (Grok 4.5)**. Stable adapter/agent ids remain `composer-restricted` / `composer` so existing references, routes, and handoff naming do not churn. Only `display_name` and notes were updated.
+
+Composer/Grok runs inside Grok Build. There is no stable, documented headless Grok/Composer CLI equivalent to `codex exec -C {worktree} --json -o {out}` in this repository today.
 
 ## Decision
 
@@ -23,13 +26,17 @@ Composer runs inside Grok Build (Cursor-hosted). There is no stable, documented 
 | (b) API | **Not wired** | No Grok/Composer execution API integrated; would require credentials and network (forbidden in this phase). |
 | (c) File-based bridge | **Selected** | Claude writes assignment JSON to `runtime/dispatch/assignments/inbox/`; Composer runtime (human or future poller) reads inbox, builds in a worktree, writes result JSON to `runtime/dispatch/assignments/outbox/` and a v2 handoff. |
 
-**Phase 3.8 delivers:** assignment schema, validated reader/writer primitives, adapter registry entry (`composer-restricted`, preview-only), generalized local-builder route policy, and adapter-driven local-builder core. **No live invocation.**
+**Phase 3.8 delivered:** assignment schema scaffolding, validated reader/writer primitives, adapter registry entry (`composer-restricted`, preview-only), generalized local-builder route policy, and adapter-driven local-builder core. **No live invocation.**
 
-**Live-activation follow-up must wire:**
+**Phase 3.8B delivers (2026-07-12):** full bounded assignment contract, atomic claim lifecycle (`pending → claimed → building → awaiting_review → accepted|changes_requested|rejected`), CLI entrypoints (`scripts/assignments.py`), task-YAML status bridge, dashboard lifecycle view, operating doc `docs/GROK_BUILD_LOOP.md`, and an end-to-end local dogfood. **Still no automatic execution** — builder sessions pick up assignments manually via CLI.
+
+**Full assignment contract fields:** `task_id`, `title`, `goal`, `base_branch`, `base_sha`, `new_branch`, `allowed_paths`, `forbidden_operations`, `acceptance_criteria`, `verification_commands`, `timeout`, `handoff_path`, `assigned_by`, `assigned_to`, `created_at`, `status` (plus stable metadata: `assignment_id`, `adapter_id`, `execution_route`, `task_path`).
+
+**Live-activation follow-up must wire (Gabriel-gated):**
 
 1. Enable `composer-restricted` in `config/execution-policy.yaml` (`enabled_adapters`) after Gabriel approves Grok credentials.
-2. Implement a Composer inbox poller (or Grok Build hook) that claims assignments, calls `run_local_builder` via the adapter-driven core with a Composer command builder, and writes outbox results.
-3. If a headless Grok/Composer CLI becomes available, add `dispatch/composer_adapter.py` command builder mirroring `codex_adapter.py` and switch the poller from manual to subprocess invocation.
+2. Implement a Grok inbox poller (or Grok Build hook) that claims assignments, calls `run_local_builder` via the adapter-driven core with a Composer/Grok command builder, and writes outbox results.
+3. If a headless Grok/Composer CLI becomes available, extend `dispatch/composer_adapter.py` command builder mirroring `codex_adapter.py` and switch the poller from manual to subprocess invocation.
 4. Add `secrets_required` enforcement only when `supports_execution: true` and real keys are approved.
 
 ### 2. Route policy and adapter-driven local builder generalization

@@ -1,7 +1,7 @@
 schema_version: "1.0"
-updated_at: 2026-07-01T12:00:00Z
+updated_at: 2026-07-12T12:00:00Z
 id: composer-restricted
-display_name: Composer 2.5 restricted adapter (Grok Build — preview scaffolding)
+display_name: Grok Build (Grok 4.5)
 adapter_type: agent_cli
 provider: xai
 executable: composer
@@ -73,6 +73,8 @@ forbidden_args:
   - "--force"
 supports_streaming: false
 notes: >
-  Preview-only Composer / Grok Build adapter. File-based assignment bridge (inbox/outbox)
-  enables Claude to assign tasks; live subprocess invocation is a follow-up after credential
-  approval. Generic dispatch remains blocked. Merge, push, and deploy are manual operator steps.
+  Stable id composer-restricted / agent_id composer retained for reference continuity.
+  Display name: Grok Build (Grok 4.5) as of 2026-07-12. File-based assignment loop
+  (Phase 3.8B) is active for manual pickup; supports_execution remains false and
+  enabled_adapters stays codex-only until Gabriel gates automatic execution.
+  Merge, push, and deploy remain manual operator steps.

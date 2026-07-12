@@ -1326,7 +1326,11 @@ def validate_phase37c_local_builder(errors: list[str]) -> None:
 
 
 def validate_phase38_composer_integration(errors: list[str]) -> None:
-    """Phase 3.8: Composer preview scaffolding — route, adapter, assignment channel."""
+    """Phase 3.8/3.8B: Composer/Grok assignment channel + loop CLI.
+
+    Safe when ROOT is a partial test fixture (e.g. Phase 3.2.1 temp trees that
+    only copy agents/). Missing artifacts become errors; deep imports are skipped.
+    """
     required = (
         "decisions/ADR-0043-composer-grok-build-integration.md",
         "agents/composer_restricted_adapter.yaml",
@@ -1334,22 +1338,46 @@ def validate_phase38_composer_integration(errors: list[str]) -> None:
         "dispatch/assignment_channel.py",
         "dispatch/local_builder_core.py",
         "docs/COMPOSER_LOCAL_BUILDER_PREVIEW.md",
+        "docs/GROK_BUILD_LOOP.md",
+        "scripts/assignments.py",
         "tests/test_phase3_8_composer_integration.py",
         "tests/test_assignment_channel.py",
+        "tests/test_phase3_8b_assignment_loop.py",
     )
-    for rel in required:
-        if not (ROOT / rel).exists():
-            errors.append(f"Phase 3.8: missing artifact {rel}")
+    missing = [rel for rel in required if not (ROOT / rel).exists()]
+    for rel in missing:
+        errors.append(f"Phase 3.8: missing artifact {rel}")
+    # Partial fixture trees (tests monkeypatch ROOT to agents-only temp dirs)
+    if missing:
+        # Still enforce registry display/execution flags when registry is present.
+        try:
+            registry_path = ROOT / "agents" / "adapter_registry.yaml"
+            if registry_path.is_file():
+                registry = yaml.safe_load(registry_path.read_text(encoding="utf-8"))
+                entry = next(
+                    a for a in registry.get("adapters", []) if a.get("id") == "composer-restricted"
+                )
+                if entry.get("supports_execution"):
+                    errors.append(
+                        "Phase 3.8: composer-restricted registry supports_execution must be false"
+                    )
+        except Exception:
+            pass
+        return
 
-    from dispatch.composer_adapter import (
-        load_composer_restricted_adapter,
-        validate_composer_preview_contract,
-    )
-    from dispatch.execution_route_policy import (
-        ROUTE_COMPOSER_LOCAL_BUILDER,
-        evaluate_execution_route,
-        validate_adapter_route_policy,
-    )
+    try:
+        from dispatch.composer_adapter import (
+            load_composer_restricted_adapter,
+            validate_composer_preview_contract,
+        )
+        from dispatch.execution_route_policy import (
+            ROUTE_COMPOSER_LOCAL_BUILDER,
+            evaluate_execution_route,
+            validate_adapter_route_policy,
+        )
+    except ImportError as exc:
+        errors.append(f"Phase 3.8: import failed: {exc}")
+        return
 
     try:
         composer = load_composer_restricted_adapter(ROOT)
@@ -1376,14 +1404,18 @@ def validate_phase38_composer_integration(errors: list[str]) -> None:
 
     policy_path = ROOT / "config" / "execution-policy.yaml"
     if policy_path.is_file():
-        policy = yaml.safe_load(policy_path.read_text(encoding="utf-8"))
+        policy = yaml.safe_load(policy_path.read_text(encoding="utf-8")) or {}
         enabled = policy.get("enabled_adapters") or []
         if "composer-restricted" in enabled:
             errors.append("Phase 3.8: composer-restricted must not be in enabled_adapters yet")
 
-    policy_source = (ROOT / "dispatch" / "execution_route_policy.py").read_text(encoding="utf-8")
-    if "ROUTE_COMPOSER_LOCAL_BUILDER" not in policy_source:
-        errors.append("Phase 3.8: ROUTE_COMPOSER_LOCAL_BUILDER missing from execution_route_policy.py")
+    policy_source_path = ROOT / "dispatch" / "execution_route_policy.py"
+    if policy_source_path.is_file():
+        policy_source = policy_source_path.read_text(encoding="utf-8")
+        if "ROUTE_COMPOSER_LOCAL_BUILDER" not in policy_source:
+            errors.append("Phase 3.8: ROUTE_COMPOSER_LOCAL_BUILDER missing from execution_route_policy.py")
+    else:
+        errors.append("Phase 3.8: missing dispatch/execution_route_policy.py")
 
 
 def validate_skill_mcp_references(errors: list[str]) -> None:

@@ -1,0 +1,62 @@
+id: T-PHASE3-8B-ASSIGNMENT-LOOP-ACTIVATION
+title: Activate the in-OS Claude→Grok assignment loop (file-based bridge)
+status: review
+owner: composer
+reviewer: claude
+created_by: claude
+created_at: "2026-07-12T00:00:00Z"
+updated_at: "2026-07-12T17:15:00Z"
+phase: "3.8B"
+priority: high
+risk_level: medium
+requires_human_approval: false
+depends_on:
+  - T-PHASE3-8-COMPOSER-INTEGRATION-DESIGN
+blocks: []
+labels:
+  - phase-3.8b
+  - assignment-loop
+  - grok-build
+estimated_effort: L
+related_decisions:
+  - ADR-0043
+objective: >
+  Activate the file-based Claude→Grok assignment loop end-to-end so Claude can
+  post work and ingest results without Gabriel as messenger. Automatic execution
+  remains off.
+context: >
+  Continues from Phase 3.8 preview scaffolding at 5f27b0c. Builder identity is
+  Grok Build (Grok 4.5) with stable adapter id composer-restricted.
+goals:
+  - Full assignment contract + claim lifecycle
+  - CLI list/show/claim/complete/ingest
+  - Task YAML status bridge
+  - Dashboard lifecycle view (read-only)
+  - docs/GROK_BUILD_LOOP.md operating contract
+  - Self-dogfood once end-to-end
+non_goals:
+  - Enabling composer-restricted in enabled_adapters
+  - Grok API credentials or network invocation
+  - Dashboard write/execute controls
+inputs:
+  - decisions/ADR-0043-composer-grok-build-integration.md
+  - dispatch/assignment_channel.py
+  - docs/COMPOSER_LOCAL_BUILDER_PREVIEW.md
+outputs:
+  - dispatch/assignment_channel.py
+  - scripts/assignments.py
+  - docs/GROK_BUILD_LOOP.md
+  - tests/fixtures/assignment_loop_dogfood/
+  - handoffs/T-PHASE3-8B-ASSIGNMENT-LOOP-ACTIVATION__composer__to__claude.md
+constraints:
+  - No secrets or network to Grok endpoints
+  - No merge to protected branches
+  - Codex-restricted tests must stay green
+  - Dashboard remains read-only for claims/approvals
+acceptance:
+  - python dashboard/app.py and python -m dashboard.app both serve without dispatch import errors
+  - Claimed assignments never re-picked (tests)
+  - Dogfood fixtures committed
+  - Full suite exit 0; validate exit 0; verify Status verified
+human_approval_checklist: []
+notes: "Primary builder is Grok Build (Grok 4.5). Reviewer is Claude."

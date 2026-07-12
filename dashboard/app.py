@@ -15,6 +15,11 @@ import yaml
 # Resolve the repository root relative to this file
 ROOT_DIR = Path(__file__).resolve().parents[1]
 
+# Ensure repo root is importable for `python dashboard/app.py` (script launch)
+# and `python -m dashboard.app` alike. Mirrors tests/sys.path setup.
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
 
 # ==========================================
 # 1. DATA PARSING & PARSER LOGIC (Schema v2)
@@ -394,18 +399,20 @@ def apply_execution_run_filters(
 
 
 def load_execution_runs(root_dir: Path, *, limit: int = 50) -> tuple[list[dict[str, Any]], list[str]]:
-    """Load recent local-builder runs from runtime/dispatch/runs without side effects."""
+    """Load recent local-builder runs + assignment lifecycle without side effects."""
     runs_root = root_dir / "runtime" / "dispatch" / "runs"
-    if not runs_root.exists():
-        return [], []
-    if not runs_root.is_dir():
+    errors: list[str] = []
+    runs: list[dict[str, Any]] = []
+
+    if runs_root.exists() and not runs_root.is_dir():
         return [], ["runtime/dispatch/runs: path exists but is not a directory"]
 
-    errors: list[str] = []
-    try:
-        run_dirs = [p for p in runs_root.iterdir() if p.is_dir()]
-    except Exception as exc:
-        return [], [f"runtime/dispatch/runs: failed to list directory: {exc}"]
+    run_dirs: list[Path] = []
+    if runs_root.is_dir():
+        try:
+            run_dirs = [p for p in runs_root.iterdir() if p.is_dir()]
+        except Exception as exc:
+            errors.append(f"runtime/dispatch/runs: failed to list directory: {exc}")
 
     def run_sort_key(path: Path) -> tuple[float, str]:
         try:
@@ -413,7 +420,6 @@ def load_execution_runs(root_dir: Path, *, limit: int = 50) -> tuple[list[dict[s
         except OSError:
             return (0.0, path.name)
 
-    runs: list[dict[str, Any]] = []
     for run_dir in sorted(run_dirs, key=run_sort_key, reverse=True)[:limit]:
         result_path = run_dir / "result.json"
         result, error = _load_json_object(result_path, f"runtime/dispatch/runs/{run_dir.name}/result.json")
@@ -488,39 +494,97 @@ def load_execution_runs(root_dir: Path, *, limit: int = 50) -> tuple[list[dict[s
             run["outbox_status"] = assignment.get("outbox_status", "")
 
     seen_tasks = {str(run.get("task_id") or "") for run in runs}
-    for assignment in assignment_index.get("pending_only", []):
+    seen_assignment_ids = {
+        str(run.get("assignment_id") or "")
+        for run in runs
+        if run.get("assignment_id")
+    }
+    # Full lifecycle surface: pending/claimed/building/awaiting_review/accepted/...
+    lifecycle_entries = assignment_index.get("lifecycle_only") or assignment_index.get(
+        "pending_only", []
+    )
+    for assignment in lifecycle_entries:
         task_id = str(assignment.get("task_id") or "")
-        if not task_id or task_id in seen_tasks:
+        assignment_id = str(assignment.get("assignment_id") or "")
+        if assignment_id and assignment_id in seen_assignment_ids:
             continue
+        if task_id and task_id in seen_tasks and assignment.get("assignment_status") == "pending":
+            # Prefer real run row when present; skip duplicate pending-only
+            continue
+        dash_status = str(
+            assignment.get("dashboard_status")
+            or _assignment_dashboard_status(
+                str(assignment.get("assignment_status") or assignment.get("status") or ""),
+                str(assignment.get("outbox_status") or ""),
+            )
+        )
+        claim_state = "unknown"
+        astatus = str(assignment.get("assignment_status") or "")
+        if astatus == "claimed":
+            claim_state = "claimed"
+        elif astatus == "building":
+            claim_state = "running"
+        elif astatus == "awaiting_review":
+            claim_state = "review_pending"
+        elif astatus == "accepted":
+            claim_state = "released"
         runs.append(
             {
-                "run_id": str(assignment.get("assignment_id") or ""),
+                "run_id": assignment_id or task_id,
                 "task_id": task_id,
                 "adapter_id": str(assignment.get("adapter_id") or "composer-restricted"),
                 "route": str(assignment.get("execution_route") or "composer_local_builder"),
-                "status": "assignment_pending",
+                "status": dash_status,
                 "started_at": str(assignment.get("created_at") or ""),
-                "finished_at": "",
-                "worktree_path": "",
+                "finished_at": str(assignment.get("updated_at") or ""),
+                "worktree_path": str(assignment.get("branch_name") or ""),
                 "verification_status": "not_applicable",
                 "blocked_reasons": [],
-                "handoff_path": str(assignment.get("handoff_rel") or ""),
+                "handoff_path": str(
+                    assignment.get("handoff_path")
+                    or assignment.get("handoff_rel")
+                    or ""
+                ),
+                "result_path": str(assignment.get("result_path") or ""),
                 "run_dir": str(assignment.get("source_path") or ""),
                 "errors": assignment.get("errors") or [],
-                "assignment_id": str(assignment.get("assignment_id") or ""),
-                "assignment_status": str(assignment.get("status") or "pending"),
-                "outbox_status": "",
+                "assignment_id": assignment_id,
+                "assignment_status": astatus or str(assignment.get("status") or "pending"),
+                "outbox_status": str(assignment.get("outbox_status") or ""),
                 "task_lifecycle_status": task_lifecycle.get(task_id, ""),
-                "claim_state": "unknown",
-                "active_claim_run_id": "",
+                "claim_state": claim_state,
+                "active_claim_run_id": str(assignment.get("claimed_by") or ""),
             }
         )
+        if task_id:
+            seen_tasks.add(task_id)
+        if assignment_id:
+            seen_assignment_ids.add(assignment_id)
 
     return runs, errors
 
 
+def _assignment_dashboard_status(assignment_status: str, outbox_status: str) -> str:
+    """Map assignment lifecycle to Execution Runs status labels."""
+    if outbox_status in {"completed", "awaiting_review"} or assignment_status == "awaiting_review":
+        return "assignment_awaiting_review"
+    if assignment_status == "building":
+        return "assignment_building"
+    if assignment_status == "claimed":
+        return "assignment_claimed"
+    if assignment_status == "accepted":
+        return "assignment_accepted"
+    if assignment_status in {"changes_requested", "rejected", "cancelled"}:
+        return f"assignment_{assignment_status}"
+    if outbox_status in {"failed", "blocked"}:
+        return f"assignment_{outbox_status}"
+    if assignment_status == "pending":
+        return "assignment_pending"
+    return f"assignment_{assignment_status or 'unknown'}"
+
+
 def load_composer_assignment_index(root_dir: Path) -> tuple[dict[str, Any], list[str]]:
-    """Read-only index of Composer inbox/outbox assignments (preview scaffolding)."""
+    """Read-only index of Composer/Grok assignment lifecycle (inbox/outbox/claims)."""
     from dispatch.assignment_channel import list_inbox_assignments, list_outbox_results
 
     errors: list[str] = []
@@ -532,31 +596,64 @@ def load_composer_assignment_index(root_dir: Path) -> tuple[dict[str, Any], list
     outbox_by_id = {r.assignment_id: r for r in outbox_records if r.assignment_id}
     by_task_id: dict[str, dict[str, Any]] = {}
     pending_only: list[dict[str, Any]] = []
+    all_entries: list[dict[str, Any]] = []
 
     for record in inbox_records:
+        outbox = outbox_by_id.get(record.assignment_id)
+        outbox_status = outbox.status if outbox else ""
+        result_path = outbox.source_path if outbox else ""
+        handoff = (outbox.handoff_path if outbox and outbox.handoff_path else None) or record.handoff_path
         entry = {
             "assignment_id": record.assignment_id,
             "task_id": record.task_id,
+            "title": getattr(record, "title", "") or "",
             "adapter_id": record.adapter_id,
             "status": record.status,
             "execution_route": record.execution_route,
             "created_at": record.created_at,
-            "handoff_rel": record.handoff_rel,
+            "updated_at": getattr(record, "updated_at", "") or record.created_at,
+            "handoff_rel": handoff,
+            "handoff_path": handoff,
+            "result_path": result_path,
+            "branch_name": getattr(record, "new_branch", "") or (outbox.branch_name if outbox else ""),
+            "branch_tip_sha": outbox.branch_tip_sha if outbox else "",
             "source_path": record.source_path,
             "errors": record.parse_errors,
             "assignment_status": record.status,
-            "outbox_status": "",
+            "outbox_status": outbox_status,
+            "dashboard_status": _assignment_dashboard_status(record.status, outbox_status),
+            "claimed_by": getattr(record, "claimed_by", None) or "",
+            "claimed_at": getattr(record, "claimed_at", None) or "",
         }
-        outbox = outbox_by_id.get(record.assignment_id)
-        if outbox:
-            entry["outbox_status"] = outbox.status
-            entry["assignment_status"] = outbox.status
+        all_entries.append(entry)
         if record.task_id:
             by_task_id[record.task_id] = entry
+        # Surface any non-run-backed assignment (pending through terminal)
         if record.status == "pending" and not outbox:
             pending_only.append(entry)
 
-    return {"by_task_id": by_task_id, "pending_only": pending_only}, errors
+    # Also surface claimed/building/awaiting_review that may not have a local-builder run
+    lifecycle_only = [
+        e
+        for e in all_entries
+        if e.get("assignment_status")
+        in {
+            "pending",
+            "claimed",
+            "building",
+            "awaiting_review",
+            "accepted",
+            "changes_requested",
+            "rejected",
+        }
+    ]
+
+    return {
+        "by_task_id": by_task_id,
+        "pending_only": pending_only,
+        "all_entries": all_entries,
+        "lifecycle_only": lifecycle_only,
+    }, errors
 
 
 def load_orchestrator_latest(root_dir: Path) -> tuple[dict | None, dict | None, list[str]]:
@@ -2923,11 +3020,13 @@ python scripts/execute_dispatch.py --preview ... --execute --approval runtime/di
                 <h3>Execution Runs</h3>
                 <p style="font-size:12px; color:#94a3b8; margin-bottom:16px;">
                     <strong>Read-only.</strong> Recent local-builder run artifacts from
-                    <code>runtime/dispatch/runs/</code>, Composer assignments from
-                    <code>runtime/dispatch/assignments/</code> (inbox/outbox), plus claim/lifecycle
-                    state from <code>runtime/dispatch/local_builder_claims/</code> and task YAML.
-                    This page does not execute, retry, approve, merge, push, or deploy anything.
-                    Composer route is preview scaffolding only (ADR-0043).
+                    <code>runtime/dispatch/runs/</code>, Grok Build assignment lifecycle from
+                    <code>runtime/dispatch/assignments/</code> (inbox/outbox/claims:
+                    pending → claimed → building → awaiting_review → accepted|changes_requested|rejected),
+                    plus claim/lifecycle state from <code>runtime/dispatch/local_builder_claims/</code>
+                    and task YAML. Result and handoff paths are links to file paths only.
+                    This page does not execute, claim, retry, approve, merge, push, or deploy anything.
+                    Automatic Grok execution remains disabled (ADR-0043); file-bridge pickup is manual.
                 </p>
                 <form method="GET" class="filter-bar" style="margin-bottom:16px;" id="execution-runs-filter-form">
                     <input type="hidden" name="tab" value="execution_runs">
@@ -2960,7 +3059,7 @@ python scripts/execute_dispatch.py --preview ... --execute --approval runtime/di
                             <th>Worktree</th>
                             <th>Verification</th>
                             <th>Blocked Reasons</th>
-                            <th>Handoff</th>
+                            <th>Result / Handoff</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -2970,10 +3069,28 @@ python scripts/execute_dispatch.py --preview ... --execute --approval runtime/di
             blocked_text = "; ".join(str(reason) for reason in blocked) if blocked else "-"
             status = str(run.get("status") or "unknown")
             status_color = "#94a3b8"
-            if status == "completed_verified":
+            if status == "completed_verified" or status == "assignment_accepted":
                 status_color = "#34d399"
-            elif status in {"completed_unverified", "blocked", "failed", "timed_out", "scope_violation"}:
+            elif status in {
+                "completed_unverified",
+                "blocked",
+                "failed",
+                "timed_out",
+                "scope_violation",
+                "assignment_rejected",
+                "assignment_failed",
+                "assignment_blocked",
+            }:
                 status_color = "#f87171"
+            elif status in {
+                "assignment_pending",
+                "assignment_claimed",
+                "assignment_building",
+                "assignment_awaiting_review",
+            }:
+                status_color = "#60a5fa"
+            elif status == "assignment_changes_requested":
+                status_color = "#fbbf24"
             verification_status = str(run.get("verification_status") or "not_recorded")
             verification_color = "#94a3b8"
             if verification_status == "passed":
@@ -3011,7 +3128,11 @@ python scripts/execute_dispatch.py --preview ... --execute --approval runtime/di
                             <td><code style="font-size:10px; word-break:break-all;">{escape(run.get('worktree_path') or '-')}</code></td>
                             <td><span style="color:{verification_color}; font-weight:700;">{escape(verification_status)}</span></td>
                             <td style="font-size:11px; color:#fca5a5;">{escape(blocked_text)}</td>
-                            <td><code style="font-size:10px; word-break:break-all;">{escape(run.get('handoff_path') or '-')}</code></td>
+                            <td style="font-size:10px; word-break:break-all;">
+                                <div>result: <code>{escape(run.get('result_path') or run.get('outbox_status') or '-')}</code></div>
+                                <div>handoff: <code>{escape(run.get('handoff_path') or '-')}</code></div>
+                                {(f"<div>assignment: <code>{escape(str(run.get('assignment_status') or ''))}</code></div>" if run.get('assignment_id') else "")}
+                            </td>
                         </tr>
             """)
         html_out.append("""

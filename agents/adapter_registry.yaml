@@ -128,7 +128,7 @@ adapters:
       Autonomous local builder. Standing policy auto_local_worktree authorizes bounded
       Codex work in isolated worktrees. Generic dispatch blocked. See codex_restricted_adapter.yaml.
   - id: composer-restricted
-    display_name: Composer 2.5 restricted adapter (Grok Build — preview scaffolding)
+    display_name: Grok Build (Grok 4.5)
     agent_id: composer
     adapter_type: cli
     status: planned
@@ -168,8 +168,10 @@ adapters:
     handoff_required: true
     rollback_required: true
     notes: >
-      Preview-only Composer adapter. File-based assignment bridge; live Grok execution
-      is a follow-up. See composer_restricted_adapter.yaml and ADR-0043.
+      Stable adapter id remains composer-restricted (do not rename). Display name updated
+      2026-07-12 for Grok Build (Grok 4.5) as Primary Builder/Integrator. File-based
+      assignment loop is active (Phase 3.8B); automatic execution still disabled.
+      See composer_restricted_adapter.yaml and ADR-0043.
   - id: claude-cli-preview
     display_name: Claude Code CLI (dry-run preview)
     agent_id: claude
