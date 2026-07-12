@@ -47,9 +47,11 @@ POST_TEST_ALLOWLIST_EXACT = frozenset(
         "handoffs/T-PHASE3-7C-DASH-RUN-VISIBILITY__composer__to__claude.md",
         "handoffs/T-PHASE3-8-COMPOSER-INTEGRATION-DESIGN__composer__to__claude.md",
         "handoffs/T-PHASE3-8B-ASSIGNMENT-LOOP-ACTIVATION__composer__to__claude.md",
+        "handoffs/T-PHASE3-7C-SAFETY-SCANNER-GET-FORM__composer__to__claude.md",
         "tasks/active/T-FIRST-AUTONOMOUS-CODEX-BUILD.yaml",
         "tasks/active/T-PHASE3-8B-ASSIGNMENT-LOOP-ACTIVATION.yaml",
         "tasks/active/T-PHASE3-8B-DOGFOOD.yaml",
+        "tasks/active/T-PHASE3-7C-SAFETY-SCANNER-GET-FORM.yaml",
     }
 )
 

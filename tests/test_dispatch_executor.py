@@ -169,11 +169,15 @@ class DispatchExecutorTests(unittest.TestCase):
         self.assertNotIn("import subprocess", source)
 
     def test_dashboard_has_no_execution_actions(self) -> None:
+        from dashboard.safety_scan import scan_dispatch_slice_for_write_controls
+
         source = (REPO_ROOT / "dashboard" / "app.py").read_text(encoding="utf-8")
         dispatch_section = source[source.find("TAB PANEL: DISPATCH") : source.find("TAB PANEL: HEALTH")]
         for forbidden in ("Execute button", "Approve button", "Launch agent", "Run MCP"):
             self.assertNotIn(forbidden, dispatch_section)
-        self.assertNotIn('type="submit"', dispatch_section[max(0, dispatch_section.find("dispatch") - 200) :])
+        # GET-form submit filters are read-only; only write/execute controls fail
+        findings = scan_dispatch_slice_for_write_controls(dispatch_section)
+        self.assertEqual(findings, [], msg=f"unexpected write controls: {findings}")
 
 
 if __name__ == "__main__":

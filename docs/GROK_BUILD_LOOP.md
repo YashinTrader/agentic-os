@@ -85,21 +85,28 @@ Assignment files must include the full contract: `task_id`, `title`, `goal`,
 
 ## Grok Build session: pick up and complete
 
-Run **one** claim command at session start:
+### Session start (mandatory — no human relay)
+
+**Every Grok session that opens this repo must auto-pick work first:**
 
 ```bash
 cd C:/Users/gabot/agentic-os
+python scripts/session_pickup.py
+```
 
-# List pickable work
+This lists pending inbox assignments and **claims the first one**, printing the full
+contract. If none are pending, it prints idle and exits 0.
+
+Equivalent manual form (same effect):
+
+```bash
 python scripts/assignments.py list --pending
-
-# Claim first pending (or pass assignment_id); prints full contract
 python scripts/assignments.py claim
 # or: python scripts/assignments.py claim assign-YYYYMMDDTHHMMSSZ-...
-
-# Inspect again later
 python scripts/assignments.py show <assignment_id>
 ```
+
+Do **not** wait for Gabriel or chat paste of the task text — the inbox file is the contract.
 
 Then build per contract:
 
@@ -130,19 +137,23 @@ python scripts/assignments.py complete <assignment_id> --building --handoff ... 
 
 ---
 
-## Claude: ingest results
+## Claude: ingest results (review path)
+
+After Grok completes and pushes:
 
 ```bash
 cd C:/Users/gabot/agentic-os
+git fetch origin
+# optional: checkout builder branch for code review
 python scripts/assignments.py ingest
 python scripts/assignments.py outbox
 ```
 
 Ingest is pure file I/O: links outbox → handoff path existence, branch name/tip,
 and writes `runtime/dispatch/assignments/ingest/latest_ingest.json`.  
-**Does not merge or push.**
+**Does not merge or push.** Claude reviews branch + handoff independently.
 
-Dashboard:
+Dashboard (read-only lifecycle):
 
 ```bash
 python dashboard/app.py
@@ -150,7 +161,8 @@ python dashboard/app.py
 # open http://localhost:8501/?tab=execution_runs
 ```
 
-Read-only: no claim/approve/execute buttons.
+Surfaces `assignment_awaiting_review` with result + handoff paths.  
+No claim/approve/execute buttons.
 
 ---
 

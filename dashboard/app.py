@@ -3028,11 +3028,11 @@ python scripts/execute_dispatch.py --preview ... --execute --approval runtime/di
                     This page does not execute, claim, retry, approve, merge, push, or deploy anything.
                     Automatic Grok execution remains disabled (ADR-0043); file-bridge pickup is manual.
                 </p>
-                <form method="GET" class="filter-bar" style="margin-bottom:16px;" id="execution-runs-filter-form">
+                <form method="GET" class="filter-bar" style="margin-bottom:16px;" id="execution-runs-filter-form" action="/">
                     <input type="hidden" name="tab" value="execution_runs">
                     <input type="text" name="run_adapter" class="filter-input" placeholder="Filter by adapter" value="{escape(run_filter_adapter)}">
                     <input type="text" name="run_status" class="filter-input" placeholder="Filter by run status" value="{escape(run_filter_status)}">
-                    <a href="#" class="filter-btn" onclick="document.getElementById('execution-runs-filter-form').submit(); return false;">Apply</a>
+                    <button type="submit" class="filter-button">Apply</button>
                     {(f'<a href="/?tab=execution_runs" class="clear-link">Clear</a>' if run_filter_adapter or run_filter_status else '')}
                 </form>
     """)

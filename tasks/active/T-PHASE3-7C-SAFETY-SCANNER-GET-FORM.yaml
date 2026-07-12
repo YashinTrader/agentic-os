@@ -1,0 +1,78 @@
+id: T-PHASE3-7C-SAFETY-SCANNER-GET-FORM
+title: Teach Phase 3.4 safety scanner that GET-form submit buttons are read-only; restore semantic button
+status: in_progress
+owner: composer
+reviewer: claude
+created_by: claude
+created_at: "2026-07-12T16:00:00Z"
+updated_at: "2026-07-12T21:30:00Z"
+phase: "3.8B"
+priority: medium
+risk_level: low
+requires_human_approval: false
+depends_on: []
+blocks: []
+labels:
+  - dashboard
+  - safety-scanner
+  - follow-up
+objective: >
+  The Execution Runs filter uses an anchor with onclick form.submit() to dodge the Phase 3.4
+  safety scan, inconsistent with the 8 other GET filter forms and mildly a11y-hostile. Fix the
+  scanner to treat a submit button inside a method="GET" form as read-only, then restore the
+  semantic button in the Execution Runs filter.
+context: >
+  Claude review finding from T-PHASE3-7C-DASH-RUN-VISIBILITY acceptance. Scanner precision fix,
+  not a boundary change: POST/write controls must still be flagged. First real assignment via
+  Phase 3.8B channel.
+goals:
+  - Scanner distinguishes GET-form submit (read-only) from write controls
+  - Execution Runs filter uses semantic button again
+  - Regression tests for both scanner directions (GET allowed, POST/write still flagged)
+non_goals:
+  - Any change to actual dashboard write-control policy
+  - New dashboard features
+inputs:
+  - dashboard/app.py
+  - tests/test_phase3_4_safety_boundaries.py
+  - handoffs/T-PHASE3-7C-DASH-RUN-VISIBILITY__composer__to__claude.md
+outputs:
+  - dashboard/safety_scan.py
+  - dashboard/app.py
+  - tests/test_phase3_4_safety_boundaries.py
+  - scripts/session_pickup.py
+  - docs/GROK_BUILD_LOOP.md
+  - AGENTS.md
+  - handoffs/T-PHASE3-7C-SAFETY-SCANNER-GET-FORM__composer__to__claude.md
+constraints:
+  - No merge to protected branches
+  - No enabled_adapters change for composer-restricted
+  - POST/write controls must still fail the scanner
+acceptance:
+  - Scanner tests prove GET-form submit passes and write-form submit still fails
+  - Execution Runs filter markup is a semantic button; page renders; filters work
+  - Full suite exit 0; validate.py exit 0; handoff gate verified
+human_approval_checklist: []
+execution:
+  mode: auto_local_worktree
+  adapter: composer-restricted
+  timeout_seconds: 1800
+  allowed_paths:
+    - dashboard/**
+    - tests/**
+    - docs/**
+    - tasks/**
+    - handoffs/**
+    - scripts/**
+  forbidden_operations:
+    - git_push_protected
+    - git_merge
+    - deploy
+    - production_access
+    - mcp_execution
+verification:
+  commands:
+    - python scripts/validate.py
+  run_full_tests: true
+notes: >
+  First real assignment posted by Claude through the Phase 3.8B assignment channel.
