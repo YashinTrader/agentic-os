@@ -492,6 +492,12 @@ def load_execution_runs(root_dir: Path, *, limit: int = 50) -> tuple[list[dict[s
             run["assignment_id"] = assignment.get("assignment_id", "")
             run["assignment_status"] = assignment.get("assignment_status", "")
             run["outbox_status"] = assignment.get("outbox_status", "")
+            run["assigned_to"] = assignment.get("assigned_to", "")
+            run["reassigned_from"] = assignment.get("reassigned_from", "")
+            run["reassigned_to_assignment_id"] = assignment.get(
+                "reassigned_to_assignment_id", ""
+            )
+            run["reassignment_reason"] = assignment.get("reassignment_reason", "")
 
     seen_tasks = {str(run.get("task_id") or "") for run in runs}
     seen_assignment_ids = {
@@ -499,6 +505,7 @@ def load_execution_runs(root_dir: Path, *, limit: int = 50) -> tuple[list[dict[s
         for run in runs
         if run.get("assignment_id")
     }
+    run_backed_tasks = set(seen_tasks)
     # Full lifecycle surface: pending/claimed/building/awaiting_review/accepted/...
     lifecycle_entries = assignment_index.get("lifecycle_only") or assignment_index.get(
         "pending_only", []
@@ -508,7 +515,11 @@ def load_execution_runs(root_dir: Path, *, limit: int = 50) -> tuple[list[dict[s
         assignment_id = str(assignment.get("assignment_id") or "")
         if assignment_id and assignment_id in seen_assignment_ids:
             continue
-        if task_id and task_id in seen_tasks and assignment.get("assignment_status") == "pending":
+        if (
+            task_id
+            and task_id in run_backed_tasks
+            and assignment.get("assignment_status") == "pending"
+        ):
             # Prefer real run row when present; skip duplicate pending-only
             continue
         dash_status = str(
@@ -561,6 +572,12 @@ def load_execution_runs(root_dir: Path, *, limit: int = 50) -> tuple[list[dict[s
                 "task_lifecycle_status": task_lifecycle.get(task_id, ""),
                 "claim_state": claim_state,
                 "active_claim_run_id": str(assignment.get("claimed_by") or ""),
+                "assigned_to": str(assignment.get("assigned_to") or ""),
+                "reassigned_from": str(assignment.get("reassigned_from") or ""),
+                "reassigned_to_assignment_id": str(
+                    assignment.get("reassigned_to_assignment_id") or ""
+                ),
+                "reassignment_reason": str(assignment.get("reassignment_reason") or ""),
             }
         )
         if task_id:
@@ -589,6 +606,8 @@ def _assignment_dashboard_status(assignment_status: str, outbox_status: str) -> 
         return "assignment_claimed"
     if outbox_status in {"completed", "awaiting_review"} or assignment_status == "awaiting_review":
         return "assignment_awaiting_review"
+    if assignment_status == "superseded":
+        return f"assignment_{assignment_status}"
     if outbox_status in {"failed", "blocked"}:
         return f"assignment_{outbox_status}"
     if assignment_status == "pending":
@@ -647,10 +666,27 @@ def load_composer_assignment_index(root_dir: Path) -> tuple[dict[str, Any], list
             or (outbox.resolution_note if outbox else "")
             or "",
             "correction_note": getattr(record, "correction_note", None) or "",
+            "assigned_by": getattr(record, "assigned_by", "") or "",
+            "assigned_to": getattr(record, "assigned_to", "") or "",
+            "reassigned_from": getattr(record, "reassigned_from", None) or "",
+            "reassigned_to_assignment_id": getattr(
+                record, "reassigned_to_assignment_id", None
+            )
+            or "",
+            "reassignment_reason": getattr(record, "reassignment_reason", None) or "",
         }
         all_entries.append(entry)
         if record.task_id:
-            by_task_id[record.task_id] = entry
+            existing = by_task_id.get(record.task_id)
+            if (
+                existing is None
+                or existing.get("assignment_status") == "superseded"
+                or (
+                    record.status != "superseded"
+                    and entry["updated_at"] >= existing.get("updated_at", "")
+                )
+            ):
+                by_task_id[record.task_id] = entry
         # Surface any non-run-backed assignment (pending through terminal)
         if record.status == "pending" and not outbox:
             pending_only.append(entry)
@@ -668,6 +704,7 @@ def load_composer_assignment_index(root_dir: Path) -> tuple[dict[str, Any], list
             "accepted",
             "changes_requested",
             "rejected",
+            "superseded",
         }
     ]
 
@@ -3103,6 +3140,7 @@ python scripts/execute_dispatch.py --preview ... --execute --approval runtime/di
                 "assignment_rejected",
                 "assignment_failed",
                 "assignment_blocked",
+                "assignment_superseded",
             }:
                 status_color = "#f87171"
             elif status in {
@@ -3143,7 +3181,7 @@ python scripts/execute_dispatch.py --preview ... --execute --approval runtime/di
             html_out.append(f"""
                         <tr>
                             <td><b>{escape(run.get('run_id') or '-')}</b><br/><code style="font-size:10px; color:#64748b;">{escape(run.get('run_dir') or '')}</code>{warning_html}</td>
-                            <td>{escape(run.get('task_id') or '-')}<br/><code style="font-size:10px; color:#94a3b8;">{escape(run.get('adapter_id') or '-')}</code></td>
+                            <td>{escape(run.get('task_id') or '-')}<br/><code style="font-size:10px; color:#94a3b8;">{escape(run.get('adapter_id') or '-')}</code>{('<br/><span style="font-size:10px; color:#64748b;">builder: ' + escape(run.get('assigned_to') or '') + '</span>') if run.get('assigned_to') else ''}</td>
                             <td><code style="font-size:10px;">{escape(run.get('route') or '-')}</code></td>
                             <td><span style="color:{status_color}; font-weight:700;">{escape(status)}</span></td>
                             <td><span style="color:{claim_color}; font-weight:700;">{escape(claim_state)}</span><br/><span style="font-size:10px; color:#94a3b8;">task: {escape(task_lifecycle_status)}</span>{('<br/><span style="font-size:10px; color:#64748b;">active claim: ' + escape(active_claim_run_id) + '</span>') if active_claim_run_id else ''}</td>
@@ -3155,6 +3193,8 @@ python scripts/execute_dispatch.py --preview ... --execute --approval runtime/di
                                 <div>result: <code>{escape(run.get('result_path') or run.get('outbox_status') or '-')}</code></div>
                                 <div>handoff: <code>{escape(run.get('handoff_path') or '-')}</code></div>
                                 {(f"<div>assignment: <code>{escape(str(run.get('assignment_status') or ''))}</code></div>" if run.get('assignment_id') else "")}
+                                {(f"<div>fallback from: <code>{escape(str(run.get('reassigned_from') or ''))}</code> ({escape(str(run.get('reassignment_reason') or ''))})</div>" if run.get('reassigned_from') else "")}
+                                {(f"<div>superseded by: <code>{escape(str(run.get('reassigned_to_assignment_id') or ''))}</code></div>" if run.get('reassigned_to_assignment_id') else "")}
                             </td>
                         </tr>
             """)

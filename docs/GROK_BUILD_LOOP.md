@@ -1,4 +1,4 @@
-# Grok Build assignment loop (Claude ↔ Grok)
+# Builder assignment loop (Claude ↔ Grok/Codex)
 
 This document is the **operating contract** that replaces Gabriel-as-messenger.
 It describes the file-based assignment bridge activated in Phase 3.8B.
@@ -19,6 +19,8 @@ See ADR-0043 and `docs/COMPOSER_LOCAL_BUILDER_PREVIEW.md`.
 | Inbox (Claude posts / Grok claims) | `runtime/dispatch/assignments/inbox/{assignment_id}.json` |
 | Claims (atomic) | `runtime/dispatch/assignments/claims/{assignment_id}.json` |
 | Outbox (Grok completes) | `runtime/dispatch/assignments/outbox/{assignment_id}.json` |
+| Notifications | `runtime/dispatch/assignments/events/*.json` |
+| Reassignment locks/audit | `runtime/dispatch/assignments/reassignments/{assignment_id}.json` |
 | Ingest index (Claude) | `runtime/dispatch/assignments/ingest/latest_ingest.json` |
 | CLI | `python scripts/assignments.py …` |
 | Handoffs | `handoffs/{task_id}__composer__to__claude.md` |
@@ -34,6 +36,7 @@ activation fixtures). Commit handoffs, docs, and `tests/fixtures/` evidence only
 ```
 pending → claimed → building → awaiting_review → accepted | changes_requested | rejected
                  ↘ cancelled
+                 ↘ superseded → new pending fallback assignment
 ```
 
 - **pending** — Claude posted; pickable once.
@@ -41,6 +44,66 @@ pending → claimed → building → awaiting_review → accepted | changes_requ
 - **building** — optional mid-build marker.
 - **awaiting_review** — outbox written; task YAML → `review`.
 - Terminal states are never re-picked (worker-eligibility discipline).
+- **superseded** — an orchestrator replaced this assignment with a new assignment
+  for another builder. The replacement links back through `reassigned_from`.
+
+---
+
+## Orchestrator fallback routing
+
+The orchestrator that created an assignment may redirect it when the preferred
+builder is unavailable, out of quota/tokens, unauthenticated, or timed out.
+Builders cannot reassign work and cannot claim assignments addressed to another
+builder.
+
+Grok remains the stable `composer` agent identity. `--assign-to grok` is accepted
+as an alias and stored as `assigned_to: composer`. Codex resolves to
+`codex-restricted` and `codex_local_builder`. Additional builders resolve from
+`agents/adapter_registry.yaml` when they have an agent id, adapter id, and
+`required_execution_route`.
+
+```bash
+python scripts/assignments.py reassign <grok-assignment-id> \
+  --assign-to codex \
+  --actor claude \
+  --reason quota_exhausted \
+  --poke
+```
+
+This operation:
+
+1. acquires a one-time reassignment lock;
+2. creates a new `pending` assignment with the same bounded contract;
+3. marks the old assignment `superseded`;
+4. records lineage and the reason;
+5. optionally queues an `assignment.reassigned` notification for Codex.
+
+Allowed reasons are `unavailable`, `quota_exhausted`,
+`authentication_failed`, `timeout`, and `operator_requested`.
+
+To notify the currently assigned builder without reassigning:
+
+```bash
+python scripts/assignments.py poke <assignment-id> \
+  --actor claude \
+  --message "Please pick up this assignment"
+```
+
+Inspect queued notifications:
+
+```bash
+python scripts/assignments.py events --unconsumed --json
+```
+
+Codex claims a fallback explicitly so it cannot accidentally claim Grok work:
+
+```bash
+python scripts/assignments.py claim <fallback-assignment-id> --claimed-by codex
+```
+
+`poke` is deliberately a notification, not proof of process launch. It returns
+`notification_queued`; the current Phase 3.8B loop still uses manual pickup.
+Only a future supervisor/wake adapter may report `launching` or `running`.
 
 ---
 

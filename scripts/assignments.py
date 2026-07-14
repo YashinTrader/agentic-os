@@ -21,6 +21,7 @@ from dispatch.assignment_channel import (  # noqa: E402
     create_assignment_from_task_yaml,
     format_assignment_contract,
     ingest_outbox_results,
+    list_assignment_events,
     list_inbox_assignments,
     list_outbox_results,
     list_pending_assignments,
@@ -28,6 +29,9 @@ from dispatch.assignment_channel import (  # noqa: E402
     reject_assignment,
     request_changes_assignment,
     resolve_assignment,
+    poke_assignment,
+    reassign_assignment,
+    REASSIGNMENT_REASONS,
     set_assignment_status,
     write_assignment,
 )
@@ -55,6 +59,10 @@ def cmd_list(args: argparse.Namespace) -> int:
                         "task_id": r.task_id,
                         "title": r.title,
                         "status": r.status,
+                        "assigned_by": r.assigned_by,
+                        "assigned_to": r.assigned_to,
+                        "adapter_id": r.adapter_id,
+                        "execution_route": r.execution_route,
                         "base_branch": r.base_branch,
                         "new_branch": r.new_branch,
                         "created_at": r.created_at,
@@ -199,6 +207,89 @@ def cmd_complete(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_reassign(args: argparse.Namespace) -> int:
+    root = Path(args.root).resolve()
+    replacement, errors = reassign_assignment(
+        root,
+        args.assignment_id,
+        reassigned_by=args.actor,
+        assigned_to=args.assign_to,
+        reason=args.reason,
+        poke=args.poke,
+        sync_task_yaml=not args.no_task_sync,
+    )
+    if replacement is None:
+        for error in errors:
+            print(error, file=sys.stderr)
+        return 1
+    payload = {
+        "status": "reassigned",
+        "superseded_assignment_id": args.assignment_id,
+        "assignment_id": replacement.assignment_id,
+        "assigned_to": replacement.assigned_to,
+        "adapter_id": replacement.adapter_id,
+        "execution_route": replacement.execution_route,
+        "wake_state": "notification_queued" if args.poke else "not_requested",
+        "warnings": errors,
+    }
+    if args.json:
+        _print_json(payload)
+    else:
+        print(
+            f"REASSIGNED {args.assignment_id} -> {replacement.assignment_id} "
+            f"({replacement.assigned_to})"
+        )
+        print(f"  adapter: {replacement.adapter_id}")
+        print(f"  route: {replacement.execution_route}")
+        print(f"  poke: {payload['wake_state']}")
+        for error in errors:
+            print(f"  warning: {error}", file=sys.stderr)
+    return 0
+
+
+def cmd_poke(args: argparse.Namespace) -> int:
+    root = Path(args.root).resolve()
+    event, errors = poke_assignment(
+        root,
+        args.assignment_id,
+        actor=args.actor,
+        message=args.message,
+    )
+    if event is None:
+        for error in errors:
+            print(error, file=sys.stderr)
+        return 1
+    if args.json:
+        _print_json({"status": "notification_queued", "event": event})
+    else:
+        print(
+            f"POKED {event['target']} for {event['assignment_id']} "
+            f"({event['wake_state']})"
+        )
+    return 0
+
+
+def cmd_events(args: argparse.Namespace) -> int:
+    root = Path(args.root).resolve()
+    events, errors = list_assignment_events(root)
+    if args.target:
+        events = [event for event in events if event.get("target") == args.target]
+    if args.unconsumed:
+        events = [event for event in events if not event.get("consumed_at")]
+    if args.json:
+        _print_json({"count": len(events), "events": events, "warnings": errors})
+    else:
+        for event in events:
+            print(
+                f"{event.get('event_id')}\t{event.get('event_type')}\t"
+                f"{event.get('source')}->{event.get('target')}\t"
+                f"{event.get('assignment_id')}"
+            )
+        for error in errors:
+            print(f"warning: {error}", file=sys.stderr)
+    return 0
+
+
 def cmd_ingest(args: argparse.Namespace) -> int:
     root = Path(args.root).resolve()
     results, errors = ingest_outbox_results(root)
@@ -245,7 +336,7 @@ def cmd_create(args: argparse.Namespace) -> int:
             goal=args.goal or args.title or args.task_id,
             base_branch=args.base_branch or "main",
             base_sha=args.base_sha,
-            new_branch=args.new_branch or f"agent/composer/{args.task_id}",
+            new_branch=args.new_branch or "",
             allowed_paths=args.allowed_path or [],
             acceptance_criteria=args.acceptance or [],
             verification_commands=args.verify or [
@@ -416,10 +507,40 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Assignment id (default: first pending)",
     )
-    claim_p.add_argument("--claimed-by", default="composer", help="Claimant identity")
+    claim_p.add_argument(
+        "--claimed-by",
+        default="composer",
+        help="Claimant identity (Codex fallback must pass --claimed-by codex)",
+    )
     claim_p.add_argument("--no-task-sync", action="store_true")
     claim_p.add_argument("--json", action="store_true")
     claim_p.set_defaults(func=cmd_claim)
+
+    reassign_p = sub.add_parser(
+        "reassign",
+        help="Supersede an assignment and route its contract to a fallback builder",
+    )
+    reassign_p.add_argument("assignment_id")
+    reassign_p.add_argument("--assign-to", required=True, help="Fallback builder id")
+    reassign_p.add_argument("--actor", default="claude", help="Orchestrator identity")
+    reassign_p.add_argument("--reason", required=True, choices=sorted(REASSIGNMENT_REASONS))
+    reassign_p.add_argument("--poke", action="store_true", help="Queue a builder notification")
+    reassign_p.add_argument("--no-task-sync", action="store_true")
+    reassign_p.add_argument("--json", action="store_true")
+    reassign_p.set_defaults(func=cmd_reassign)
+
+    poke_p = sub.add_parser("poke", help="Queue a notification for the assigned builder")
+    poke_p.add_argument("assignment_id")
+    poke_p.add_argument("--actor", default="claude", help="Orchestrator identity")
+    poke_p.add_argument("--message")
+    poke_p.add_argument("--json", action="store_true")
+    poke_p.set_defaults(func=cmd_poke)
+
+    events_p = sub.add_parser("events", help="List structured assignment notifications")
+    events_p.add_argument("--target")
+    events_p.add_argument("--unconsumed", action="store_true")
+    events_p.add_argument("--json", action="store_true")
+    events_p.set_defaults(func=cmd_events)
 
     complete_p = sub.add_parser(
         "complete",

@@ -21,6 +21,8 @@ INBOX_DIRNAME = "inbox"
 OUTBOX_DIRNAME = "outbox"
 CLAIM_DIRNAME = "claims"
 INGEST_DIRNAME = "ingest"
+EVENT_DIRNAME = "events"
+REASSIGNMENT_DIRNAME = "reassignments"
 
 # Lifecycle: pending -> claimed -> building -> awaiting_review -> terminal
 # changes_requested is non-terminal rework: re-claimable for one correction cycle.
@@ -33,6 +35,7 @@ AssignmentStatus = Literal[
     "changes_requested",
     "rejected",
     "cancelled",
+    "superseded",
 ]
 OutboxStatus = Literal[
     "completed",
@@ -55,7 +58,7 @@ CLAIMED_OR_BEYOND = frozenset(
         "rejected",
     }
 )
-TERMINAL_STATUSES = frozenset({"accepted", "rejected", "cancelled"})
+TERMINAL_STATUSES = frozenset({"accepted", "rejected", "cancelled", "superseded"})
 RESOLVABLE_FROM_STATUSES = frozenset({"awaiting_review"})
 RESOLUTION_REQUIRES_NOTE = frozenset({"changes_requested", "rejected"})
 
@@ -120,6 +123,7 @@ VALID_ASSIGNMENT_STATUSES = frozenset(
         "changes_requested",
         "rejected",
         "cancelled",
+        "superseded",
     }
 )
 VALID_OUTBOX_STATUSES = frozenset(
@@ -148,6 +152,30 @@ DEFAULT_EXECUTION_ROUTE = "composer_local_builder"
 DEFAULT_ASSIGNED_TO = "composer"
 DEFAULT_TIMEOUT_SECONDS = 1800
 
+REASSIGNMENT_REASONS = frozenset(
+    {
+        "unavailable",
+        "quota_exhausted",
+        "authentication_failed",
+        "timeout",
+        "operator_requested",
+    }
+)
+
+
+@dataclass(frozen=True)
+class BuilderProfile:
+    agent_id: str
+    adapter_id: str
+    execution_route: str
+
+
+BUILTIN_BUILDER_PROFILES = {
+    "composer": BuilderProfile("composer", "composer-restricted", "composer_local_builder"),
+    "grok": BuilderProfile("composer", "composer-restricted", "composer_local_builder"),
+    "codex": BuilderProfile("codex", "codex-restricted", "codex_local_builder"),
+}
+
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace(
@@ -175,11 +203,52 @@ def ingest_dir(repo_root: Path) -> Path:
     return assignments_root(repo_root) / INGEST_DIRNAME
 
 
+def events_dir(repo_root: Path) -> Path:
+    return assignments_root(repo_root) / EVENT_DIRNAME
+
+
+def reassignments_dir(repo_root: Path) -> Path:
+    return assignments_root(repo_root) / REASSIGNMENT_DIRNAME
+
+
 def generate_assignment_id(task_id: str) -> str:
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     suffix = uuid.uuid4().hex[:8]
     safe = re.sub(r"[^a-zA-Z0-9._-]+", "-", task_id.strip()).strip("-")[:24]
     return f"assign-{stamp}-{safe}-{suffix}"
+
+
+def resolve_builder_profile(
+    repo_root: Path,
+    agent_id: str,
+) -> tuple[BuilderProfile | None, list[str]]:
+    """Resolve a builder alias or an adapter-registry agent id."""
+    requested = agent_id.strip().lower()
+    if requested in BUILTIN_BUILDER_PROFILES:
+        return BUILTIN_BUILDER_PROFILES[requested], []
+
+    registry_path = repo_root / "agents" / "adapter_registry.yaml"
+    if registry_path.is_file():
+        try:
+            import yaml
+
+            registry = yaml.safe_load(registry_path.read_text(encoding="utf-8"))
+        except (OSError, yaml.YAMLError) as exc:
+            return None, [f"failed to read adapter registry: {exc}"]
+        adapters = registry.get("adapters", []) if isinstance(registry, dict) else []
+        for adapter in adapters:
+            if not isinstance(adapter, dict):
+                continue
+            if str(adapter.get("agent_id", "")).strip().lower() != requested:
+                continue
+            adapter_id = str(adapter.get("id") or "").strip()
+            route = str(adapter.get("required_execution_route") or "").strip()
+            if not adapter_id or not route:
+                continue
+            if str(adapter.get("status") or "active").lower() == "disabled":
+                return None, [f"builder {agent_id!r} has only disabled adapters"]
+            return BuilderProfile(requested, adapter_id, route), []
+    return None, [f"no assignment adapter registered for builder {agent_id!r}"]
 
 
 @dataclass
@@ -212,6 +281,9 @@ class AssignmentRecord:
     reviewed_at: str | None = None
     resolution_note: str | None = None
     correction_note: str | None = None
+    reassigned_from: str | None = None
+    reassignment_reason: str | None = None
+    reassigned_to_assignment_id: str | None = None
     parse_errors: list[str] = field(default_factory=list)
     source_path: str = ""
 
@@ -297,12 +369,21 @@ def validate_assignment_payload(data: dict[str, Any]) -> list[str]:
     status = str(data.get("status", ""))
     if status and status not in VALID_ASSIGNMENT_STATUSES:
         errors.append(f"invalid assignment status: {status!r}")
-    adapter = data.get("adapter_id")
-    if adapter is not None and str(adapter) and str(adapter) != DEFAULT_ADAPTER_ID:
-        errors.append(f"adapter_id must be {DEFAULT_ADAPTER_ID}")
-    route = data.get("execution_route")
-    if route is not None and str(route) and str(route) != DEFAULT_EXECUTION_ROUTE:
-        errors.append(f"execution_route must be {DEFAULT_EXECUTION_ROUTE}")
+    if "adapter_id" in data and not str(data.get("adapter_id") or "").strip():
+        errors.append("adapter_id must be non-empty")
+    if "execution_route" in data and not str(data.get("execution_route") or "").strip():
+        errors.append("execution_route must be non-empty")
+    assigned_to = str(data.get("assigned_to") or "").strip().lower()
+    profile = BUILTIN_BUILDER_PROFILES.get(assigned_to)
+    if profile:
+        if data.get("adapter_id") and str(data.get("adapter_id")) != profile.adapter_id:
+            errors.append(
+                f"adapter_id must be {profile.adapter_id} for builder {profile.agent_id}"
+            )
+        if data.get("execution_route") and str(data.get("execution_route")) != profile.execution_route:
+            errors.append(
+                f"execution_route must be {profile.execution_route} for builder {profile.agent_id}"
+            )
     for list_field in (
         "allowed_paths",
         "forbidden_operations",
@@ -365,10 +446,10 @@ def validate_inbox_payload(data: dict[str, Any]) -> list[str]:
     status = str(data.get("status", ""))
     if status and status not in VALID_ASSIGNMENT_STATUSES:
         errors.append(f"invalid inbox status: {status!r}")
-    if data.get("adapter_id") and str(data["adapter_id"]) != DEFAULT_ADAPTER_ID:
-        errors.append("Phase 3.8 inbox adapter_id must be composer-restricted")
-    if data.get("execution_route") and str(data["execution_route"]) != DEFAULT_EXECUTION_ROUTE:
-        errors.append("execution_route must be composer_local_builder")
+    if not str(data.get("adapter_id") or "").strip():
+        errors.append("adapter_id must be non-empty")
+    if not str(data.get("execution_route") or "").strip():
+        errors.append("execution_route must be non-empty")
     return errors
 
 
@@ -420,6 +501,11 @@ def parse_assignment_record(data: dict[str, Any], *, source_path: str = "") -> A
         reviewed_at=str(data.get("reviewed_at") or "") or None,
         resolution_note=str(data.get("resolution_note") or "") or None,
         correction_note=str(data.get("correction_note") or "") or None,
+        reassigned_from=str(data.get("reassigned_from") or "") or None,
+        reassignment_reason=str(data.get("reassignment_reason") or "") or None,
+        reassigned_to_assignment_id=(
+            str(data.get("reassigned_to_assignment_id") or "") or None
+        ),
         parse_errors=errors,
         source_path=source_path,
     )
@@ -480,6 +566,9 @@ def assignment_to_payload(record: AssignmentRecord) -> dict[str, Any]:
         "reviewed_at": record.reviewed_at,
         "resolution_note": record.resolution_note,
         "correction_note": record.correction_note,
+        "reassigned_from": record.reassigned_from,
+        "reassignment_reason": record.reassignment_reason,
+        "reassigned_to_assignment_id": record.reassigned_to_assignment_id,
         # Legacy alias for older readers
         "handoff_rel": record.handoff_path,
     }
@@ -507,12 +596,31 @@ def write_assignment(
     instructions: str | None = None,
     assignment_id: str | None = None,
     status: str = "pending",
+    adapter_id: str | None = None,
+    execution_route: str | None = None,
+    reassigned_from: str | None = None,
+    reassignment_reason: str | None = None,
 ) -> tuple[Path | None, list[str]]:
     """Write a pending assignment to inbox. Schema-validates before write."""
+    assigner = assigned_by.strip().lower()
+    assigner_profile = BUILTIN_BUILDER_PROFILES.get(assigner)
+    if assigner_profile is not None:
+        return None, [
+            f"builder identity {assigner_profile.agent_id!r} may not create assignments; "
+            "use an orchestrator identity"
+        ]
     aid = assignment_id or generate_assignment_id(task_id)
     now = utc_now()
-    resolved_handoff = handoff_path or f"handoffs/{task_id}__composer__to__claude.md"
-    resolved_branch = new_branch or f"agent/composer/{task_id}"
+    profile, profile_errors = resolve_builder_profile(repo_root, assigned_to)
+    if profile is None:
+        return None, profile_errors
+    canonical_assigned_to = profile.agent_id
+    resolved_adapter = adapter_id or profile.adapter_id
+    resolved_route = execution_route or profile.execution_route
+    resolved_handoff = handoff_path or (
+        f"handoffs/{task_id}__{canonical_assigned_to}__to__{assigned_by}.md"
+    )
+    resolved_branch = new_branch or f"agent/{canonical_assigned_to}/{task_id}"
     resolved_task_path = task_path or f"tasks/active/{task_id}.yaml"
     resolved_title = title or task_id
     resolved_goal = goal or instructions or f"Execute {task_id}"
@@ -534,16 +642,19 @@ def write_assignment(
         "handoff_path": resolved_handoff,
         "handoff_rel": resolved_handoff,
         "assigned_by": assigned_by,
-        "assigned_to": assigned_to,
+        "assigned_to": canonical_assigned_to,
         "created_at": now,
         "updated_at": now,
         "status": status,
-        "adapter_id": DEFAULT_ADAPTER_ID,
-        "execution_route": DEFAULT_EXECUTION_ROUTE,
+        "adapter_id": resolved_adapter,
+        "execution_route": resolved_route,
         "task_path": resolved_task_path,
         "instructions": instructions,
         "claimed_at": None,
         "claimed_by": None,
+        "reassigned_from": reassigned_from,
+        "reassignment_reason": reassignment_reason,
+        "reassigned_to_assignment_id": None,
     }
     errors = validate_assignment_payload(payload)
     if errors:
@@ -688,7 +799,7 @@ def claim_assignment(
     repo_root: Path,
     assignment_id: str,
     *,
-    claimed_by: str = DEFAULT_ASSIGNED_TO,
+    claimed_by: str | None = DEFAULT_ASSIGNED_TO,
     sync_task_yaml: bool = True,
 ) -> tuple[AssignmentRecord | None, list[str]]:
     """Atomically claim a pending assignment. Never re-claims."""
@@ -696,6 +807,16 @@ def claim_assignment(
     record, read_errors = read_assignment(repo_root, assignment_id)
     errors.extend(read_errors)
     if record is None:
+        return None, errors
+
+    claimant = (claimed_by or record.assigned_to).strip().lower()
+    claimant_profile = BUILTIN_BUILDER_PROFILES.get(claimant)
+    canonical_claimant = claimant_profile.agent_id if claimant_profile else claimant
+    if canonical_claimant != record.assigned_to:
+        errors.append(
+            f"assignment is assigned to {record.assigned_to!r}; "
+            f"builder {canonical_claimant!r} may not claim it"
+        )
         return None, errors
 
     ok, reason = evaluate_assignment_pickability(repo_root, record)
@@ -714,7 +835,7 @@ def claim_assignment(
         "schema_version": ASSIGNMENT_SCHEMA_VERSION,
         "assignment_id": assignment_id,
         "task_id": record.task_id,
-        "claimed_by": claimed_by,
+        "claimed_by": canonical_claimant,
         "claimed_at": now,
         "status": "claimed",
     }
@@ -726,7 +847,7 @@ def claim_assignment(
 
     record.status = "claimed"
     record.claimed_at = now
-    record.claimed_by = claimed_by
+    record.claimed_by = canonical_claimant
     record.updated_at = now
     try:
         _write_inbox_record(repo_root, record)
@@ -775,6 +896,211 @@ def set_assignment_status(
             )
         )
     return record, errors
+
+
+def write_assignment_event(
+    repo_root: Path,
+    *,
+    event_type: str,
+    source: str,
+    target: str,
+    assignment_id: str,
+    task_id: str,
+    reason: str | None = None,
+    message: str | None = None,
+    previous_assignment_id: str | None = None,
+) -> tuple[dict[str, Any] | None, list[str]]:
+    """Persist a notification event. Events never mutate assignment state."""
+    now = utc_now()
+    event_id = f"event-{uuid.uuid4().hex}"
+    payload: dict[str, Any] = {
+        "schema_version": ASSIGNMENT_SCHEMA_VERSION,
+        "event_id": event_id,
+        "event_type": event_type,
+        "source": source,
+        "target": target,
+        "assignment_id": assignment_id,
+        "task_id": task_id,
+        "reason": reason,
+        "message": message,
+        "previous_assignment_id": previous_assignment_id,
+        "wake_state": "notification_queued",
+        "created_at": now,
+        "consumed_at": None,
+    }
+    target_path = events_dir(repo_root) / f"{now.replace(':', '')}-{event_id}.json"
+    try:
+        atomic_create_json(target_path, payload)
+    except (FileExistsError, OSError) as exc:
+        return None, [f"failed to write assignment event: {exc}"]
+    return payload, []
+
+
+def list_assignment_events(repo_root: Path) -> tuple[list[dict[str, Any]], list[str]]:
+    root = events_dir(repo_root)
+    if not root.exists():
+        return [], []
+    events: list[dict[str, Any]] = []
+    errors: list[str] = []
+    for path in sorted(root.glob("*.json")):
+        payload, load_errors = _load_json_file(path)
+        errors.extend(load_errors)
+        if payload is not None:
+            events.append(payload)
+    return events, errors
+
+
+def poke_assignment(
+    repo_root: Path,
+    assignment_id: str,
+    *,
+    actor: str,
+    message: str | None = None,
+) -> tuple[dict[str, Any] | None, list[str]]:
+    """Queue an orchestrator-to-assigned-builder notification."""
+    record, errors = read_assignment(repo_root, assignment_id)
+    if record is None:
+        return None, errors
+    if actor != record.assigned_by:
+        errors.append(
+            f"only assignment orchestrator {record.assigned_by!r} may poke this builder"
+        )
+        return None, errors
+    if record.status != "pending":
+        errors.append(f"only pending assignments may be poked; status is {record.status!r}")
+        return None, errors
+    return write_assignment_event(
+        repo_root,
+        event_type="assignment.poked",
+        source=actor,
+        target=record.assigned_to,
+        assignment_id=record.assignment_id,
+        task_id=record.task_id,
+        message=message,
+    )
+
+
+def reassign_assignment(
+    repo_root: Path,
+    assignment_id: str,
+    *,
+    reassigned_by: str,
+    assigned_to: str,
+    reason: str,
+    poke: bool = False,
+    sync_task_yaml: bool = True,
+) -> tuple[AssignmentRecord | None, list[str]]:
+    """Supersede one assignment and create one pickable fallback assignment."""
+    record, errors = read_assignment(repo_root, assignment_id)
+    if record is None:
+        return None, errors
+    if reassigned_by != record.assigned_by:
+        errors.append(
+            f"only assignment orchestrator {record.assigned_by!r} may reassign this work"
+        )
+        return None, errors
+    if reason not in REASSIGNMENT_REASONS:
+        errors.append(f"invalid reassignment reason: {reason!r}")
+        return None, errors
+    if record.status in TERMINAL_STATUSES:
+        errors.append(f"assignment status {record.status!r} cannot be reassigned")
+        return None, errors
+
+    profile, profile_errors = resolve_builder_profile(repo_root, assigned_to)
+    errors.extend(profile_errors)
+    if profile is None:
+        return None, errors
+    if profile.agent_id == record.assigned_to:
+        errors.append(f"assignment is already assigned to {profile.agent_id!r}")
+        return None, errors
+
+    lock_path = reassignments_dir(repo_root) / f"{assignment_id}.json"
+    lock_payload = {
+        "schema_version": ASSIGNMENT_SCHEMA_VERSION,
+        "assignment_id": assignment_id,
+        "reassigned_by": reassigned_by,
+        "assigned_to": profile.agent_id,
+        "reason": reason,
+        "created_at": utc_now(),
+    }
+    try:
+        atomic_create_json(lock_path, lock_payload)
+    except FileExistsError:
+        return None, [f"assignment {assignment_id} already has a reassignment record"]
+    except OSError as exc:
+        return None, [f"failed to acquire reassignment lock: {exc}"]
+
+    replacement_id = generate_assignment_id(record.task_id)
+    replacement_path, create_errors = write_assignment(
+        repo_root,
+        task_id=record.task_id,
+        title=record.title,
+        goal=record.goal,
+        base_branch=record.base_branch,
+        base_sha=record.base_sha,
+        allowed_paths=record.allowed_paths,
+        forbidden_operations=record.forbidden_operations,
+        acceptance_criteria=record.acceptance_criteria,
+        verification_commands=record.verification_commands,
+        timeout=record.timeout,
+        assigned_by=record.assigned_by,
+        assigned_to=profile.agent_id,
+        task_path=record.task_path,
+        instructions=record.instructions,
+        assignment_id=replacement_id,
+        adapter_id=profile.adapter_id,
+        execution_route=profile.execution_route,
+        reassigned_from=record.assignment_id,
+        reassignment_reason=reason,
+    )
+    errors.extend(create_errors)
+    if replacement_path is None:
+        lock_path.unlink(missing_ok=True)
+        return None, errors
+
+    previous_status = record.status
+    record.status = "superseded"
+    record.updated_at = utc_now()
+    record.reassigned_to_assignment_id = replacement_id
+    record.reassignment_reason = reason
+    try:
+        _write_inbox_record(repo_root, record)
+    except (OSError, ValueError) as exc:
+        replacement_path.unlink(missing_ok=True)
+        lock_path.unlink(missing_ok=True)
+        return None, [f"failed to supersede original assignment: {exc}"]
+
+    lock_payload["replacement_assignment_id"] = replacement_id
+    lock_payload["previous_status"] = previous_status
+    atomic_write_json(lock_path, lock_payload)
+
+    if sync_task_yaml and record.task_id:
+        errors.extend(
+            sync_task_status_from_assignment(
+                repo_root,
+                task_id=record.task_id,
+                assignment_status="pending",
+                task_path=record.task_path or None,
+            )
+        )
+
+    replacement, read_errors = read_assignment(repo_root, replacement_id)
+    errors.extend(read_errors)
+    if replacement is None:
+        return None, errors
+    if poke:
+        _, event_errors = write_assignment_event(
+            repo_root,
+            event_type="assignment.reassigned",
+            source=reassigned_by,
+            target=replacement.assigned_to,
+            assignment_id=replacement.assignment_id,
+            task_id=replacement.task_id,
+            reason=reason,
+            previous_assignment_id=record.assignment_id,
+        )
+        errors.extend(event_errors)
+    return replacement, errors
 
 
 def write_outbox_result(
@@ -853,6 +1179,7 @@ def complete_assignment(
         blocked_reasons=blocked_reasons,
         result_summary=result_summary,
         claim_path=f"runtime/dispatch/assignments/claims/{assignment_id}.json",
+        adapter_id=record.adapter_id,
     )
     errors.extend(out_errors)
     if out_path is None:
@@ -1340,7 +1667,7 @@ def create_assignment_from_task_yaml(
         goal=goal,
         base_branch=base_branch or "main",
         base_sha=base_sha,
-        new_branch=new_branch or f"agent/composer/{task_id}",
+        new_branch=new_branch or "",
         allowed_paths=allowed,
         forbidden_operations=sorted(set(forbidden)),
         acceptance_criteria=[str(a) for a in acceptance],
@@ -1349,7 +1676,7 @@ def create_assignment_from_task_yaml(
             "python scripts/run_tests.py",
         ],
         timeout=DEFAULT_TIMEOUT_SECONDS,
-        handoff_path=f"handoffs/{task_id}__composer__to__claude.md",
+        handoff_path=None,
         assigned_by=assigned_by,
         assigned_to=assigned_to,
         task_path=rel_task,

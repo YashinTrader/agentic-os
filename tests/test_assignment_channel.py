@@ -24,13 +24,16 @@ from dispatch.assignment_channel import (  # noqa: E402
     ingest_handoff_from_outbox,
     ingest_outbox_results,
     list_inbox_assignments,
+    list_assignment_events,
     list_pending_assignments,
     parse_assignment_record,
     parse_outbox_record,
+    poke_assignment,
     read_assignment,
     reject_assignment,
     request_changes_assignment,
     resolve_assignment,
+    reassign_assignment,
     validate_assignment_payload,
     validate_inbox_payload,
     validate_outbox_payload,
@@ -318,6 +321,159 @@ class AssignmentClaimLifecycleTests(unittest.TestCase):
         # Already have one assignment; this creates another
         self.assertEqual(errors, [])
         self.assertIsNotNone(path)
+
+
+class AssignmentFallbackRoutingTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self.root = Path(self.tmp.name) / "repo"
+        self.root.mkdir(parents=True)
+        path, errors = write_assignment(
+            self.root,
+            task_id="T-FALLBACK",
+            title="Fallback routing",
+            goal="Move unavailable Grok work to Codex",
+            base_branch="main",
+            base_sha="a" * 40,
+            allowed_paths=["docs/**"],
+            acceptance_criteria=["Codex can claim the replacement"],
+            verification_commands=["python scripts/validate.py"],
+            assigned_by="claude",
+            assigned_to="grok",
+            assignment_id="assign-primary",
+        )
+        self.assertEqual(errors, [])
+        self.assertIsNotNone(path)
+
+    def tearDown(self) -> None:
+        self.tmp.cleanup()
+
+    def test_reassigns_unavailable_grok_to_codex_and_pokes_target(self) -> None:
+        replacement, errors = reassign_assignment(
+            self.root,
+            "assign-primary",
+            reassigned_by="claude",
+            assigned_to="codex",
+            reason="quota_exhausted",
+            poke=True,
+            sync_task_yaml=False,
+        )
+        self.assertEqual(errors, [])
+        self.assertIsNotNone(replacement)
+        assert replacement is not None
+        self.assertEqual(replacement.status, "pending")
+        self.assertEqual(replacement.assigned_to, "codex")
+        self.assertEqual(replacement.adapter_id, "codex-restricted")
+        self.assertEqual(replacement.execution_route, "codex_local_builder")
+        self.assertEqual(replacement.reassigned_from, "assign-primary")
+        self.assertIn("agent/codex/", replacement.new_branch)
+
+        original, original_errors = read_assignment(self.root, "assign-primary")
+        self.assertEqual(original_errors, [])
+        assert original is not None
+        self.assertEqual(original.status, "superseded")
+        self.assertEqual(original.reassigned_to_assignment_id, replacement.assignment_id)
+
+        events, event_errors = list_assignment_events(self.root)
+        self.assertEqual(event_errors, [])
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["event_type"], "assignment.reassigned")
+        self.assertEqual(events[0]["source"], "claude")
+        self.assertEqual(events[0]["target"], "codex")
+        self.assertEqual(events[0]["wake_state"], "notification_queued")
+
+    def test_only_original_orchestrator_can_reassign(self) -> None:
+        replacement, errors = reassign_assignment(
+            self.root,
+            "assign-primary",
+            reassigned_by="composer",
+            assigned_to="codex",
+            reason="unavailable",
+            sync_task_yaml=False,
+        )
+        self.assertIsNone(replacement)
+        self.assertTrue(any("orchestrator" in error for error in errors))
+        pending, _ = list_pending_assignments(self.root)
+        self.assertEqual([record.assignment_id for record in pending], ["assign-primary"])
+
+    def test_builder_identity_cannot_create_assignments(self) -> None:
+        path, errors = write_assignment(
+            self.root,
+            task_id="T-BUILDER-ASSIGN",
+            assigned_by="codex",
+            assigned_to="composer",
+        )
+        self.assertIsNone(path)
+        self.assertTrue(any("may not create assignments" in error for error in errors))
+
+    def test_builder_cannot_claim_assignment_for_another_builder(self) -> None:
+        record, errors = claim_assignment(
+            self.root,
+            "assign-primary",
+            claimed_by="codex",
+        )
+        self.assertIsNone(record)
+        self.assertTrue(any("assigned to" in error for error in errors))
+
+    def test_builder_cannot_poke_another_builder(self) -> None:
+        event, errors = poke_assignment(
+            self.root,
+            "assign-primary",
+            actor="codex",
+            message="pick this up",
+        )
+        self.assertIsNone(event)
+        self.assertTrue(any("orchestrator" in error for error in errors))
+
+    def test_superseded_assignment_cannot_be_reassigned_twice(self) -> None:
+        first, first_errors = reassign_assignment(
+            self.root,
+            "assign-primary",
+            reassigned_by="claude",
+            assigned_to="codex",
+            reason="unavailable",
+            sync_task_yaml=False,
+        )
+        self.assertEqual(first_errors, [])
+        self.assertIsNotNone(first)
+        second, second_errors = reassign_assignment(
+            self.root,
+            "assign-primary",
+            reassigned_by="claude",
+            assigned_to="codex",
+            reason="unavailable",
+        )
+        self.assertIsNone(second)
+        self.assertTrue(second_errors)
+
+    def test_fallback_completion_preserves_codex_adapter_identity(self) -> None:
+        replacement, errors = reassign_assignment(
+            self.root,
+            "assign-primary",
+            reassigned_by="claude",
+            assigned_to="codex",
+            reason="timeout",
+            sync_task_yaml=False,
+        )
+        self.assertEqual(errors, [])
+        assert replacement is not None
+        claimed, claim_errors = claim_assignment(
+            self.root,
+            replacement.assignment_id,
+            claimed_by="codex",
+            sync_task_yaml=False,
+        )
+        self.assertEqual(claim_errors, [])
+        self.assertIsNotNone(claimed)
+        outbox, complete_errors = complete_assignment(
+            self.root,
+            replacement.assignment_id,
+            branch_tip_sha="b" * 40,
+            sync_task_yaml=False,
+        )
+        self.assertEqual(complete_errors, [])
+        assert outbox is not None
+        self.assertEqual(outbox.adapter_id, "codex-restricted")
 
 
 class AssignmentCliImportTests(unittest.TestCase):

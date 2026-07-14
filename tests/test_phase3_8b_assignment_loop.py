@@ -181,6 +181,52 @@ class AssignmentLifecycleDashboardTests(unittest.TestCase):
             )
             self.assertTrue(by_task["T-R"].get("result_path"))
 
+    def test_dashboard_prefers_fallback_but_preserves_superseded_history(self) -> None:
+        from dashboard.app import load_composer_assignment_index, load_execution_runs
+        from dispatch.assignment_channel import reassign_assignment, write_assignment
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path, errors = write_assignment(
+                root,
+                task_id="T-DASH-FALLBACK",
+                title="Dashboard fallback",
+                goal="Show fallback lineage",
+                assigned_by="claude",
+                assigned_to="grok",
+                assignment_id="assign-primary",
+            )
+            self.assertEqual(errors, [])
+            self.assertIsNotNone(path)
+            replacement, errors = reassign_assignment(
+                root,
+                "assign-primary",
+                reassigned_by="claude",
+                assigned_to="codex",
+                reason="unavailable",
+                sync_task_yaml=False,
+            )
+            self.assertEqual(errors, [])
+            assert replacement is not None
+
+            index, index_errors = load_composer_assignment_index(root)
+            self.assertEqual(index_errors, [])
+            current = index["by_task_id"]["T-DASH-FALLBACK"]
+            self.assertEqual(current["assignment_id"], replacement.assignment_id)
+            self.assertEqual(current["assigned_to"], "codex")
+
+            runs, run_errors = load_execution_runs(root)
+            self.assertEqual(run_errors, [])
+            by_assignment = {run["assignment_id"]: run for run in runs}
+            self.assertEqual(
+                by_assignment["assign-primary"]["status"],
+                "assignment_superseded",
+            )
+            self.assertEqual(
+                by_assignment[replacement.assignment_id]["status"],
+                "assignment_pending",
+            )
+
 
 class AssignmentsCliSmokeTests(unittest.TestCase):
     def test_cli_list_exit_zero(self) -> None:
@@ -194,6 +240,63 @@ class AssignmentsCliSmokeTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stderr)
         data = json.loads(proc.stdout)
         self.assertIn("assignments", data)
+
+    def test_cli_reassigns_grok_assignment_to_codex_with_poke(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            create = subprocess.run(
+                [
+                    sys.executable,
+                    str(REPO_ROOT / "scripts" / "assignments.py"),
+                    "--root",
+                    str(root),
+                    "create",
+                    "--task-id",
+                    "T-CLI-FALLBACK",
+                    "--title",
+                    "CLI fallback",
+                    "--assigned-by",
+                    "claude",
+                    "--assigned-to",
+                    "grok",
+                    "--json",
+                ],
+                cwd=str(REPO_ROOT),
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(create.returncode, 0, create.stderr)
+            assignment_id = json.loads(create.stdout)["assignment_id"]
+
+            reassign = subprocess.run(
+                [
+                    sys.executable,
+                    str(REPO_ROOT / "scripts" / "assignments.py"),
+                    "--root",
+                    str(root),
+                    "reassign",
+                    assignment_id,
+                    "--assign-to",
+                    "codex",
+                    "--actor",
+                    "claude",
+                    "--reason",
+                    "quota_exhausted",
+                    "--poke",
+                    "--no-task-sync",
+                    "--json",
+                ],
+                cwd=str(REPO_ROOT),
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(reassign.returncode, 0, reassign.stderr)
+            payload = json.loads(reassign.stdout)
+            self.assertEqual(payload["assigned_to"], "codex")
+            self.assertEqual(payload["adapter_id"], "codex-restricted")
+            self.assertEqual(payload["wake_state"], "notification_queued")
 
 
 class IdentityMetadataTests(unittest.TestCase):
