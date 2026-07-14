@@ -1202,6 +1202,7 @@ def complete_assignment(
             "must be claimed|building|awaiting_review"
         )
         return None, errors
+    was_awaiting_review = record.status == "awaiting_review"
 
     handoff = handoff_path or record.handoff_path
     out_path, out_errors = write_outbox_result(
@@ -1240,13 +1241,14 @@ def complete_assignment(
 
     out_record, read_errors = read_outbox_result(repo_root, assignment_id)
     errors.extend(read_errors)
-    from dispatch.orchestrator_pokes import write_orchestrator_poke
+    if not was_awaiting_review:
+        from dispatch.orchestrator_pokes import write_orchestrator_poke
 
-    _, poke_errors = write_orchestrator_poke(
-        repo_root, source=record.assigned_to, assignment_id=record.assignment_id,
-        task_id=record.task_id, event="assignment_completed",
-    )
-    errors.extend(poke_errors)
+        _, poke_errors = write_orchestrator_poke(
+            repo_root, source=record.assigned_to, assignment_id=record.assignment_id,
+            task_id=record.task_id, event="assignment_completed",
+        )
+        errors.extend(poke_errors)
     return out_record, errors
 
 

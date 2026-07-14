@@ -100,6 +100,7 @@ class WakePokeTests(unittest.TestCase):
         assignment_id = self._assignment(wake=False)
         claim_assignment(self.root, assignment_id, sync_task_yaml=False)
         complete_assignment(self.root, assignment_id, sync_task_yaml=False)
+        complete_assignment(self.root, assignment_id, sync_task_yaml=False)
         pokes, _ = list_orchestrator_pokes(self.root)
         self.assertEqual([p["event"] for p in pokes], ["assignment_completed"])
         resolve_assignment(self.root, assignment_id, resolution="accepted", sync_task_yaml=False)
