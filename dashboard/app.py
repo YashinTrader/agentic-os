@@ -588,6 +588,13 @@ def load_execution_runs(root_dir: Path, *, limit: int = 50) -> tuple[list[dict[s
     return runs, errors
 
 
+def load_orchestrator_pokes(root_dir: Path) -> tuple[list[dict[str, Any]], list[str]]:
+    """Read-only view of pending builder-to-orchestrator notifications."""
+    from dispatch.orchestrator_pokes import list_orchestrator_pokes
+
+    return list_orchestrator_pokes(root_dir, drain=False)
+
+
 def _assignment_dashboard_status(assignment_status: str, outbox_status: str) -> str:
     """Map assignment lifecycle to Execution Runs status labels.
 
@@ -1136,6 +1143,8 @@ def generate_dashboard_html(query_params: dict[str, list[str]]) -> str:
     dispatch_exec_request, dispatch_exec_request_errors = load_dispatch_execution_request(ROOT_DIR)
     dispatch_exec_result, dispatch_exec_result_errors = load_dispatch_execution_result(ROOT_DIR)
     execution_runs, execution_run_errors = load_execution_runs(ROOT_DIR)
+    orchestrator_pokes, poke_errors = load_orchestrator_pokes(ROOT_DIR)
+    execution_run_errors.extend(poke_errors)
     obsidian_last_sync, obsidian_sync_errors = load_obsidian_last_sync_report(ROOT_DIR, obsidian_mapping)
     obsidian_notes_planned = count_obsidian_notes_planned(ROOT_DIR)
     
@@ -3096,6 +3105,19 @@ python scripts/execute_dispatch.py --preview ... --execute --approval runtime/di
                     {(f'<a href="/?tab=execution_runs" class="clear-link">Clear</a>' if run_filter_adapter or run_filter_status else '')}
                 </form>
     """)
+
+    html_out.append('<div style="margin-bottom:16px;"><div class="inspector-section-title">Pending orchestrator pokes</div>')
+    if orchestrator_pokes:
+        html_out.append('<table class="tools-table"><thead><tr><th>When</th><th>Source</th><th>Assignment</th><th>Event</th></tr></thead><tbody>')
+        for poke in reversed(orchestrator_pokes[-20:]):
+            html_out.append(
+                f"<tr><td>{escape(poke.get('created_at'))}</td><td>{escape(poke.get('source'))}</td>"
+                f"<td><code>{escape(poke.get('assignment_id'))}</code></td><td>{escape(poke.get('event'))}</td></tr>"
+            )
+        html_out.append('</tbody></table>')
+    else:
+        html_out.append('<div style="font-size:12px; color:#64748b;">No pending orchestrator pokes.</div>')
+    html_out.append('</div>')
 
     if execution_run_errors:
         html_out.append(

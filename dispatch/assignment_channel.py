@@ -284,6 +284,11 @@ class AssignmentRecord:
     reassigned_from: str | None = None
     reassignment_reason: str | None = None
     reassigned_to_assignment_id: str | None = None
+    wake_requested: bool = False
+    wake_delivered: bool = False
+    woken_at: str | None = None
+    wake_state: str = "not_requested"
+    wake_detail: str | None = None
     parse_errors: list[str] = field(default_factory=list)
     source_path: str = ""
 
@@ -506,6 +511,11 @@ def parse_assignment_record(data: dict[str, Any], *, source_path: str = "") -> A
         reassigned_to_assignment_id=(
             str(data.get("reassigned_to_assignment_id") or "") or None
         ),
+        wake_requested=bool(data.get("wake_requested", False)),
+        wake_delivered=bool(data.get("wake_delivered", False)),
+        woken_at=str(data.get("woken_at") or "") or None,
+        wake_state=str(data.get("wake_state") or "not_requested"),
+        wake_detail=str(data.get("wake_detail") or "") or None,
         parse_errors=errors,
         source_path=source_path,
     )
@@ -569,6 +579,11 @@ def assignment_to_payload(record: AssignmentRecord) -> dict[str, Any]:
         "reassigned_from": record.reassigned_from,
         "reassignment_reason": record.reassignment_reason,
         "reassigned_to_assignment_id": record.reassigned_to_assignment_id,
+        "wake_requested": record.wake_requested,
+        "wake_delivered": record.wake_delivered,
+        "woken_at": record.woken_at,
+        "wake_state": record.wake_state,
+        "wake_detail": record.wake_detail,
         # Legacy alias for older readers
         "handoff_rel": record.handoff_path,
     }
@@ -592,6 +607,7 @@ def write_assignment(
     handoff_path: str | None = None,
     assigned_by: str = "claude",
     assigned_to: str = DEFAULT_ASSIGNED_TO,
+    wake: bool = False,
     task_path: str = "",
     instructions: str | None = None,
     assignment_id: str | None = None,
@@ -603,6 +619,8 @@ def write_assignment(
 ) -> tuple[Path | None, list[str]]:
     """Write a pending assignment to inbox. Schema-validates before write."""
     assigner = assigned_by.strip().lower()
+    if wake and assigner != "claude":
+        return None, ["only claude may create an assignment with wake requested"]
     assigner_profile = BUILTIN_BUILDER_PROFILES.get(assigner)
     if assigner_profile is not None:
         return None, [
@@ -655,6 +673,11 @@ def write_assignment(
         "reassigned_from": reassigned_from,
         "reassignment_reason": reassignment_reason,
         "reassigned_to_assignment_id": None,
+        "wake_requested": bool(wake),
+        "wake_delivered": False,
+        "woken_at": None,
+        "wake_state": "pending_wake" if wake else "not_requested",
+        "wake_detail": None,
     }
     errors = validate_assignment_payload(payload)
     if errors:
@@ -663,6 +686,19 @@ def write_assignment(
     target = inbox_dir(repo_root) / f"{aid}.json"
     target.parent.mkdir(parents=True, exist_ok=True)
     atomic_write_json(target, payload)
+    if wake:
+        from dispatch.agent_wake import request_agent_wake
+
+        outcome = request_agent_wake(
+            repo_root, assignment_id=aid, task_id=task_id,
+            agent_id=canonical_assigned_to, adapter_id=resolved_adapter,
+            task_path=resolved_task_path, requested_by=assigned_by,
+        )
+        payload.update(
+            wake_delivered=outcome.delivered, woken_at=outcome.woken_at,
+            wake_state=outcome.state, wake_detail=outcome.detail,
+        )
+        atomic_write_json(target, payload)
     return target, []
 
 
@@ -1204,6 +1240,13 @@ def complete_assignment(
 
     out_record, read_errors = read_outbox_result(repo_root, assignment_id)
     errors.extend(read_errors)
+    from dispatch.orchestrator_pokes import write_orchestrator_poke
+
+    _, poke_errors = write_orchestrator_poke(
+        repo_root, source=record.assigned_to, assignment_id=record.assignment_id,
+        task_id=record.task_id, event="assignment_completed",
+    )
+    errors.extend(poke_errors)
     return out_record, errors
 
 
@@ -1343,6 +1386,14 @@ def resolve_assignment(
                 task_path=record.task_path or None,
             )
         )
+
+    from dispatch.orchestrator_pokes import write_orchestrator_poke
+
+    _, poke_errors = write_orchestrator_poke(
+        repo_root, source=reviewed_by, assignment_id=record.assignment_id,
+        task_id=record.task_id, event=f"assignment_{resolution}",
+    )
+    errors.extend(poke_errors)
 
     return record, errors
 
@@ -1620,6 +1671,7 @@ def create_assignment_from_task_yaml(
     new_branch: str | None = None,
     assigned_by: str = "claude",
     assigned_to: str = DEFAULT_ASSIGNED_TO,
+    wake: bool = False,
 ) -> tuple[Path | None, list[str]]:
     """Create a full-contract assignment from tasks/active/*.yaml."""
     import yaml
@@ -1681,6 +1733,7 @@ def create_assignment_from_task_yaml(
         assigned_to=assigned_to,
         task_path=rel_task,
         instructions=str(task.get("notes") or "") or None,
+        wake=wake,
     )
 
 

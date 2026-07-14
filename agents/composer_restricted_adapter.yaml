@@ -72,6 +72,10 @@ forbidden_args:
   - "--execute"
   - "--force"
 supports_streaming: false
+wake:
+  enabled: true
+  mechanism: assignment_watcher
+  command_or_path: scripts/watch_assignments.py
 notes: >
   Stable id composer-restricted / agent_id composer retained for reference continuity.
   Display name: Grok Build (Grok 4.5) as of 2026-07-12. File-based assignment loop

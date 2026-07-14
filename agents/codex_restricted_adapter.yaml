@@ -73,6 +73,10 @@ forbidden_args:
   - "--dangerously-bypass-approvals-and-sandbox"
   - "--dangerously-bypass-hook-trust"
 supports_streaming: false
+wake:
+  enabled: true
+  mechanism: codex_local_builder
+  command_or_path: scripts/run_local_builder_worker.py
 notes: >
   Autonomous local builder adapter. Standing execution policy auto_local_worktree
   authorizes bounded Codex development in isolated worktrees without per-run approval.

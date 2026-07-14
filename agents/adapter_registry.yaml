@@ -124,6 +124,10 @@ adapters:
     context_bundle_required: true
     handoff_required: true
     rollback_required: true
+    wake:
+      enabled: true
+      mechanism: codex_local_builder
+      command_or_path: scripts/run_local_builder_worker.py
     notes: >
       Autonomous local builder. Standing policy auto_local_worktree authorizes bounded
       Codex work in isolated worktrees. Generic dispatch blocked. See codex_restricted_adapter.yaml.
@@ -167,6 +171,10 @@ adapters:
     context_bundle_required: true
     handoff_required: true
     rollback_required: true
+    wake:
+      enabled: true
+      mechanism: assignment_watcher
+      command_or_path: scripts/watch_assignments.py
     notes: >
       Stable adapter id remains composer-restricted (do not rename). Display name updated
       2026-07-12 for Grok Build (Grok 4.5) as Primary Builder/Integrator. File-based

@@ -90,6 +90,20 @@ Statuses follow existing run vocabulary where applicable (`completed_verified`, 
 
 ## Consequences
 
+### 2026-07-15 amendment: local wake and orchestrator poke-back
+
+Assignment creation may request an adapter-declared local wake. Only Claude may
+request wakes. Composer uses an append-only wake queue plus a local watcher that
+claims the assignment; it does not invoke Grok or change the automatic-execution
+gate. Codex wake reuses the existing local-builder eligibility gate and worker
+queue. Unknown or disabled mechanisms remain `pending_wake` rather than failing
+assignment creation.
+
+Builders and reviewer resolution write append-only notifications addressed only
+to `runtime/dispatch/pokes/orchestrator/`. The CLI can list/drain this queue and
+the dashboard may read it, but the dashboard gains no write control. Direct
+agent-to-agent poke routing is not permitted.
+
 - Positive: Composer is first-class in registry and route policy; Claude can assign via files today; codex path unchanged and regression-gated.
 - Negative: Live execution still requires human Grok session or a follow-up poller; file bridge adds eventual-consistency latency.
 - Neutral: `enabled_adapters` stays codex-only until explicit activation task.

@@ -35,6 +35,7 @@ from dispatch.assignment_channel import (  # noqa: E402
     set_assignment_status,
     write_assignment,
 )
+from dispatch.orchestrator_pokes import list_orchestrator_pokes  # noqa: E402
 
 
 def _print_json(data: object) -> None:
@@ -324,6 +325,7 @@ def cmd_create(args: argparse.Namespace) -> int:
             new_branch=args.new_branch,
             assigned_by=args.assigned_by,
             assigned_to=args.assigned_to,
+            wake=args.wake,
         )
     else:
         if not args.task_id:
@@ -349,6 +351,7 @@ def cmd_create(args: argparse.Namespace) -> int:
             assigned_to=args.assigned_to,
             task_path=args.task_path or "",
             instructions=args.instructions,
+            wake=args.wake,
         )
     if path is None:
         for e in errors:
@@ -356,7 +359,8 @@ def cmd_create(args: argparse.Namespace) -> int:
         return 1
     rel = str(path.relative_to(root)).replace("\\", "/")
     if args.json:
-        _print_json({"status": "created", "path": rel, "assignment_id": path.stem, "warnings": errors})
+        record, _ = read_assignment(root, path.stem)
+        _print_json({"status": "created", "path": rel, "assignment_id": path.stem, "wake_state": record.wake_state if record else "unknown", "warnings": errors})
     else:
         print(f"Created assignment {path.stem}")
         print(f"  path: {rel}")
@@ -364,6 +368,18 @@ def cmd_create(args: argparse.Namespace) -> int:
             for e in errors:
                 print(f"  warning: {e}", file=sys.stderr)
     return 0
+
+
+def cmd_pokes(args: argparse.Namespace) -> int:
+    records, errors = list_orchestrator_pokes(Path(args.root).resolve(), drain=args.drain)
+    if args.json:
+        _print_json({"count": len(records), "pokes": records, "drained": args.drain, "warnings": errors})
+    else:
+        for record in records:
+            print(f"{record['created_at']}\t{record['source']}->orchestrator\t{record['assignment_id']}\t{record['event']}")
+        for error in errors:
+            print(f"warning: {error}", file=sys.stderr)
+    return 0 if not errors else 1
 
 
 def cmd_outbox(args: argparse.Namespace) -> int:
@@ -586,9 +602,15 @@ def build_parser() -> argparse.ArgumentParser:
     create_p.add_argument("--task-path")
     create_p.add_argument("--instructions")
     create_p.add_argument("--assigned-by", default="claude")
-    create_p.add_argument("--assigned-to", default="composer")
+    create_p.add_argument("--assigned-to", "--assign-to", dest="assigned_to", default="composer", help="Target builder id")
+    create_p.add_argument("--wake", action="store_true", help="Request adapter-declared local wake")
     create_p.add_argument("--json", action="store_true")
     create_p.set_defaults(func=cmd_create)
+
+    pokes_p = sub.add_parser("pokes", help="List orchestrator poke-back records")
+    pokes_p.add_argument("--drain", action="store_true")
+    pokes_p.add_argument("--json", action="store_true")
+    pokes_p.set_defaults(func=cmd_pokes)
 
     outbox_p = sub.add_parser("outbox", help="List outbox results")
     outbox_p.add_argument("--json", action="store_true")

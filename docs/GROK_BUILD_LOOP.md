@@ -254,3 +254,38 @@ repo, MCP side effects, merge to protected branches, dashboard write controls.
 
 The loop above is sufficient for Claude to assign and review without Gabriel
 relaying task text.
+
+---
+
+## Wake-on-assign and poke-back
+
+Claude can target and wake a builder in one local command:
+
+```bash
+python scripts/assignments.py create --from-task tasks/active/T-MY-TASK.yaml --assign-to grok --wake
+python scripts/assignments.py create --from-task tasks/active/T-MY-TASK.yaml --assign-to codex --wake
+```
+
+Only `claude` may request a wake. Adapter YAML declares the wake mechanism.
+Composer/Grok uses `scripts/watch_assignments.py`: the wake request writes a local
+queue record, and the watcher consumes it and atomically claims the assignment.
+This is a real pickup trigger, but it does **not** launch Grok headless or enable
+automatic Composer execution. Although Grok Build 0.2.101 exposes `grok --single`,
+the existing Gabriel gate still keeps `composer-restricted.supports_execution`
+false, so the watcher is the bounded mechanism shipped here.
+
+```bash
+python scripts/watch_assignments.py --agent composer --once
+python scripts/watch_assignments.py --agent composer --poll-seconds 5
+```
+
+Codex wake checks the task against the existing `codex_local_builder` eligibility
+gate and queues it for the existing worker. Completion and reviewer resolution
+append poke records under `runtime/dispatch/pokes/orchestrator/`:
+
+```bash
+python scripts/assignments.py pokes
+python scripts/assignments.py pokes --drain
+```
+
+The dashboard shows the same queue read-only. Agent-to-agent poke targets are rejected.
