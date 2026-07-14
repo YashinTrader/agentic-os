@@ -528,6 +528,10 @@ def load_execution_runs(root_dir: Path, *, limit: int = 50) -> tuple[list[dict[s
             claim_state = "review_pending"
         elif astatus == "accepted":
             claim_state = "released"
+        elif astatus == "changes_requested":
+            claim_state = "changes_requested"
+        elif astatus == "rejected":
+            claim_state = "rejected"
         runs.append(
             {
                 "run_id": assignment_id or task_id,
@@ -551,6 +555,9 @@ def load_execution_runs(root_dir: Path, *, limit: int = 50) -> tuple[list[dict[s
                 "assignment_id": assignment_id,
                 "assignment_status": astatus or str(assignment.get("status") or "pending"),
                 "outbox_status": str(assignment.get("outbox_status") or ""),
+                "reviewed_by": str(assignment.get("reviewed_by") or ""),
+                "reviewed_at": str(assignment.get("reviewed_at") or ""),
+                "resolution_note": str(assignment.get("resolution_note") or ""),
                 "task_lifecycle_status": task_lifecycle.get(task_id, ""),
                 "claim_state": claim_state,
                 "active_claim_run_id": str(assignment.get("claimed_by") or ""),
@@ -565,17 +572,23 @@ def load_execution_runs(root_dir: Path, *, limit: int = 50) -> tuple[list[dict[s
 
 
 def _assignment_dashboard_status(assignment_status: str, outbox_status: str) -> str:
-    """Map assignment lifecycle to Execution Runs status labels."""
-    if outbox_status in {"completed", "awaiting_review"} or assignment_status == "awaiting_review":
-        return "assignment_awaiting_review"
+    """Map assignment lifecycle to Execution Runs status labels.
+
+    Resolution statuses win over outbox so accepted/rejected never look like
+    still-awaiting-review after the outbox is stamped with a resolution.
+    """
+    if assignment_status == "accepted" or outbox_status == "accepted":
+        return "assignment_accepted"
+    if assignment_status in {"changes_requested", "rejected", "cancelled"}:
+        return f"assignment_{assignment_status}"
+    if outbox_status in {"changes_requested", "rejected"}:
+        return f"assignment_{outbox_status}"
     if assignment_status == "building":
         return "assignment_building"
     if assignment_status == "claimed":
         return "assignment_claimed"
-    if assignment_status == "accepted":
-        return "assignment_accepted"
-    if assignment_status in {"changes_requested", "rejected", "cancelled"}:
-        return f"assignment_{assignment_status}"
+    if outbox_status in {"completed", "awaiting_review"} or assignment_status == "awaiting_review":
+        return "assignment_awaiting_review"
     if outbox_status in {"failed", "blocked"}:
         return f"assignment_{outbox_status}"
     if assignment_status == "pending":
@@ -624,6 +637,16 @@ def load_composer_assignment_index(root_dir: Path) -> tuple[dict[str, Any], list
             "dashboard_status": _assignment_dashboard_status(record.status, outbox_status),
             "claimed_by": getattr(record, "claimed_by", None) or "",
             "claimed_at": getattr(record, "claimed_at", None) or "",
+            "reviewed_by": getattr(record, "reviewed_by", None)
+            or (outbox.reviewed_by if outbox else "")
+            or "",
+            "reviewed_at": getattr(record, "reviewed_at", None)
+            or (outbox.reviewed_at if outbox else "")
+            or "",
+            "resolution_note": getattr(record, "resolution_note", None)
+            or (outbox.resolution_note if outbox else "")
+            or "",
+            "correction_note": getattr(record, "correction_note", None) or "",
         }
         all_entries.append(entry)
         if record.task_id:

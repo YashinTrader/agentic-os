@@ -15,6 +15,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from dispatch.assignment_channel import (  # noqa: E402
     ASSIGNMENT_SCHEMA_VERSION,
+    accept_assignment,
     claim_assignment,
     complete_assignment,
     create_assignment_from_task_yaml,
@@ -27,6 +28,9 @@ from dispatch.assignment_channel import (  # noqa: E402
     parse_assignment_record,
     parse_outbox_record,
     read_assignment,
+    reject_assignment,
+    request_changes_assignment,
+    resolve_assignment,
     validate_assignment_payload,
     validate_inbox_payload,
     validate_outbox_payload,
@@ -329,6 +333,227 @@ class AssignmentCliImportTests(unittest.TestCase):
         spec.loader.exec_module(mod)
         self.assertTrue(hasattr(mod, "main"))
         self.assertTrue(hasattr(mod, "cmd_claim"))
+        self.assertTrue(hasattr(mod, "cmd_resolve"))
+
+
+class AssignmentReviewerResolutionTests(unittest.TestCase):
+    """Phase 3.8B reviewer verbs: accept / request-changes / reject."""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self.root = Path(self.tmp.name) / "repo"
+        self.root.mkdir(parents=True)
+        tasks = self.root / "tasks" / "active"
+        tasks.mkdir(parents=True)
+        self.task_id = "T-REVIEW-VERBS"
+        task = {
+            "id": self.task_id,
+            "title": "Reviewer verbs fixture",
+            "status": "ready",
+            "owner": "composer",
+            "reviewer": "claude",
+            "goals": ["Prove resolution verbs"],
+            "acceptance": ["accept/request-changes/reject work"],
+            "outputs": ["docs/EXAMPLE.md"],
+        }
+        (tasks / f"{self.task_id}.yaml").write_text(
+            yaml.safe_dump(task, sort_keys=False), encoding="utf-8"
+        )
+        path, errors = write_assignment(
+            self.root,
+            task_id=self.task_id,
+            title="Reviewer verbs fixture",
+            goal="Prove resolution verbs",
+            base_branch="main",
+            base_sha="c" * 40,
+            new_branch=f"agent/composer/{self.task_id}",
+            acceptance_criteria=["accept/request-changes/reject work"],
+            verification_commands=["python scripts/validate.py"],
+            task_path=f"tasks/active/{self.task_id}.yaml",
+            assignment_id="assign-review-verbs-1",
+        )
+        self.assertEqual(errors, [])
+        self.assertIsNotNone(path)
+        self.assignment_id = "assign-review-verbs-1"
+        claim_assignment(self.root, self.assignment_id)
+        complete_assignment(
+            self.root,
+            self.assignment_id,
+            handoff_path=f"handoffs/{self.task_id}__composer__to__claude.md",
+            branch_tip_sha="d" * 40,
+            result_summary="ready for review",
+        )
+
+    def tearDown(self) -> None:
+        self.tmp.cleanup()
+
+    def test_accept_marks_accepted_and_syncs_task_done(self) -> None:
+        record, errors = accept_assignment(
+            self.root,
+            self.assignment_id,
+            note="LGTM",
+            reviewed_by="claude",
+        )
+        self.assertEqual([e for e in errors if "not found" not in e], [])
+        self.assertIsNotNone(record)
+        assert record is not None
+        self.assertEqual(record.status, "accepted")
+        self.assertEqual(record.reviewed_by, "claude")
+        self.assertEqual(record.resolution_note, "LGTM")
+        self.assertIsNotNone(record.reviewed_at)
+
+        # Terminal: not re-claimable
+        pending, _ = list_pending_assignments(self.root)
+        self.assertEqual(pending, [])
+        again, again_errors = claim_assignment(self.root, self.assignment_id)
+        self.assertIsNone(again)
+        self.assertTrue(again_errors)
+
+        # Outbox carries resolution
+        outbox_path = (
+            self.root
+            / "runtime"
+            / "dispatch"
+            / "assignments"
+            / "outbox"
+            / f"{self.assignment_id}.json"
+        )
+        out = json.loads(outbox_path.read_text(encoding="utf-8"))
+        self.assertEqual(out["status"], "accepted")
+        self.assertEqual(out["reviewed_by"], "claude")
+        self.assertEqual(out["resolution_note"], "LGTM")
+
+        # Task YAML -> done
+        done_path = self.root / "tasks" / "done" / f"{self.task_id}.yaml"
+        self.assertTrue(done_path.is_file())
+        task = yaml.safe_load(done_path.read_text(encoding="utf-8"))
+        self.assertEqual(task["status"], "done")
+
+        # Ingest surfaces resolution
+        results, _ = ingest_outbox_results(self.root)
+        self.assertEqual(results[0]["outbox_status"], "accepted")
+        self.assertEqual(results[0]["assignment_status"], "accepted")
+        self.assertEqual(results[0]["reviewed_by"], "claude")
+
+    def test_reject_requires_note_and_blocks_task(self) -> None:
+        missing, missing_errors = reject_assignment(
+            self.root, self.assignment_id, note="", reviewed_by="claude"
+        )
+        self.assertIsNone(missing)
+        self.assertTrue(any("requires" in e for e in missing_errors))
+
+        record, errors = reject_assignment(
+            self.root,
+            self.assignment_id,
+            note="Fails acceptance: missing tests",
+            reviewed_by="claude",
+        )
+        self.assertEqual([e for e in errors if "not found" not in e], [])
+        assert record is not None
+        self.assertEqual(record.status, "rejected")
+        self.assertEqual(record.resolution_note, "Fails acceptance: missing tests")
+
+        pending, _ = list_pending_assignments(self.root)
+        self.assertEqual(pending, [])
+
+        blocked = self.root / "tasks" / "blocked" / f"{self.task_id}.yaml"
+        self.assertTrue(blocked.is_file())
+        task = yaml.safe_load(blocked.read_text(encoding="utf-8"))
+        self.assertEqual(task["status"], "blocked")
+
+    def test_request_changes_reclaimable_once_per_cycle(self) -> None:
+        record, errors = request_changes_assignment(
+            self.root,
+            self.assignment_id,
+            note="Please add invalid-transition tests",
+            reviewed_by="claude",
+        )
+        self.assertEqual([e for e in errors if "not found" not in e], [])
+        assert record is not None
+        self.assertEqual(record.status, "changes_requested")
+        self.assertEqual(
+            record.correction_note, "Please add invalid-transition tests"
+        )
+
+        # Re-claimable for correction cycle
+        pending, _ = list_pending_assignments(self.root)
+        self.assertEqual(len(pending), 1)
+        self.assertEqual(pending[0].assignment_id, self.assignment_id)
+
+        reclaimed, reclaim_errors = claim_assignment(self.root, self.assignment_id)
+        self.assertEqual(reclaim_errors, [])
+        assert reclaimed is not None
+        self.assertEqual(reclaimed.status, "claimed")
+        # Correction note preserved for the builder
+        self.assertEqual(
+            reclaimed.correction_note, "Please add invalid-transition tests"
+        )
+
+        # Exactly once: cannot re-claim while claimed
+        again, again_errors = claim_assignment(self.root, self.assignment_id)
+        self.assertIsNone(again)
+        self.assertTrue(again_errors)
+
+        # After re-complete, can request-changes again (new cycle)
+        complete_assignment(
+            self.root,
+            self.assignment_id,
+            handoff_path=f"handoffs/{self.task_id}__composer__to__claude.md",
+            branch_tip_sha="e" * 40,
+            result_summary="fixed",
+        )
+        second, second_errors = request_changes_assignment(
+            self.root,
+            self.assignment_id,
+            note="Still missing one edge case",
+            reviewed_by="claude",
+        )
+        self.assertEqual([e for e in second_errors if "not found" not in e], [])
+        assert second is not None
+        self.assertEqual(second.status, "changes_requested")
+        self.assertEqual(second.correction_note, "Still missing one edge case")
+
+        # Task YAML back to ready on changes_requested
+        ready = self.root / "tasks" / "active" / f"{self.task_id}.yaml"
+        task = yaml.safe_load(ready.read_text(encoding="utf-8"))
+        self.assertEqual(task["status"], "ready")
+
+    def test_invalid_transition_from_pending_rejected(self) -> None:
+        path, _ = write_assignment(
+            self.root,
+            task_id="T-OTHER",
+            title="Other",
+            goal="g",
+            assignment_id="assign-pending-only",
+        )
+        self.assertIsNotNone(path)
+        record, errors = accept_assignment(
+            self.root, "assign-pending-only", reviewed_by="claude"
+        )
+        self.assertIsNone(record)
+        self.assertTrue(any("awaiting_review" in e for e in errors))
+
+        record2, errors2 = resolve_assignment(
+            self.root,
+            self.assignment_id,
+            resolution="accepted",
+            reviewed_by="claude",
+        )
+        # First assignment is still awaiting_review from setUp — accept works.
+        # Force invalid by accepting twice:
+        self.assertIsNotNone(record2)
+        record3, errors3 = accept_assignment(
+            self.root, self.assignment_id, reviewed_by="claude"
+        )
+        self.assertIsNone(record3)
+        self.assertTrue(any("awaiting_review" in e for e in errors3))
+
+    def test_request_changes_requires_note(self) -> None:
+        record, errors = request_changes_assignment(
+            self.root, self.assignment_id, note="   ", reviewed_by="claude"
+        )
+        self.assertIsNone(record)
+        self.assertTrue(any("requires" in e for e in errors))
 
 
 if __name__ == "__main__":

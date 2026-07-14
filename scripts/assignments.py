@@ -15,6 +15,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
 from dispatch.assignment_channel import (  # noqa: E402
+    accept_assignment,
     claim_assignment,
     complete_assignment,
     create_assignment_from_task_yaml,
@@ -24,6 +25,9 @@ from dispatch.assignment_channel import (  # noqa: E402
     list_outbox_results,
     list_pending_assignments,
     read_assignment,
+    reject_assignment,
+    request_changes_assignment,
+    resolve_assignment,
     set_assignment_status,
     write_assignment,
 )
@@ -286,6 +290,9 @@ def cmd_outbox(args: argparse.Namespace) -> int:
                         "handoff_path": r.handoff_path,
                         "branch_tip_sha": r.branch_tip_sha,
                         "branch_name": r.branch_name,
+                        "reviewed_by": r.reviewed_by,
+                        "reviewed_at": r.reviewed_at,
+                        "resolution_note": r.resolution_note,
                         "source_path": r.source_path,
                     }
                     for r in records
@@ -295,13 +302,94 @@ def cmd_outbox(args: argparse.Namespace) -> int:
         )
     else:
         for r in records:
-            print(f"{r.assignment_id}\t{r.status}\t{r.task_id}\t{r.handoff_path or '-'}")
+            res = ""
+            if r.reviewed_by or r.resolution_note:
+                res = f"\treviewed_by={r.reviewed_by or '-'}"
+            print(
+                f"{r.assignment_id}\t{r.status}\t{r.task_id}\t"
+                f"{r.handoff_path or '-'}{res}"
+            )
+    return 0
+
+
+def cmd_resolve(args: argparse.Namespace) -> int:
+    """Shared handler for accept / request-changes / reject."""
+    root = Path(args.root).resolve()
+    resolution = args.resolution
+    note = getattr(args, "note", None)
+    reviewed_by = getattr(args, "reviewed_by", "claude")
+
+    if resolution == "accepted":
+        record, errors = accept_assignment(
+            root,
+            args.assignment_id,
+            note=note,
+            reviewed_by=reviewed_by,
+            sync_task_yaml=not args.no_task_sync,
+        )
+    elif resolution == "changes_requested":
+        record, errors = request_changes_assignment(
+            root,
+            args.assignment_id,
+            note=note or "",
+            reviewed_by=reviewed_by,
+            sync_task_yaml=not args.no_task_sync,
+        )
+    elif resolution == "rejected":
+        record, errors = reject_assignment(
+            root,
+            args.assignment_id,
+            note=note or "",
+            reviewed_by=reviewed_by,
+            sync_task_yaml=not args.no_task_sync,
+        )
+    else:
+        record, errors = resolve_assignment(
+            root,
+            args.assignment_id,
+            resolution=resolution,
+            note=note,
+            reviewed_by=reviewed_by,
+            sync_task_yaml=not args.no_task_sync,
+        )
+
+    if record is None:
+        for e in errors:
+            print(e, file=sys.stderr)
+        return 1
+
+    if args.json:
+        from dispatch.assignment_channel import assignment_to_payload
+
+        _print_json(
+            {
+                "status": record.status,
+                "assignment": assignment_to_payload(record),
+                "warnings": errors,
+            }
+        )
+    else:
+        print(
+            f"RESOLVED {record.assignment_id} -> {record.status} "
+            f"(reviewed_by={record.reviewed_by})"
+        )
+        if record.resolution_note:
+            print(f"  note: {record.resolution_note}")
+        if record.status == "changes_requested":
+            print("  re-claimable: yes (one correction cycle)")
+        if errors:
+            print("warnings:", file=sys.stderr)
+            for e in errors:
+                print(f"  {e}", file=sys.stderr)
     return 0
 
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        description="File-based Claude↔Grok assignment loop (list/show/claim/complete/ingest)."
+        description=(
+            "File-based Claude↔Grok assignment loop "
+            "(list/show/claim/complete/ingest/accept/request-changes/reject)."
+        )
     )
     p.add_argument(
         "--root",
@@ -384,6 +472,39 @@ def build_parser() -> argparse.ArgumentParser:
     outbox_p = sub.add_parser("outbox", help="List outbox results")
     outbox_p.add_argument("--json", action="store_true")
     outbox_p.set_defaults(func=cmd_outbox)
+
+    def _add_resolve_args(sp: argparse.ArgumentParser, *, note_required: bool) -> None:
+        sp.add_argument("assignment_id")
+        sp.add_argument(
+            "--note",
+            required=note_required,
+            help="Reviewer note (required for request-changes/reject)",
+        )
+        sp.add_argument("--reviewed-by", default="claude")
+        sp.add_argument("--no-task-sync", action="store_true")
+        sp.add_argument("--json", action="store_true")
+        sp.set_defaults(func=cmd_resolve)
+
+    accept_p = sub.add_parser(
+        "accept",
+        help="Reviewer: accept assignment (awaiting_review -> accepted)",
+    )
+    accept_p.set_defaults(resolution="accepted")
+    _add_resolve_args(accept_p, note_required=False)
+
+    changes_p = sub.add_parser(
+        "request-changes",
+        help="Reviewer: request changes (awaiting_review -> changes_requested; re-claimable)",
+    )
+    changes_p.set_defaults(resolution="changes_requested")
+    _add_resolve_args(changes_p, note_required=True)
+
+    reject_p = sub.add_parser(
+        "reject",
+        help="Reviewer: reject assignment (awaiting_review -> rejected)",
+    )
+    reject_p.set_defaults(resolution="rejected")
+    _add_resolve_args(reject_p, note_required=True)
 
     return p
 

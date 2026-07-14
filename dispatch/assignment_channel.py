@@ -23,6 +23,7 @@ CLAIM_DIRNAME = "claims"
 INGEST_DIRNAME = "ingest"
 
 # Lifecycle: pending -> claimed -> building -> awaiting_review -> terminal
+# changes_requested is non-terminal rework: re-claimable for one correction cycle.
 AssignmentStatus = Literal[
     "pending",
     "claimed",
@@ -33,22 +34,30 @@ AssignmentStatus = Literal[
     "rejected",
     "cancelled",
 ]
-OutboxStatus = Literal["completed", "failed", "blocked", "awaiting_review"]
+OutboxStatus = Literal[
+    "completed",
+    "failed",
+    "blocked",
+    "awaiting_review",
+    "accepted",
+    "changes_requested",
+    "rejected",
+]
+ResolutionVerb = Literal["accepted", "changes_requested", "rejected"]
 
-ACTIVE_PICKABLE_STATUSES = frozenset({"pending"})
+ACTIVE_PICKABLE_STATUSES = frozenset({"pending", "changes_requested"})
 CLAIMED_OR_BEYOND = frozenset(
     {
         "claimed",
         "building",
         "awaiting_review",
         "accepted",
-        "changes_requested",
         "rejected",
     }
 )
-TERMINAL_STATUSES = frozenset(
-    {"accepted", "changes_requested", "rejected", "cancelled"}
-)
+TERMINAL_STATUSES = frozenset({"accepted", "rejected", "cancelled"})
+RESOLVABLE_FROM_STATUSES = frozenset({"awaiting_review"})
+RESOLUTION_REQUIRES_NOTE = frozenset({"changes_requested", "rejected"})
 
 # Task YAML status mapping used by the bridge
 TASK_STATUS_ON_CLAIM = "in_progress"
@@ -114,7 +123,15 @@ VALID_ASSIGNMENT_STATUSES = frozenset(
     }
 )
 VALID_OUTBOX_STATUSES = frozenset(
-    {"completed", "failed", "blocked", "awaiting_review"}
+    {
+        "completed",
+        "failed",
+        "blocked",
+        "awaiting_review",
+        "accepted",
+        "changes_requested",
+        "rejected",
+    }
 )
 
 DEFAULT_FORBIDDEN_OPERATIONS = [
@@ -191,6 +208,10 @@ class AssignmentRecord:
     instructions: str | None = None
     claimed_at: str | None = None
     claimed_by: str | None = None
+    reviewed_by: str | None = None
+    reviewed_at: str | None = None
+    resolution_note: str | None = None
+    correction_note: str | None = None
     parse_errors: list[str] = field(default_factory=list)
     source_path: str = ""
 
@@ -214,6 +235,9 @@ class OutboxRecord:
     blocked_reasons: list[str] = field(default_factory=list)
     result_summary: str | None = None
     claim_path: str | None = None
+    reviewed_by: str | None = None
+    reviewed_at: str | None = None
+    resolution_note: str | None = None
     parse_errors: list[str] = field(default_factory=list)
     source_path: str = ""
 
@@ -392,6 +416,10 @@ def parse_assignment_record(data: dict[str, Any], *, source_path: str = "") -> A
         instructions=str(data.get("instructions") or "") or None,
         claimed_at=str(data.get("claimed_at") or "") or None,
         claimed_by=str(data.get("claimed_by") or "") or None,
+        reviewed_by=str(data.get("reviewed_by") or "") or None,
+        reviewed_at=str(data.get("reviewed_at") or "") or None,
+        resolution_note=str(data.get("resolution_note") or "") or None,
+        correction_note=str(data.get("correction_note") or "") or None,
         parse_errors=errors,
         source_path=source_path,
     )
@@ -413,6 +441,9 @@ def parse_outbox_record(data: dict[str, Any], *, source_path: str = "") -> Outbo
         blocked_reasons=list(blocked) if isinstance(blocked, list) else [],
         result_summary=str(data.get("result_summary") or "") or None,
         claim_path=str(data.get("claim_path") or "") or None,
+        reviewed_by=str(data.get("reviewed_by") or "") or None,
+        reviewed_at=str(data.get("reviewed_at") or "") or None,
+        resolution_note=str(data.get("resolution_note") or "") or None,
         parse_errors=errors,
         source_path=source_path,
     )
@@ -445,6 +476,10 @@ def assignment_to_payload(record: AssignmentRecord) -> dict[str, Any]:
         "instructions": record.instructions,
         "claimed_at": record.claimed_at,
         "claimed_by": record.claimed_by,
+        "reviewed_by": record.reviewed_by,
+        "reviewed_at": record.reviewed_at,
+        "resolution_note": record.resolution_note,
+        "correction_note": record.correction_note,
         # Legacy alias for older readers
         "handoff_rel": record.handoff_path,
     }
@@ -632,7 +667,9 @@ def evaluate_assignment_pickability(
     if has_active_claim(repo_root, record.assignment_id):
         return False, f"assignment {record.assignment_id} already has a claim file"
     outbox_path = outbox_dir(repo_root) / f"{record.assignment_id}.json"
-    if outbox_path.is_file():
+    # changes_requested keeps a resolution outbox for ingest/dashboard but is
+    # still re-claimable for one correction cycle (claim clears that outbox).
+    if outbox_path.is_file() and record.status != "changes_requested":
         return False, f"assignment {record.assignment_id} already has an outbox result"
     return True, "eligible"
 
@@ -665,6 +702,10 @@ def claim_assignment(
     if not ok:
         errors.append(reason)
         return None, errors
+
+    # Correction-cycle re-claim: drop prior resolution outbox so complete can rewrite it.
+    if record.status == "changes_requested":
+        _clear_outbox_file(repo_root, assignment_id)
 
     claim_path = claims_dir(repo_root) / f"{assignment_id}.json"
     claim_path.parent.mkdir(parents=True, exist_ok=True)
@@ -839,6 +880,200 @@ def complete_assignment(
     return out_record, errors
 
 
+def _clear_claim_file(repo_root: Path, assignment_id: str) -> None:
+    claim_path = claims_dir(repo_root) / f"{assignment_id}.json"
+    if claim_path.is_file():
+        claim_path.unlink()
+
+
+def _clear_outbox_file(repo_root: Path, assignment_id: str) -> None:
+    out_path = outbox_dir(repo_root) / f"{assignment_id}.json"
+    if out_path.is_file():
+        out_path.unlink()
+
+
+def _update_outbox_resolution(
+    repo_root: Path,
+    *,
+    assignment_id: str,
+    task_id: str,
+    resolution: ResolutionVerb,
+    reviewed_by: str,
+    reviewed_at: str,
+    resolution_note: str | None,
+    adapter_id: str = DEFAULT_ADAPTER_ID,
+) -> tuple[Path | None, list[str]]:
+    """Merge resolution fields into existing outbox (or create a minimal one)."""
+    existing, _ = read_outbox_result(repo_root, assignment_id)
+    payload: dict[str, Any] = {
+        "schema_version": ASSIGNMENT_SCHEMA_VERSION,
+        "assignment_id": assignment_id,
+        "task_id": task_id,
+        "adapter_id": adapter_id,
+        "status": resolution,
+        "finished_at": existing.finished_at if existing else reviewed_at,
+        "run_id": existing.run_id if existing else None,
+        "handoff_path": existing.handoff_path if existing else None,
+        "branch_tip_sha": existing.branch_tip_sha if existing else None,
+        "branch_name": existing.branch_name if existing else None,
+        "blocked_reasons": list(existing.blocked_reasons) if existing else [],
+        "result_summary": existing.result_summary if existing else None,
+        "claim_path": (
+            existing.claim_path
+            if existing
+            else f"runtime/dispatch/assignments/claims/{assignment_id}.json"
+        ),
+        "reviewed_by": reviewed_by,
+        "reviewed_at": reviewed_at,
+        "resolution_note": resolution_note,
+    }
+    errors = validate_outbox_payload(payload)
+    if errors:
+        return None, errors
+    target = outbox_dir(repo_root) / f"{assignment_id}.json"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_json(target, payload)
+    return target, []
+
+
+def resolve_assignment(
+    repo_root: Path,
+    assignment_id: str,
+    *,
+    resolution: ResolutionVerb,
+    note: str | None = None,
+    reviewed_by: str = "claude",
+    sync_task_yaml: bool = True,
+) -> tuple[AssignmentRecord | None, list[str]]:
+    """Reviewer resolution: accept | request-changes | reject.
+
+    - accepted: terminal; task YAML -> done
+    - rejected: terminal; task YAML -> blocked; note required
+    - changes_requested: non-terminal rework; note required; claim+outbox cleared
+      so the assignment is re-claimable exactly once per correction cycle
+    """
+    errors: list[str] = []
+    if resolution not in {"accepted", "changes_requested", "rejected"}:
+        return None, [f"invalid resolution: {resolution!r}"]
+
+    note_text = (note or "").strip() or None
+    if resolution in RESOLUTION_REQUIRES_NOTE and not note_text:
+        return None, [f"{resolution} requires a non-empty --note"]
+
+    record, read_errors = read_assignment(repo_root, assignment_id)
+    errors.extend(read_errors)
+    if record is None:
+        return None, errors
+
+    if record.status not in RESOLVABLE_FROM_STATUSES:
+        errors.append(
+            f"cannot resolve assignment in status {record.status!r}; "
+            "must be awaiting_review"
+        )
+        return None, errors
+
+    now = utc_now()
+    record.status = resolution
+    record.updated_at = now
+    record.reviewed_by = reviewed_by
+    record.reviewed_at = now
+    record.resolution_note = note_text
+    if resolution == "changes_requested":
+        record.correction_note = note_text
+        # One re-claim cycle: release claim so pickability returns.
+        # Keep outbox as a resolution record (status=changes_requested) for
+        # ingest/dashboard; claim clears it for the next build cycle.
+        _clear_claim_file(repo_root, assignment_id)
+        record.claimed_at = None
+        record.claimed_by = None
+
+    out_path, out_errors = _update_outbox_resolution(
+        repo_root,
+        assignment_id=assignment_id,
+        task_id=record.task_id,
+        resolution=resolution,
+        reviewed_by=reviewed_by,
+        reviewed_at=now,
+        resolution_note=note_text,
+        adapter_id=record.adapter_id,
+    )
+    errors.extend(out_errors)
+    if out_path is None and out_errors:
+        return None, errors
+
+    try:
+        _write_inbox_record(repo_root, record)
+    except ValueError as exc:
+        errors.append(str(exc))
+        return None, errors
+
+    if sync_task_yaml and record.task_id:
+        errors.extend(
+            sync_task_status_from_assignment(
+                repo_root,
+                task_id=record.task_id,
+                assignment_status=resolution,
+                task_path=record.task_path or None,
+            )
+        )
+
+    return record, errors
+
+
+def accept_assignment(
+    repo_root: Path,
+    assignment_id: str,
+    *,
+    note: str | None = None,
+    reviewed_by: str = "claude",
+    sync_task_yaml: bool = True,
+) -> tuple[AssignmentRecord | None, list[str]]:
+    return resolve_assignment(
+        repo_root,
+        assignment_id,
+        resolution="accepted",
+        note=note,
+        reviewed_by=reviewed_by,
+        sync_task_yaml=sync_task_yaml,
+    )
+
+
+def request_changes_assignment(
+    repo_root: Path,
+    assignment_id: str,
+    *,
+    note: str,
+    reviewed_by: str = "claude",
+    sync_task_yaml: bool = True,
+) -> tuple[AssignmentRecord | None, list[str]]:
+    return resolve_assignment(
+        repo_root,
+        assignment_id,
+        resolution="changes_requested",
+        note=note,
+        reviewed_by=reviewed_by,
+        sync_task_yaml=sync_task_yaml,
+    )
+
+
+def reject_assignment(
+    repo_root: Path,
+    assignment_id: str,
+    *,
+    note: str,
+    reviewed_by: str = "claude",
+    sync_task_yaml: bool = True,
+) -> tuple[AssignmentRecord | None, list[str]]:
+    return resolve_assignment(
+        repo_root,
+        assignment_id,
+        resolution="rejected",
+        note=note,
+        reviewed_by=reviewed_by,
+        sync_task_yaml=sync_task_yaml,
+    )
+
+
 def read_outbox_result(repo_root: Path, assignment_id: str) -> tuple[OutboxRecord | None, list[str]]:
     path = outbox_dir(repo_root) / f"{assignment_id}.json"
     data, errors = _load_json_file(path)
@@ -923,6 +1158,12 @@ def ingest_outbox_results(repo_root: Path) -> tuple[list[dict[str, Any]], list[s
             "branch_name": out.branch_name or (inbox.new_branch if inbox else None),
             "branch_tip_sha": out.branch_tip_sha,
             "result_summary": out.result_summary,
+            "reviewed_by": out.reviewed_by
+            or (inbox.reviewed_by if inbox else None),
+            "reviewed_at": out.reviewed_at
+            or (inbox.reviewed_at if inbox else None),
+            "resolution_note": out.resolution_note
+            or (inbox.resolution_note if inbox else None),
             "outbox_path": out.source_path,
             "inbox_path": inbox.source_path if inbox else None,
             "ingested_at": now,
@@ -1151,6 +1392,17 @@ def format_assignment_contract(record: AssignmentRecord) -> str:
         lines.append(f"  - {cmd}")
     if record.instructions:
         lines.extend(["", "instructions:", record.instructions])
+    if record.correction_note:
+        lines.extend(["", "correction_note:", record.correction_note])
+    if record.resolution_note:
+        lines.extend(
+            [
+                "",
+                f"resolution_note (reviewed_by={record.reviewed_by or '-'} "
+                f"at {record.reviewed_at or '-'}):",
+                record.resolution_note,
+            ]
+        )
     if record.parse_errors:
         lines.extend(["", "schema_warnings:"])
         for err in record.parse_errors:

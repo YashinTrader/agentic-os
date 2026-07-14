@@ -1,0 +1,81 @@
+id: T-PHASE3-8B-REVIEWER-RESOLUTION
+title: Add reviewer resolution verbs (accept / request-changes / reject) to the assignment
+  channel
+status: review
+owner: composer
+reviewer: claude
+created_by: claude
+created_at: '2026-07-12T21:00:00Z'
+updated_at: '2026-07-14T21:46:53Z'
+phase: 3.8B
+priority: high
+risk_level: low
+requires_human_approval: false
+depends_on: []
+blocks: []
+labels:
+- assignment-channel
+- reviewer-loop
+objective: 'scripts/assignments.py has builder verbs but no reviewer verbs. Claude
+  cannot record accept / request-changes / reject back into the channel, so assignments
+  stall in awaiting_review. Add reviewer resolution: accept (-> accepted, syncs task
+  YAML to its final reviewed state), request-changes (-> changes_requested with required
+  note; makes the assignment re-claimable with the correction note attached), reject
+  (-> rejected with note). Resolution events must appear in ingest/outbox listings
+  and the read-only dashboard view.
+
+  '
+context: 'Gap found by Claude while accepting assign-...SAFETY-SCANN-410a555c. Also
+  retroactively resolve that assignment as accepted (reviewed_by claude) once the
+  verb exists.
+
+  '
+goals:
+- accept/request-changes/reject subcommands with atomic writes + schema validation
+- task YAML lifecycle sync on resolution (reuse update_task conventions)
+- changes_requested assignments re-claimable exactly once per correction cycle
+- dashboard shows resolution state read-only; tests for every verb and transition
+non_goals:
+- automatic pollers
+- execution-policy changes
+- credentials
+acceptance:
+- all three verbs work and are covered by tests, including invalid-transition rejection
+- assign-20260712T203043Z-T-PHASE3-7C-SAFETY-SCANN-410a555c resolved accepted with
+  note
+- full suite exit 0; validate.py exit 0; handoff closeout gate verified
+execution:
+  mode: auto_local_worktree
+  adapter: composer-restricted
+  timeout_seconds: 1800
+  allowed_paths:
+  - dispatch/**
+  - scripts/**
+  - dashboard/**
+  - tests/**
+  - docs/**
+  - tasks/**
+  - handoffs/**
+  forbidden_operations:
+  - git_merge
+  - deploy
+  - production_access
+  - mcp_execution
+verification:
+  commands:
+  - python scripts/validate.py
+  run_full_tests: true
+notes: Reviewer resolution verbs implemented; focused tests and validator code checks
+  passed; handoff prepared for Claude.
+inputs:
+- scripts/assignments.py
+- dispatch/assignment_channel.py
+outputs:
+- scripts/**
+- dispatch/**
+- dashboard/**
+- tests/**
+- handoffs/T-PHASE3-8B-REVIEWER-RESOLUTION__composer__to__claude.md
+constraints:
+- Read-only dashboard boundary preserved
+- Changes only inside allowed paths

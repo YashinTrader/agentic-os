@@ -127,6 +127,9 @@ class AssignmentLifecycleDashboardTests(unittest.TestCase):
             write_inbox("assign-pending", "T-P", "pending")
             write_inbox("assign-claimed", "T-C", "claimed")
             write_inbox("assign-review", "T-R", "awaiting_review")
+            write_inbox("assign-accepted", "T-A", "accepted")
+            write_inbox("assign-changes", "T-CH", "changes_requested")
+            write_inbox("assign-rejected", "T-X", "rejected")
             (outbox / "assign-review.json").write_text(
                 json.dumps(
                     {
@@ -143,6 +146,23 @@ class AssignmentLifecycleDashboardTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
+            (outbox / "assign-accepted.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": "1.0",
+                        "assignment_id": "assign-accepted",
+                        "task_id": "T-A",
+                        "adapter_id": "composer-restricted",
+                        "status": "accepted",
+                        "finished_at": "2026-07-12T03:00:00Z",
+                        "reviewed_by": "claude",
+                        "reviewed_at": "2026-07-12T03:00:00Z",
+                        "resolution_note": "LGTM",
+                        "handoff_path": "handoffs/T-A__composer__to__claude.md",
+                    }
+                ),
+                encoding="utf-8",
+            )
 
             runs, errors = load_execution_runs(root)
             self.assertEqual(errors, [])
@@ -150,6 +170,11 @@ class AssignmentLifecycleDashboardTests(unittest.TestCase):
             self.assertEqual(by_task["T-P"]["status"], "assignment_pending")
             self.assertEqual(by_task["T-C"]["status"], "assignment_claimed")
             self.assertEqual(by_task["T-R"]["status"], "assignment_awaiting_review")
+            self.assertEqual(by_task["T-A"]["status"], "assignment_accepted")
+            self.assertEqual(by_task["T-CH"]["status"], "assignment_changes_requested")
+            self.assertEqual(by_task["T-X"]["status"], "assignment_rejected")
+            self.assertEqual(by_task["T-A"].get("reviewed_by"), "claude")
+            self.assertEqual(by_task["T-A"].get("resolution_note"), "LGTM")
             self.assertEqual(
                 by_task["T-R"]["handoff_path"],
                 "handoffs/T-R__composer__to__claude.md",
