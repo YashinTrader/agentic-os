@@ -80,9 +80,14 @@ def request_agent_wake(
         "requested_by": requested_by,
         "requested_at": utc_now(),
     }
-    if mechanism == "assignment_watcher":
+    if mechanism in {"assignment_watcher", "physical_supervisor"}:
         signal_path = _queue_signal(repo_root, agent_id, payload)
-        return WakeOutcome("wake_delivered", True, mechanism, "watcher signal queued", utc_now(), signal_path)
+        detail = (
+            "physical supervisor wake queued"
+            if mechanism == "physical_supervisor"
+            else "watcher signal queued"
+        )
+        return WakeOutcome("wake_delivered", True, mechanism, detail, utc_now(), signal_path)
 
     if mechanism == "codex_local_builder":
         path = (repo_root / task_path).resolve()

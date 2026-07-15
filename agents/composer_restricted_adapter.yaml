@@ -74,11 +74,11 @@ forbidden_args:
 supports_streaming: false
 wake:
   enabled: true
-  mechanism: assignment_watcher
-  command_or_path: scripts/watch_assignments.py
+  mechanism: physical_supervisor
+  command_or_path: scripts/run_orchestrator.py
 notes: >
   Stable id composer-restricted / agent_id composer retained for reference continuity.
-  Display name: Grok Build (Grok 4.5) as of 2026-07-12. File-based assignment loop
-  (Phase 3.8B) is active for manual pickup; supports_execution remains false and
-  enabled_adapters stays codex-only until Gabriel gates automatic execution.
+  Display name: Grok Build (Grok 4.5) as of 2026-07-12. Phase 3.9.1 physical supervisor
+  (scripts/run_orchestrator.py) consumes wake records and launches the Grok Build CLI
+  with shell=False. Passive scripts/watch_assignments.py only claims and is not a launcher.
   Merge, push, and deploy remain manual operator steps.

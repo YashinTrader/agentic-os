@@ -398,6 +398,32 @@ def apply_execution_run_filters(
     return filtered
 
 
+def _physical_run_lifecycle_label(*, process_state: str, status: str, kind: str) -> str:
+    """Read-only labels distinguishing wake/claim/launch/running/blocked/review."""
+    state = (process_state or status or "").strip().lower()
+    mapping = {
+        "queued": "wake_queued_or_run_queued",
+        "launching": "launching",
+        "running": "actually_running",
+        "completed": "completed",
+        "blocked_authentication": "blocked_external",
+        "blocked_quota": "blocked_external",
+        "blocked_no_adapter": "blocked_external",
+        "blocked_capacity": "blocked_external",
+        "failed_launch": "failed_launch",
+        "failed": "failed",
+        "timed_out": "timed_out",
+        "orphaned": "orphaned",
+        "claimed": "assignment_claimed",
+        "awaiting_review": "awaiting_review",
+    }
+    if state in mapping:
+        return mapping[state]
+    if kind == "physical_agent_launch":
+        return state or "physical_run"
+    return state or "unknown"
+
+
 def load_execution_runs(root_dir: Path, *, limit: int = 50) -> tuple[list[dict[str, Any]], list[str]]:
     """Load recent local-builder runs + assignment lifecycle without side effects."""
     runs_root = root_dir / "runtime" / "dispatch" / "runs"
@@ -457,20 +483,37 @@ def load_execution_runs(root_dir: Path, *, limit: int = 50) -> tuple[list[dict[s
             worktree_path = str(allocation.get("worktree_path") or "")
 
         task_id = str(result.get("task_id") or _infer_run_task_id(run_dir) or "")
+        process_state = str(result.get("process_state") or result.get("status") or "unknown")
+        display_lifecycle = _physical_run_lifecycle_label(
+            process_state=process_state,
+            status=str(result.get("status") or ""),
+            kind=str(result.get("kind") or ""),
+        )
         runs.append(
             {
                 "run_id": str(result.get("run_id") or run_dir.name),
                 "task_id": task_id,
+                "assignment_id": str(result.get("assignment_id") or ""),
                 "adapter_id": str(result.get("adapter_id") or ""),
+                "assigned_agent": str(result.get("assigned_agent") or ""),
                 "route": str(result.get("route") or result.get("execution_route") or ""),
                 "status": str(result.get("status") or "unknown"),
+                "process_state": process_state,
+                "display_lifecycle": display_lifecycle,
+                "pid": result.get("pid"),
+                "session_id": str(result.get("session_id") or ""),
                 "started_at": str(result.get("started_at") or ""),
+                "heartbeat_at": str(result.get("heartbeat_at") or ""),
                 "finished_at": str(result.get("finished_at") or ""),
                 "worktree_path": worktree_path,
                 "verification_status": verification_status,
                 "blocked_reasons": result.get("blocked_reasons") if isinstance(result.get("blocked_reasons"), list) else [],
+                "blocked_reason": str(result.get("blocked_reason") or ""),
                 "handoff_path": handoff_path,
+                "stdout_path": str(result.get("stdout_path") or ""),
+                "stderr_path": str(result.get("stderr_path") or ""),
                 "run_dir": f"runtime/dispatch/runs/{run_dir.name}",
+                "kind": str(result.get("kind") or ""),
                 "errors": run_errors,
             }
         )
@@ -3135,8 +3178,9 @@ python scripts/execute_dispatch.py --preview ... --execute --approval runtime/di
                             <th>Run</th>
                             <th>Task / Adapter</th>
                             <th>Route</th>
-                            <th>Status</th>
+                            <th>Status / Process</th>
                             <th>Claim / Lifecycle</th>
+                            <th>PID / Session</th>
                             <th>Timestamps</th>
                             <th>Worktree</th>
                             <th>Verification</th>
@@ -3149,9 +3193,13 @@ python scripts/execute_dispatch.py --preview ... --execute --approval runtime/di
         for run in execution_runs:
             blocked = run.get("blocked_reasons") or []
             blocked_text = "; ".join(str(reason) for reason in blocked) if blocked else "-"
+            if run.get("blocked_reason") and not blocked:
+                blocked_text = str(run.get("blocked_reason"))
             status = str(run.get("status") or "unknown")
+            process_state = str(run.get("process_state") or status)
+            display_lifecycle = str(run.get("display_lifecycle") or "")
             status_color = "#94a3b8"
-            if status == "completed_verified" or status == "assignment_accepted":
+            if status == "completed_verified" or status == "assignment_accepted" or process_state == "completed":
                 status_color = "#34d399"
             elif status in {
                 "completed_unverified",
@@ -3163,6 +3211,15 @@ python scripts/execute_dispatch.py --preview ... --execute --approval runtime/di
                 "assignment_failed",
                 "assignment_blocked",
                 "assignment_superseded",
+            } or process_state in {
+                "blocked_authentication",
+                "blocked_quota",
+                "blocked_no_adapter",
+                "blocked_capacity",
+                "failed",
+                "failed_launch",
+                "timed_out",
+                "orphaned",
             }:
                 status_color = "#f87171"
             elif status in {
@@ -3170,7 +3227,7 @@ python scripts/execute_dispatch.py --preview ... --execute --approval runtime/di
                 "assignment_claimed",
                 "assignment_building",
                 "assignment_awaiting_review",
-            }:
+            } or process_state in {"queued", "launching", "running"}:
                 status_color = "#60a5fa"
             elif status == "assignment_changes_requested":
                 status_color = "#fbbf24"
@@ -3200,14 +3257,17 @@ python scripts/execute_dispatch.py --preview ... --execute --approval runtime/di
                     + escape("; ".join(str(err) for err in run_warnings[:2]))
                     + "</span>"
                 )
+            pid_text = str(run.get("pid") or "-")
+            session_text = str(run.get("session_id") or "-")
             html_out.append(f"""
                         <tr>
                             <td><b>{escape(run.get('run_id') or '-')}</b><br/><code style="font-size:10px; color:#64748b;">{escape(run.get('run_dir') or '')}</code>{warning_html}</td>
-                            <td>{escape(run.get('task_id') or '-')}<br/><code style="font-size:10px; color:#94a3b8;">{escape(run.get('adapter_id') or '-')}</code>{('<br/><span style="font-size:10px; color:#64748b;">builder: ' + escape(run.get('assigned_to') or '') + '</span>') if run.get('assigned_to') else ''}</td>
+                            <td>{escape(run.get('task_id') or '-')}<br/><code style="font-size:10px; color:#94a3b8;">{escape(run.get('adapter_id') or '-')}</code>{('<br/><span style="font-size:10px; color:#64748b;">builder: ' + escape(run.get('assigned_to') or run.get('assigned_agent') or '') + '</span>') if (run.get('assigned_to') or run.get('assigned_agent')) else ''}</td>
                             <td><code style="font-size:10px;">{escape(run.get('route') or '-')}</code></td>
-                            <td><span style="color:{status_color}; font-weight:700;">{escape(status)}</span></td>
+                            <td><span style="color:{status_color}; font-weight:700;">{escape(status)}</span><br/><span style="font-size:10px; color:#94a3b8;">process: {escape(process_state)}</span>{('<br/><span style="font-size:10px; color:#64748b;">lifecycle: ' + escape(display_lifecycle) + '</span>') if display_lifecycle else ''}</td>
                             <td><span style="color:{claim_color}; font-weight:700;">{escape(claim_state)}</span><br/><span style="font-size:10px; color:#94a3b8;">task: {escape(task_lifecycle_status)}</span>{('<br/><span style="font-size:10px; color:#64748b;">active claim: ' + escape(active_claim_run_id) + '</span>') if active_claim_run_id else ''}</td>
-                            <td style="font-size:11px; color:#cbd5e1;">Start: {escape(run.get('started_at') or '-')}<br/>Finish: {escape(run.get('finished_at') or '-')}</td>
+                            <td style="font-size:11px; color:#cbd5e1;">PID: {escape(pid_text)}<br/>Session: {escape(session_text)}</td>
+                            <td style="font-size:11px; color:#cbd5e1;">Start: {escape(run.get('started_at') or '-')}<br/>HB: {escape(run.get('heartbeat_at') or '-')}<br/>Finish: {escape(run.get('finished_at') or '-')}</td>
                             <td><code style="font-size:10px; word-break:break-all;">{escape(run.get('worktree_path') or '-')}</code></td>
                             <td><span style="color:{verification_color}; font-weight:700;">{escape(verification_status)}</span></td>
                             <td style="font-size:11px; color:#fca5a5;">{escape(blocked_text)}</td>

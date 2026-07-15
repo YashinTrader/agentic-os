@@ -104,9 +104,27 @@ to `runtime/dispatch/pokes/orchestrator/`. The CLI can list/drain this queue and
 the dashboard may read it, but the dashboard gains no write control. Direct
 agent-to-agent poke routing is not permitted.
 
-- Positive: Composer is first-class in registry and route policy; Claude can assign via files today; codex path unchanged and regression-gated.
-- Negative: Live execution still requires human Grok session or a follow-up poller; file bridge adds eventual-consistency latency.
-- Neutral: `enabled_adapters` stays codex-only until explicit activation task.
+### 2026-07-15 amendment: physical agent launcher (Phase 3.9.1)
+
+Gabriel authorized physical process launch. The supervisor
+(`scripts/run_orchestrator.py` + `orchestrator/supervisor.py`) consumes wake
+records, enforces concurrency=1, claims the assignment, and launches a real
+Grok Build process:
+
+```text
+grok --cwd <worktree> --max-turns N --output-format json --single "<prompt>"
+```
+
+`running` requires a real PID. Stdout/stderr, heartbeats, and failure fingerprints
+are persisted under `runtime/dispatch/runs/`. Completion routes to
+`awaiting_review` and pokes only Claude. Codex remains a single-shot fallback
+via the existing restricted command builder when Grok is blocked by quota/auth
+or unavailable — no builder-to-builder reassignment loops. Unchanged external
+failure fingerprints never relaunch.
+
+- Positive: Composer is first-class in registry and route policy; Claude can assign via files today; codex path unchanged and regression-gated; physical launch is observable.
+- Negative: Host still needs Grok CLI auth/quota; `run_tests.py` bootstrap remains a separate infrastructure issue.
+- Neutral: Passive watcher remains available but is no longer the primary wake consumer for composer.
 
 ## Reviewer sign-off
 
