@@ -50,6 +50,7 @@ POST_TEST_ALLOWLIST_EXACT = frozenset(
         "handoffs/T-PHASE3-7C-SAFETY-SCANNER-GET-FORM__composer__to__claude.md",
         "handoffs/T-PHASE3-8B-REVIEWER-RESOLUTION__composer__to__claude.md",
         "handoffs/T-PHASE3-9-AGENT-WAKE-POKE__composer__to__claude.md",
+        "handoffs/T-PHASE3-9-1-PHYSICAL-AGENT-LAUNCHER__composer__to__claude.md",
         "docs/RUN_TESTS_BOOTSTRAP_BLOCKER.md",
         "tasks/active/T-FIRST-AUTONOMOUS-CODEX-BUILD.yaml",
         "tasks/active/T-PHASE3-8B-ASSIGNMENT-LOOP-ACTIVATION.yaml",
