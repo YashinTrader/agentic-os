@@ -47,8 +47,11 @@ from dispatch.local_builder_runs import list_run_summaries  # noqa: E402
 
 def _copy_repo_ignore(dirpath: str, names: list[str]) -> set[str]:
     ignored = set(shutil.ignore_patterns(".git", "__pycache__", "*.pyc")(dirpath, names))
-    if Path(dirpath).name == "active":
-        ignored.add("T-FIRST-AUTONOMOUS-CODEX-BUILD.yaml")
+    # Never import live active tasks into the fixture. Real ready/queued
+    # auto_local_worktree tasks (e.g. new Phase 3.9 milestones) would make
+    # WorkerTests process work when they expect idle.
+    if Path(dirpath).name == "active" and Path(dirpath).parent.name == "tasks":
+        ignored.update(n for n in names if n.endswith((".yaml", ".yml")))
     return ignored
 
 
@@ -61,6 +64,13 @@ class LocalBuilderFixtureMixin:
             self.root,
             ignore=_copy_repo_ignore,
         )
+        # Defensive: strip any residual active tasks before writing the fixture task.
+        active_dir = self.root / "tasks" / "active"
+        active_dir.mkdir(parents=True, exist_ok=True)
+        for path in active_dir.glob("*.yaml"):
+            path.unlink()
+        for path in active_dir.glob("*.yml"):
+            path.unlink()
         self._init_git()
         self._write_auto_task()
 
