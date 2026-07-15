@@ -1,12 +1,10 @@
-timestamp: 2026-07-15T17:20:47Z
+timestamp: 2026-07-15T17:21:13Z
 repo_root: C:/Users/gabot/agentic-os
-commit: d19fd10
-commit_full: d19fd1036fcda2158e86673eed9636425e123886
+commit: 56cb740
+commit_full: 56cb74072daf30f5d6ad09451fa1788a7c42d7be
 python: C:\Users\gabot\AppData\Local\hermes\hermes-agent\venv\Scripts\python.exe
 test_count: 19
 exit_code: 0
-command: python -m unittest tests.test_physical_agent_launcher tests.test_agent_wake_poke -v
-note: focused launcher+wake suite; full discover was 589 OK on Phase 3.9 tip prior to this feature branch
 --- tail ---
 Ran 19 tests in 3.205s
 OK

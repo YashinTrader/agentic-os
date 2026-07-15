@@ -89,12 +89,12 @@ python scripts/handoff_closeout_gate.py handoffs/T-PHASE3-9-1-PHYSICAL-AGENT-LAU
 repo_root: C:/Users/gabot/agentic-os
 branch: agent/composer/T-PHASE3-9-1-PHYSICAL-AGENT-LAUNCHER
 base_sha: 1b3e30e1d05c90915f809d01801044d49edf31e8
-implementation_sha: d19fd1036fcda2158e86673eed9636425e123886
-tests_commit_sha: d19fd1036fcda2158e86673eed9636425e123886
-final_head_sha: d19fd1036fcda2158e86673eed9636425e123886
-remote_head_sha: d19fd1036fcda2158e86673eed9636425e123886
+implementation_sha: 56cb74072daf30f5d6ad09451fa1788a7c42d7be
+tests_commit_sha: 56cb74072daf30f5d6ad09451fa1788a7c42d7be
+final_head_sha: 56cb74072daf30f5d6ad09451fa1788a7c42d7be
+remote_head_sha: 56cb74072daf30f5d6ad09451fa1788a7c42d7be
 git_status_clean: true
-validator_commit_sha: d19fd1036fcda2158e86673eed9636425e123886
+validator_commit_sha: 56cb74072daf30f5d6ad09451fa1788a7c42d7be
 test_count: 19
 test_exit_code: 0
 validator_exit_code: 0
