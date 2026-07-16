@@ -424,6 +424,73 @@ def _physical_run_lifecycle_label(*, process_state: str, status: str, kind: str)
     return state or "unknown"
 
 
+def load_claude_reviews(root_dir: Path, *, limit: int = 50) -> tuple[dict[str, Any], list[str]]:
+    """Read-only Claude reviewer runs + review requests (no secrets)."""
+    errors: list[str] = []
+    reviews: list[dict[str, Any]] = []
+    reviews_root = root_dir / "runtime" / "dispatch" / "reviews"
+    if reviews_root.is_dir():
+        try:
+            dirs = sorted(
+                [p for p in reviews_root.iterdir() if p.is_dir()],
+                key=lambda p: p.stat().st_mtime,
+                reverse=True,
+            )
+        except OSError as exc:
+            errors.append(f"reviews: {exc}")
+            dirs = []
+        for run_dir in dirs[:limit]:
+            path = run_dir / "review_run.json"
+            data: dict[str, Any] = {}
+            if path.is_file():
+                try:
+                    loaded = json.loads(path.read_text(encoding="utf-8"))
+                    if isinstance(loaded, dict):
+                        data = loaded
+                except (OSError, json.JSONDecodeError) as exc:
+                    errors.append(f"{path}: {exc}")
+            verdict = data.get("verdict") if isinstance(data.get("verdict"), dict) else {}
+            findings = verdict.get("findings") if isinstance(verdict, dict) else []
+            reviews.append(
+                {
+                    "review_run_id": data.get("review_run_id") or run_dir.name,
+                    "assignment_id": data.get("assignment_id") or "",
+                    "task_id": data.get("task_id") or "",
+                    "process_state": data.get("process_state") or "unknown",
+                    "pid": data.get("pid"),
+                    "session_id": data.get("session_id") or "",
+                    "started_at": data.get("started_at") or "",
+                    "completed_at": data.get("completed_at") or "",
+                    "heartbeat_at": data.get("heartbeat_at") or "",
+                    "verdict": verdict.get("verdict") if isinstance(verdict, dict) else "",
+                    "findings_count": len(findings) if isinstance(findings, list) else 0,
+                    "blocked_reason": data.get("blocked_reason") or "",
+                    "auth_mode": data.get("auth_mode") or "",
+                    "kind": data.get("kind") or "claude_review",
+                }
+            )
+    req_root = root_dir / "runtime" / "dispatch" / "review_requests"
+    queue: list[dict[str, Any]] = []
+    if req_root.is_dir():
+        for path in sorted(req_root.glob("*.json")):
+            try:
+                item = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if isinstance(item, dict):
+                queue.append(
+                    {
+                        "assignment_id": item.get("assignment_id") or path.stem,
+                        "status": item.get("status") or "queued",
+                        "review_run_id": item.get("review_run_id") or "",
+                        "verdict": item.get("verdict") or "",
+                        "blocked_reason": item.get("blocked_reason") or "",
+                        "event": item.get("event") or "review.requested",
+                    }
+                )
+    return {"reviews": reviews, "queue": queue}, errors
+
+
 def load_execution_runs(root_dir: Path, *, limit: int = 50) -> tuple[list[dict[str, Any]], list[str]]:
     """Load recent local-builder runs + assignment lifecycle without side effects."""
     runs_root = root_dir / "runtime" / "dispatch" / "runs"
@@ -1186,6 +1253,10 @@ def generate_dashboard_html(query_params: dict[str, list[str]]) -> str:
     dispatch_exec_request, dispatch_exec_request_errors = load_dispatch_execution_request(ROOT_DIR)
     dispatch_exec_result, dispatch_exec_result_errors = load_dispatch_execution_result(ROOT_DIR)
     execution_runs, execution_run_errors = load_execution_runs(ROOT_DIR)
+    claude_reviews_payload, claude_review_errors = load_claude_reviews(ROOT_DIR)
+    claude_reviews = claude_reviews_payload.get("reviews") or []
+    claude_review_queue = claude_reviews_payload.get("queue") or []
+    execution_run_errors.extend(claude_review_errors)
     orchestrator_pokes, poke_errors = load_orchestrator_pokes(ROOT_DIR)
     execution_run_errors.extend(poke_errors)
     obsidian_last_sync, obsidian_sync_errors = load_obsidian_last_sync_report(ROOT_DIR, obsidian_mapping)
@@ -3148,6 +3219,51 @@ python scripts/execute_dispatch.py --preview ... --execute --approval runtime/di
                     {(f'<a href="/?tab=execution_runs" class="clear-link">Clear</a>' if run_filter_adapter or run_filter_status else '')}
                 </form>
     """)
+
+    html_out.append('<div style="margin-bottom:16px;"><div class="inspector-section-title">Claude reviewer (read-only)</div>')
+    if claude_review_queue or claude_reviews:
+        html_out.append(
+            '<table class="tools-table"><thead><tr>'
+            "<th>Review run</th><th>Assignment</th><th>State</th><th>PID / Session</th>"
+            "<th>Verdict</th><th>Findings</th><th>Blocked</th><th>Times</th>"
+            "</tr></thead><tbody>"
+        )
+        for rev in claude_reviews[:30]:
+            html_out.append(
+                "<tr>"
+                f"<td><code>{escape(str(rev.get('review_run_id') or '-'))}</code></td>"
+                f"<td><code>{escape(str(rev.get('assignment_id') or '-'))}</code><br/>"
+                f"<span style='font-size:10px;color:#94a3b8;'>{escape(str(rev.get('task_id') or ''))}</span></td>"
+                f"<td>{escape(str(rev.get('process_state') or '-'))}</td>"
+                f"<td style='font-size:11px;'>PID {escape(str(rev.get('pid') or '-'))}<br/>"
+                f"{escape(str(rev.get('session_id') or '-'))}</td>"
+                f"<td>{escape(str(rev.get('verdict') or '-'))}</td>"
+                f"<td>{escape(str(rev.get('findings_count') or 0))}</td>"
+                f"<td style='font-size:11px;color:#fca5a5;'>{escape(str(rev.get('blocked_reason') or '-'))}</td>"
+                f"<td style='font-size:10px;'>start {escape(str(rev.get('started_at') or '-'))}<br/>"
+                f"end {escape(str(rev.get('completed_at') or '-'))}</td>"
+                "</tr>"
+            )
+        for q in claude_review_queue[:20]:
+            html_out.append(
+                "<tr>"
+                f"<td><code>queue:{escape(str(q.get('review_run_id') or '-'))}</code></td>"
+                f"<td><code>{escape(str(q.get('assignment_id') or '-'))}</code></td>"
+                f"<td>queue:{escape(str(q.get('status') or '-'))}</td>"
+                "<td>-</td>"
+                f"<td>{escape(str(q.get('verdict') or '-'))}</td>"
+                "<td>-</td>"
+                f"<td style='font-size:11px;color:#fca5a5;'>{escape(str(q.get('blocked_reason') or '-'))}</td>"
+                f"<td style='font-size:10px;'>{escape(str(q.get('event') or ''))}</td>"
+                "</tr>"
+            )
+        html_out.append("</tbody></table>")
+    else:
+        html_out.append(
+            '<div style="font-size:12px; color:#64748b;">No Claude review runs yet. '
+            "Supervisor launches headless Claude for awaiting_review assignments.</div>"
+        )
+    html_out.append("</div>")
 
     html_out.append('<div style="margin-bottom:16px;"><div class="inspector-section-title">Pending orchestrator pokes</div>')
     if orchestrator_pokes:
