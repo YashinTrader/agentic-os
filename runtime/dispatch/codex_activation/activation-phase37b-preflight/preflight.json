@@ -1,0 +1,20 @@
+{
+  "activation_id": "activation-phase37b-preflight",
+  "approval_consumed": false,
+  "codex_subprocess_invoked": false,
+  "dry_run_blocked": true,
+  "dry_run_blockers": [
+    "Phase 3.7B human authorization has not been recorded.",
+    "canary_contract_hash mismatch",
+    "missing --execute-canary operator flag",
+    "missing Claude review reference",
+    "missing human approval reference",
+    "missing or invalid human-signed approval"
+  ],
+  "live_run_authorized": false,
+  "phase3_7b_authorization_required": true,
+  "run_id": "canary-20260629T204243Z-45a06a4c",
+  "status": "preflight_complete_no_live_run",
+  "task_id": "T-PHASE3-7B-CODEX-CANARY",
+  "worktree_allocated": true
+}

@@ -30,6 +30,10 @@ class ExecutionResult:
     handoff_path: str = ""
     rollback_path: str = ""
     event_emit_errors: list[str] = field(default_factory=list)
+    execution_route_requested: str = ""
+    execution_route_required: str | None = None
+    execution_route_allowed: bool = True
+    route_block_reasons: list[str] = field(default_factory=list)
 
 
 def run_directory(repo_root: Path, run_id: str) -> Path:

@@ -25,3 +25,22 @@
 | ADR-0022 | No autonomous execution by default (Phase 3.3 design)      | accepted | 2026-06-19 |
 | ADR-0023 | Real-agent adapter promotion process (Phase 3.3 design)     | accepted | 2026-06-19 |
 | ADR-0024 | Concurrency and resource limits (Phase 3.3 design)        | accepted | 2026-06-19 |
+| ADR-0025 | Worktree allocator MVP (Phase 3.4)                        | accepted | 2026-06-20 |
+| ADR-0026 | HMAC approval authenticity (Phase 3.4)                    | accepted | 2026-06-20 |
+| ADR-0027 | Single-use approval anti-replay (Phase 3.4)               | accepted | 2026-06-20 |
+| ADR-0028 | Phase 3.4 execution boundary                              | accepted | 2026-06-20 |
+| ADR-0029 | Codex restricted adapter contract                         | accepted | 2026-06-22 |
+| ADR-0030 | Real-agent environment and secret boundary                | accepted | 2026-06-22 |
+| ADR-0031 | Codex worktree-only execution                             | accepted | 2026-06-22 |
+| ADR-0032 | Two-stage adapter activation                              | accepted | 2026-06-22 |
+| ADR-0033 | Real-agent canary and rollback policy                     | accepted | 2026-06-22 |
+| ADR-0034 | Codex command-line contract                               | accepted | 2026-06-28 |
+| ADR-0035 | Codex activation manifest and two-person gate             | accepted | 2026-06-28 |
+| ADR-0036 | Documentation-only first Codex canary                     | accepted | 2026-06-28 |
+| ADR-0037 | Codex emergency-disable and rollback policy               | accepted | 2026-06-28 |
+| ADR-0038 | Codex canary-only activation state                        | accepted | 2026-06-28 |
+| ADR-0039 | Preflight-complete live-run-prohibited boundary           | accepted | 2026-06-28 |
+| ADR-0040 | Human authorization record for one-shot canary            | accepted | 2026-06-28 |
+| ADR-0041 | Automatic post-canary suspension policy                   | accepted | 2026-06-28 |
+| ADR-0042 | Canary-only dedicated execution route (Phase 3.7A.1)      | accepted | 2026-06-29 |
+| ADR-0043 | Composer / Grok Build integration (loop active; auto-exec off) | accepted | 2026-07-12 |

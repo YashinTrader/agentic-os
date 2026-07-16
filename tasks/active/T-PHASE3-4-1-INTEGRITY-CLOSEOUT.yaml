@@ -1,0 +1,99 @@
+id: T-PHASE3-4-1-INTEGRITY-CLOSEOUT
+title: Phase 3.4.1 — Integrity closeout (artifact SHA, allowlist, verify cross-check)
+owner: composer
+reviewer: claude
+created_by: claude
+status: review
+phase: "3.4"
+created_at: 2026-06-20T18:00:00Z
+updated_at: 2026-06-22T15:10:00Z
+priority: high
+risk_level: low
+requires_human_approval: false
+human_approval_checklist: []
+objective: >
+  Close the three integrity-hygiene findings from the Claude Phase 3.4 review
+  (docs/REVIEW_CLAUDE_PHASE_3_4.md). The worktree/HMAC/replay/executor engineering is
+  correct and the branch is green at HEAD; this task only makes the verification record
+  faithful and self-proving. No dispatch logic changes; no real-agent activation;
+  autonomy stays Level 1.
+context: |
+  Claude Phase 3.4 verdict: APPROVE WITH CHANGES. Phase 3.5 blocked until this closeout.
+
+  Independent verification of agent/composer/T-PHASE3-4-WORKTREE-APPROVAL-MVP @ 19732d9:
+  - py scripts/validate.py -> exit 0 at HEAD
+  - py -m unittest -> 333 tests, OK, exit 0 at actual HEAD (reproduced)
+  - worktree allocator (argv-only git, allowlist, path containment, conservative cleanup),
+    HMAC signing (env keys, constant-time, TTL caps, scope binding), O_EXCL anti-replay,
+    and executor integration are all correct and safe.
+
+  Findings (integrity, not safety):
+  - F1: committed runtime/unittest_last_run.txt records commit_full 0a638bc, which was
+    rebased away (0a638bc -> ecec766) and is NOT on the branch; it disagrees with the
+    handoff block tests_commit_sha ecec766. Outcome (333/exit 0) is true and reproduced,
+    but the artifact does not reference the shipped implementation commit.
+  - F2: decisions/ was added to POST_TEST_ALLOWLIST_PREFIXES; ADRs are validated by
+    validate.py, so post-test ADR changes can pass the verify CLI without re-running the
+    validator at HEAD.
+  - F3: verify_repository_verification.py does not cross-check the artifact commit_full
+    against tests_commit_sha (which is why F1 slipped through).
+goals:
+  - F1 regenerate runtime/unittest_last_run.txt at the implementation commit (ecec766)
+    or final HEAD so commit_full is on-branch and equals tests_commit_sha
+  - "F2 resolve decisions/ allowlist widening; preferred: verify CLI re-runs validate.py at HEAD and asserts exit 0; alternative: keep ADRs in implementation commit and drop decisions/ from the allowlist"
+  - "F3 verify CLI asserts artifact.commit_full equals tests_commit_sha and is an ancestor of HEAD, with a regression test"
+  - Re-run validator and full suite from canonical clone at final HEAD; both exit 0
+  - Produce a truthful v2 handoff verification block reproducible by the reviewer
+non_goals:
+  - Changes to worktree allocator, HMAC signing, anti-replay, or executor logic (correct)
+  - Real-agent adapter promotion (all remain supports_execution false)
+  - Phase 3.5 / Level-2 scheduling / queue
+  - Any change to autonomy level (stays Level 1)
+  - New runtime subprocess surfaces
+inputs:
+  - docs/REVIEW_CLAUDE_PHASE_3_4.md
+  - runtime/unittest_last_run.txt
+  - scripts/run_tests.py
+  - scripts/repository_verification.py
+  - scripts/verify_repository_verification.py
+  - tests/test_phase3_3_review_fixes.py
+  - handoffs/T-PHASE3-4-WORKTREE-APPROVAL-MVP__composer__to__claude.md
+outputs:
+  - runtime/unittest_last_run.txt
+  - scripts/repository_verification.py
+  - scripts/verify_repository_verification.py
+  - tests/test_phase3_3_review_fixes.py
+  - docs/HANDOFF_PROTOCOL.md
+  - tasks/active/T-PHASE3-4-1-INTEGRITY-CLOSEOUT.yaml
+  - handoffs/T-PHASE3-4-1-INTEGRITY-CLOSEOUT__composer__to__claude.md
+constraints:
+  - No changes to dispatch/ worktree/HMAC/replay/executor logic
+  - No real-agent adapter activation; only local-python-exec-test executes
+  - Validator must pass at the FINAL HEAD (exit 0, warnings only for historical v1 events)
+  - Full suite must pass at the FINAL HEAD from canonical clone C:\Users\gabot\agentic-os
+  - Committed artifact commit_full must be on-branch and equal tests_commit_sha
+acceptance:
+  - runtime/unittest_last_run.txt commit_full is an ancestor of HEAD and equals the
+    handoff tests_commit_sha
+  - verify_repository_verification.py re-runs validate.py at HEAD (exit 0) OR decisions/
+    removed from allowlist with ADRs in the implementation commit
+  - verify CLI cross-checks artifact commit_full == tests_commit_sha (regression test added)
+  - py scripts/validate.py exit 0 at HEAD
+  - py -m unittest discover -s tests -p "test_*.py" -> all green at HEAD
+  - python scripts/verify_repository_verification.py <handoff> -> Status: verified
+notes: >
+  After an independent re-run confirms green at the shipped HEAD with an on-branch
+  artifact (commit_full == tests_commit_sha) and a self-proving verify CLI, Claude will
+  flip the ADR-0025-0028 reviewer sign-offs and clear Phase 3.5. Phase 3.5 stays blocked
+  until then; real adapters disabled, autonomy Level 1, operator-commanded only.
+labels:
+  - phase-3.4
+  - closeout
+  - integrity
+  - verification-block
+  - claude-review
+related_decisions:
+  - ADR-0025
+  - ADR-0026
+  - ADR-0027
+  - ADR-0028

@@ -900,6 +900,523 @@ def validate_adapter_registry(errors: list[str]) -> None:
     if active_count == 0:
         errors.append(f"{rel}: at least one active adapter is required for Phase 3.0 preview")
 
+    validate_phase35_adapter_boundaries(errors, adapters)
+    validate_phase36_codex_activation_readiness(errors)
+    validate_phase37a_codex_canary_activation(errors)
+    validate_phase37a1_executor_bypass(errors)
+    validate_phase37c_local_builder(errors)
+    validate_phase38_composer_integration(errors)
+
+
+PROMOTION_EXECUTION_STATES = {
+    "restricted_candidate": False,
+    "preview_only": False,
+    "planned": False,
+    "test_execution": False,
+    "disabled": False,
+    "revoked": False,
+    "activation_candidate": True,
+    "restricted_execution": True,
+    "active": True,
+}
+
+
+def _phase37a_active() -> bool:
+    return (ROOT / "dispatch" / "codex_activation_gate.py").is_file()
+
+
+def _phase37c_active() -> bool:
+    return (
+        (ROOT / "config" / "execution-policy.yaml").is_file()
+        and (ROOT / "dispatch" / "codex_local_builder.py").is_file()
+    )
+
+
+def validate_phase35_adapter_boundaries(errors: list[str], adapters: list[Any]) -> None:
+    """Phase 3.5: codex-restricted candidate + single executable adapter invariant."""
+    execution_capable: list[str] = []
+    codex_restricted: dict[str, Any] | None = None
+
+    for adapter in adapters:
+        if not isinstance(adapter, dict):
+            continue
+        adapter_id = str(adapter.get("id", ""))
+        if adapter.get("supports_execution"):
+            execution_capable.append(adapter_id)
+
+        promotion_state = adapter.get("promotion_state")
+        if promotion_state is not None:
+            expected = PROMOTION_EXECUTION_STATES.get(str(promotion_state))
+            if expected is None:
+                errors.append(
+                    f"agents/adapter_registry.yaml ({adapter_id}): unknown promotion_state {promotion_state!r}"
+                )
+            elif bool(adapter.get("supports_execution")) != expected:
+                errors.append(
+                    f"agents/adapter_registry.yaml ({adapter_id}): promotion_state {promotion_state!r} "
+                    f"contradicts supports_execution={adapter.get('supports_execution')}"
+                )
+
+        if adapter_id == "codex-restricted":
+            codex_restricted = adapter
+
+    phase37a = _phase37a_active()
+    phase37c = _phase37c_active()
+    allowed_execution = (
+        ["local-python-exec-test", "codex-restricted"] if phase37a else ["local-python-exec-test"]
+    )
+    if sorted(execution_capable) != sorted(allowed_execution):
+        errors.append(
+            "agents/adapter_registry.yaml: execution-capable adapters must be "
+            f"{allowed_execution!r}; found {execution_capable!r}"
+        )
+
+    if codex_restricted is None:
+        errors.append("agents/adapter_registry.yaml: missing codex-restricted adapter entry")
+        return
+
+    if phase37c:
+        if not codex_restricted.get("supports_execution"):
+            errors.append("codex-restricted must have supports_execution=true in Phase 3.7C")
+        if codex_restricted.get("execution_scope") != "local_worktree":
+            errors.append("codex-restricted execution_scope must be local_worktree in Phase 3.7C")
+        if codex_restricted.get("required_execution_route") != "codex_local_builder":
+            errors.append("codex-restricted required_execution_route must be codex_local_builder")
+        if codex_restricted.get("phase3_7b_authorization_required"):
+            errors.append("codex-restricted must not require phase3_7b authorization in Phase 3.7C")
+    elif phase37a:
+        if not codex_restricted.get("supports_execution"):
+            errors.append("codex-restricted must have supports_execution=true in Phase 3.7A")
+        if codex_restricted.get("promotion_state") != "activation_candidate":
+            errors.append("codex-restricted promotion_state must be activation_candidate in Phase 3.7A")
+        if codex_restricted.get("execution_scope") != "canary_only":
+            errors.append("codex-restricted execution_scope must be canary_only in Phase 3.7A")
+        if int(codex_restricted.get("maximum_runs", 0) or 0) != 1:
+            errors.append("codex-restricted maximum_runs must equal 1 in Phase 3.7A")
+    else:
+        if codex_restricted.get("supports_execution"):
+            errors.append("codex-restricted must have supports_execution=false in Phase 3.5")
+        if codex_restricted.get("promotion_state") != "restricted_candidate":
+            errors.append("codex-restricted promotion_state must be restricted_candidate")
+    if phase37c:
+        if codex_restricted.get("approval_level") not in {"none", "standing_policy"}:
+            errors.append("codex-restricted approval_level must be none in Phase 3.7C")
+    elif codex_restricted.get("approval_level") != "human":
+        errors.append("codex-restricted approval_level must be human")
+    if not codex_restricted.get("worktree_required"):
+        errors.append("codex-restricted worktree_required must be true")
+    if not codex_restricted.get("network_required"):
+        errors.append("codex-restricted network_required must be true")
+    if not codex_restricted.get("secrets_required"):
+        errors.append("codex-restricted secrets_required must be true")
+
+    dedicated_path = ROOT / "agents" / "codex_restricted_adapter.yaml"
+    if not dedicated_path.exists():
+        errors.append("agents/codex_restricted_adapter.yaml: file does not exist")
+        return
+    try:
+        dedicated = yaml.safe_load(dedicated_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        errors.append(f"agents/codex_restricted_adapter.yaml: invalid YAML: {exc}")
+        return
+    if not isinstance(dedicated, dict):
+        errors.append("agents/codex_restricted_adapter.yaml: root must be a mapping")
+        return
+    if phase37c:
+        if not dedicated.get("supports_execution"):
+            errors.append("agents/codex_restricted_adapter.yaml: supports_execution must be true in Phase 3.7C")
+        if dedicated.get("execution_scope") != "local_worktree":
+            errors.append("agents/codex_restricted_adapter.yaml: execution_scope must be local_worktree")
+        if dedicated.get("required_execution_route") != "codex_local_builder":
+            errors.append("agents/codex_restricted_adapter.yaml: required_execution_route must be codex_local_builder")
+        if dedicated.get("phase3_7b_authorization_required"):
+            errors.append("agents/codex_restricted_adapter.yaml: phase3_7b_authorization_required must be false")
+    elif phase37a:
+        if not dedicated.get("supports_execution"):
+            errors.append("agents/codex_restricted_adapter.yaml: supports_execution must be true in Phase 3.7A")
+        if dedicated.get("promotion_state") != "activation_candidate":
+            errors.append("agents/codex_restricted_adapter.yaml: promotion_state must be activation_candidate")
+        if dedicated.get("execution_scope") != "canary_only":
+            errors.append("agents/codex_restricted_adapter.yaml: execution_scope must be canary_only")
+        if dedicated.get("live_run_authorized"):
+            errors.append("agents/codex_restricted_adapter.yaml: live_run_authorized must be false")
+        if not dedicated.get("phase3_7b_authorization_required"):
+            errors.append("agents/codex_restricted_adapter.yaml: phase3_7b_authorization_required must be true")
+    else:
+        if dedicated.get("supports_execution"):
+            errors.append("agents/codex_restricted_adapter.yaml: supports_execution must be false")
+    if dedicated.get("id") != "codex-restricted":
+        errors.append("agents/codex_restricted_adapter.yaml: id must be codex-restricted")
+
+
+def validate_phase36_codex_activation_readiness(errors: list[str]) -> None:
+    """Phase 3.6: MA1 command contract, activation package, canary refusal boundary."""
+    if not (ROOT / "dispatch" / "codex_activation.py").is_file():
+        return
+    from dispatch.codex_adapter import (
+        append_codex_prompt,
+        build_codex_exec_options,
+        compute_command_contract_hash,
+        load_codex_restricted_adapter,
+        validate_codex_argv_contract,
+        CODEX_EXECUTABLE,
+    )
+    from dispatch.codex_canary_contract import compute_canary_contract_hash
+
+    required_docs = (
+        "docs/PHASE_3_6_CODEX_ACTIVATION_READINESS.md",
+        "docs/PHASE_3_6_CODEX_COMMAND_CONTRACT.md",
+        "docs/PHASE_3_6_CODEX_CANARY_RUNBOOK.md",
+        "docs/PHASE_3_6_CODEX_ROLLBACK.md",
+        "docs/PHASE_3_6_HUMAN_APPROVAL_CHECKLIST.md",
+    )
+    for rel in required_docs:
+        if not (ROOT / rel).exists():
+            errors.append(f"Phase 3.6: missing document {rel}")
+
+    for rel in (
+        "schemas/codex_activation_manifest.schema.json",
+        "schemas/codex_canary_record.schema.json",
+        "dispatch/codex_activation.py",
+        "dispatch/codex_canary_contract.py",
+        "dispatch/codex_cli_compatibility.py",
+        "dispatch/codex_canary_gates.py",
+        "scripts/validate_codex_activation.py",
+        "scripts/prepare_codex_canary.py",
+    ):
+        if not (ROOT / rel).exists():
+            errors.append(f"Phase 3.6: missing artifact {rel}")
+
+    try:
+        adapter = load_codex_restricted_adapter(ROOT)
+    except (OSError, ValueError) as exc:
+        errors.append(f"Phase 3.6: codex adapter config unavailable: {exc}")
+        return
+
+    if not _phase37a_active() and adapter.get("supports_execution"):
+        errors.append("Phase 3.6: codex-restricted supports_execution must remain false")
+
+    sample_argv = append_codex_prompt(
+        [
+            CODEX_EXECUTABLE,
+            *build_codex_exec_options(adapter, worktree_path="/wt", agent_output_path="/out/msg.txt"),
+        ],
+        "contract validation prompt",
+    )
+    contract_blocked = validate_codex_argv_contract(
+        sample_argv,
+        agent_output_path="/out/msg.txt",
+        prompt="contract validation prompt",
+    )
+    if contract_blocked:
+        errors.append(f"Phase 3.6: codex argv contract failed: {contract_blocked}")
+
+    if not compute_command_contract_hash() or not compute_canary_contract_hash():
+        errors.append("Phase 3.6: contract hashes must be non-empty")
+
+    canary_script = ROOT / "scripts" / "run_codex_canary.py"
+    if canary_script.is_file():
+        canary_source = canary_script.read_text(encoding="utf-8")
+        if "codex_subprocess_invoked" not in canary_source:
+            errors.append("Phase 3.6: run_codex_canary.py must refuse before Codex subprocess")
+        if "return 3" not in canary_source:
+            errors.append("Phase 3.6: run_codex_canary.py must exit refused")
+        if _phase37a_active() and "phase3_7b" not in canary_source.lower():
+            errors.append("Phase 3.7A: run_codex_canary.py must require Phase 3.7B authorization")
+
+
+def validate_phase37a_codex_canary_activation(errors: list[str]) -> None:
+    """Phase 3.7A: activation candidate package, live-run prohibition, gate module."""
+    if not _phase37a_active():
+        return
+
+    required_docs = (
+        "docs/PHASE_3_7A_BASELINE.md",
+        "docs/PHASE_3_7A_CODEX_ACTIVATION_CANDIDATE.md",
+        "docs/PHASE_3_7A_CANARY_PREFLIGHT.md",
+        "docs/PHASE_3_7A_HUMAN_APPROVAL_REQUEST.md",
+        "docs/PHASE_3_7A_LIVE_RUN_PROHIBITION.md",
+        "docs/PHASE_3_7A_HARDENING_REPORT.md",
+        "docs/PHASE_3_7A_REVIEW_PACKET.md",
+    )
+    for rel in required_docs:
+        if not (ROOT / rel).exists():
+            errors.append(f"Phase 3.7A: missing document {rel}")
+
+    required_artifacts = (
+        "dispatch/codex_activation_gate.py",
+        "scripts/disable_codex_canary.py",
+        "scripts/verify_codex_canary_package.py",
+        "schemas/codex_human_approval_request.schema.json",
+        "tasks/active/T-PHASE3-7A-CODEX-CANARY-ACTIVATION.yaml",
+    )
+    for rel in required_artifacts:
+        if not (ROOT / rel).exists():
+            errors.append(f"Phase 3.7A: missing artifact {rel}")
+
+    required_tests = (
+        "tests/test_phase3_7a_activation_state.py",
+        "tests/test_phase3_7a_cli_preflight.py",
+        "tests/test_phase3_7a_activation_manifest.py",
+        "tests/test_phase3_7a_canary_package.py",
+        "tests/test_phase3_7a_human_gate.py",
+        "tests/test_phase3_7a_no_live_execution.py",
+        "tests/test_phase3_7a_safety_boundaries.py",
+    )
+    for rel in required_tests:
+        if not (ROOT / rel).exists():
+            errors.append(f"Phase 3.7A: missing test {rel}")
+
+    for rel in (
+        "decisions/ADR-0038-codex-canary-only-activation-state.md",
+        "decisions/ADR-0039-preflight-live-run-prohibited-boundary.md",
+        "decisions/ADR-0040-human-authorization-one-shot-canary.md",
+        "decisions/ADR-0041-automatic-post-canary-suspension.md",
+    ):
+        if not (ROOT / rel).exists():
+            errors.append(f"Phase 3.7A: missing ADR {rel}")
+
+    runner_source = (ROOT / "scripts" / "run_codex_canary.py").read_text(encoding="utf-8")
+    if "subprocess" in runner_source and "subprocess.run" in runner_source:
+        errors.append("Phase 3.7A: run_codex_canary.py must not invoke subprocess.run")
+
+    gate_source = (ROOT / "dispatch" / "codex_activation_gate.py").read_text(encoding="utf-8")
+    if "PHASE3_7B_BLOCKED_REASON" not in gate_source:
+        errors.append("Phase 3.7A: codex_activation_gate.py must define Phase 3.7B blocked reason")
+
+
+def validate_phase37a1_executor_bypass(errors: list[str]) -> None:
+    """Phase 3.7A.1: generic executor must reject canary-only adapters (H1)."""
+    policy_path = ROOT / "dispatch" / "execution_route_policy.py"
+    if not policy_path.is_file():
+        errors.append("Phase 3.7A.1: missing dispatch/execution_route_policy.py")
+        return
+
+    test_path = ROOT / "tests" / "test_phase3_7a_1_executor_bypass.py"
+    if not test_path.is_file():
+        errors.append("Phase 3.7A.1: missing tests/test_phase3_7a_1_executor_bypass.py")
+
+    from dispatch.execution_route_policy import (
+        DEDICATED_CANARY_RUNNER_REASON,
+        RECOGNIZED_EXECUTION_ROUTES,
+        ROUTE_CODEX_CANARY,
+        ROUTE_GENERIC_DISPATCH,
+        evaluate_execution_route,
+        validate_adapter_route_policy,
+    )
+
+    if DEDICATED_CANARY_RUNNER_REASON not in policy_path.read_text(encoding="utf-8"):
+        errors.append("Phase 3.7A.1: dedicated runner blocked reason missing from policy module")
+
+    gate_source = (ROOT / "dispatch" / "execution_gate.py").read_text(encoding="utf-8")
+    if "evaluate_execution_route" not in gate_source:
+        errors.append("Phase 3.7A.1: execution_gate.py must call evaluate_execution_route")
+
+    executor_source = (ROOT / "dispatch" / "executor.py").read_text(encoding="utf-8")
+    if "ROUTE_GENERIC_DISPATCH" not in executor_source:
+        errors.append("Phase 3.7A.1: executor.py must use generic_dispatch route")
+
+    try:
+        registry = yaml.safe_load((ROOT / "agents" / "adapter_registry.yaml").read_text(encoding="utf-8"))
+        codex = next(a for a in registry["adapters"] if a["id"] == "codex-restricted")
+    except Exception as exc:
+        errors.append(f"Phase 3.7A.1: cannot load codex-restricted adapter: {exc}")
+        return
+
+    if not codex.get("dedicated_runner_required"):
+        errors.append("Phase 3.7A.1: codex-restricted must declare dedicated_runner_required=true")
+    from dispatch.execution_route_policy import ROUTE_CODEX_LOCAL_BUILDER
+
+    expected_route = ROUTE_CODEX_LOCAL_BUILDER if _phase37c_active() else ROUTE_CODEX_CANARY
+    if codex.get("required_execution_route") != expected_route:
+        errors.append(f"Phase 3.7A.1: codex-restricted required_execution_route must be {expected_route}")
+    errors.extend(validate_adapter_route_policy(codex))
+
+    generic_block = evaluate_execution_route(codex, ROUTE_GENERIC_DISPATCH)
+    if generic_block.allowed:
+        errors.append("Phase 3.7A.1: generic_dispatch must block codex-restricted")
+    if DEDICATED_CANARY_RUNNER_REASON not in generic_block.reasons:
+        errors.append("Phase 3.7A.1: generic_dispatch block must cite dedicated canary runner reason")
+
+    if _phase37c_active():
+        builder_allow = evaluate_execution_route(codex, ROUTE_CODEX_LOCAL_BUILDER)
+        if not builder_allow.allowed:
+            errors.append(
+                f"Phase 3.7C: codex_local_builder route must be allowed: {builder_allow.reasons}"
+            )
+    else:
+        canary_allow = evaluate_execution_route(codex, ROUTE_CODEX_CANARY)
+        if not canary_allow.allowed:
+            errors.append(f"Phase 3.7A.1: codex_canary route must be allowed at policy layer: {canary_allow.reasons}")
+
+    capable = [a["id"] for a in registry["adapters"] if a.get("supports_execution")]
+    if sorted(capable) != ["codex-restricted", "local-python-exec-test"]:
+        errors.append(f"Phase 3.7A.1: unexpected execution-capable adapters: {capable!r}")
+
+    for adapter in registry["adapters"]:
+        if adapter.get("id") == "local-python-exec-test":
+            errors.extend(validate_adapter_route_policy(adapter))
+            local_route = evaluate_execution_route(adapter, ROUTE_GENERIC_DISPATCH)
+            if not local_route.allowed:
+                errors.append("Phase 3.7A.1: local-python-exec-test must remain generic-dispatch compatible")
+
+    if str(codex.get("required_execution_route", "")) not in RECOGNIZED_EXECUTION_ROUTES:
+        errors.append("Phase 3.7A.1: codex required_execution_route not recognized")
+
+
+def validate_phase37c_local_builder(errors: list[str]) -> None:
+    """Phase 3.7C: autonomous local builder — standing policy, dedicated runner."""
+    if not _phase37c_active():
+        return
+
+    required_docs = (
+        "docs/AUTONOMOUS_LOCAL_BUILDER.md",
+        "docs/CODEX_LOCAL_BUILDER_RUNBOOK.md",
+    )
+    for rel in required_docs:
+        if not (ROOT / rel).exists():
+            errors.append(f"Phase 3.7C: missing document {rel}")
+
+    required_artifacts = (
+        "config/execution-policy.yaml",
+        "dispatch/execution_policy.py",
+        "dispatch/codex_local_builder.py",
+        "dispatch/codex_local_builder_gate.py",
+        "dispatch/local_builder_runs.py",
+        "scripts/run_codex_builder.py",
+        "scripts/run_local_builder_worker.py",
+        "tasks/active/T-FIRST-AUTONOMOUS-CODEX-BUILD.yaml",
+        "tests/test_phase3_7c_local_builder.py",
+    )
+    for rel in required_artifacts:
+        if not (ROOT / rel).exists():
+            errors.append(f"Phase 3.7C: missing artifact {rel}")
+
+    from dispatch.execution_policy import load_execution_policy, validate_execution_policy
+    from dispatch.execution_route_policy import ROUTE_CODEX_LOCAL_BUILDER, evaluate_execution_route
+    from dispatch.codex_adapter import load_codex_restricted_adapter
+
+    try:
+        policy = load_execution_policy(ROOT)
+    except (OSError, ValueError) as exc:
+        errors.append(f"Phase 3.7C: execution policy invalid: {exc}")
+        return
+    errors.extend(validate_execution_policy(policy))
+
+    try:
+        adapter = load_codex_restricted_adapter(ROOT)
+    except (OSError, ValueError) as exc:
+        errors.append(f"Phase 3.7C: codex adapter unavailable: {exc}")
+        return
+
+    builder_route = evaluate_execution_route(adapter, ROUTE_CODEX_LOCAL_BUILDER)
+    if not builder_route.allowed:
+        errors.append(f"Phase 3.7C: codex_local_builder route blocked: {builder_route.reasons}")
+
+    builder_source = (ROOT / "scripts" / "run_codex_builder.py").read_text(encoding="utf-8")
+    if "approval_signing" in builder_source or "try_claim_approval" in builder_source:
+        errors.append("Phase 3.7C: run_codex_builder.py must not use approval signing or replay")
+    core_path = ROOT / "dispatch" / "local_builder_core.py"
+    builder_path = ROOT / "dispatch" / "codex_local_builder.py"
+    subprocess_ok = (
+        core_path.is_file() and "subprocess.run" in core_path.read_text(encoding="utf-8")
+    ) or "subprocess.run" in builder_path.read_text(encoding="utf-8")
+    if not subprocess_ok:
+        errors.append("Phase 3.7C: local builder core must invoke subprocess.run for agent CLI")
+
+
+def validate_phase38_composer_integration(errors: list[str]) -> None:
+    """Phase 3.8/3.8B: Composer/Grok assignment channel + loop CLI.
+
+    Safe when ROOT is a partial test fixture (e.g. Phase 3.2.1 temp trees that
+    only copy agents/). Missing artifacts become errors; deep imports are skipped.
+    """
+    required = (
+        "decisions/ADR-0043-composer-grok-build-integration.md",
+        "agents/composer_restricted_adapter.yaml",
+        "dispatch/composer_adapter.py",
+        "dispatch/assignment_channel.py",
+        "dispatch/local_builder_core.py",
+        "docs/COMPOSER_LOCAL_BUILDER_PREVIEW.md",
+        "docs/GROK_BUILD_LOOP.md",
+        "scripts/assignments.py",
+        "tests/test_phase3_8_composer_integration.py",
+        "tests/test_assignment_channel.py",
+        "tests/test_phase3_8b_assignment_loop.py",
+    )
+    missing = [rel for rel in required if not (ROOT / rel).exists()]
+    for rel in missing:
+        errors.append(f"Phase 3.8: missing artifact {rel}")
+    # Partial fixture trees (tests monkeypatch ROOT to agents-only temp dirs)
+    if missing:
+        # Still enforce registry display/execution flags when registry is present.
+        try:
+            registry_path = ROOT / "agents" / "adapter_registry.yaml"
+            if registry_path.is_file():
+                registry = yaml.safe_load(registry_path.read_text(encoding="utf-8"))
+                entry = next(
+                    a for a in registry.get("adapters", []) if a.get("id") == "composer-restricted"
+                )
+                if entry.get("supports_execution"):
+                    errors.append(
+                        "Phase 3.8: composer-restricted registry supports_execution must be false"
+                    )
+        except Exception:
+            pass
+        return
+
+    try:
+        from dispatch.composer_adapter import (
+            load_composer_restricted_adapter,
+            validate_composer_preview_contract,
+        )
+        from dispatch.execution_route_policy import (
+            ROUTE_COMPOSER_LOCAL_BUILDER,
+            evaluate_execution_route,
+            validate_adapter_route_policy,
+        )
+    except ImportError as exc:
+        errors.append(f"Phase 3.8: import failed: {exc}")
+        return
+
+    try:
+        composer = load_composer_restricted_adapter(ROOT)
+    except (OSError, ValueError) as exc:
+        errors.append(f"Phase 3.8: composer adapter unavailable: {exc}")
+        return
+
+    errors.extend(validate_composer_preview_contract(composer))
+    errors.extend(validate_adapter_route_policy(composer))
+    route = evaluate_execution_route(composer, ROUTE_COMPOSER_LOCAL_BUILDER)
+    if not route.allowed:
+        errors.append(f"Phase 3.8: composer_local_builder route blocked: {route.reasons}")
+
+    try:
+        registry = yaml.safe_load((ROOT / "agents" / "adapter_registry.yaml").read_text(encoding="utf-8"))
+        entry = next(a for a in registry["adapters"] if a["id"] == "composer-restricted")
+    except Exception as exc:
+        errors.append(f"Phase 3.8: composer-restricted registry entry missing: {exc}")
+        return
+
+    if entry.get("supports_execution"):
+        errors.append("Phase 3.8: composer-restricted registry supports_execution must be false")
+    errors.extend(validate_adapter_route_policy(entry))
+
+    policy_path = ROOT / "config" / "execution-policy.yaml"
+    if policy_path.is_file():
+        policy = yaml.safe_load(policy_path.read_text(encoding="utf-8")) or {}
+        enabled = policy.get("enabled_adapters") or []
+        if "composer-restricted" in enabled:
+            errors.append("Phase 3.8: composer-restricted must not be in enabled_adapters yet")
+
+    policy_source_path = ROOT / "dispatch" / "execution_route_policy.py"
+    if policy_source_path.is_file():
+        policy_source = policy_source_path.read_text(encoding="utf-8")
+        if "ROUTE_COMPOSER_LOCAL_BUILDER" not in policy_source:
+            errors.append("Phase 3.8: ROUTE_COMPOSER_LOCAL_BUILDER missing from execution_route_policy.py")
+    else:
+        errors.append("Phase 3.8: missing dispatch/execution_route_policy.py")
+
 
 def validate_skill_mcp_references(errors: list[str]) -> None:
     skills_path = ROOT / "skills" / "registry.yaml"

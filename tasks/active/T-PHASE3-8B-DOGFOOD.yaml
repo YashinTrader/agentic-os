@@ -1,0 +1,46 @@
+id: T-PHASE3-8B-DOGFOOD
+title: Phase 3.8B assignment-loop dogfood (trivial docs)
+status: review
+owner: composer
+reviewer: claude
+created_by: claude
+created_at: "2026-07-12T00:00:00Z"
+updated_at: "2026-07-12T15:45:00Z"
+phase: "3.8B"
+priority: low
+risk_level: low
+requires_human_approval: false
+depends_on: []
+blocks: []
+labels:
+  - phase-3.8b
+  - dogfood
+estimated_effort: XS
+related_decisions:
+  - ADR-0043
+objective: >
+  Exercise the Claude→Grok file-based assignment loop end-to-end once with a
+  trivial docs artifact and committed fixtures.
+context: >
+  Self-dogfood for T-PHASE3-8B-ASSIGNMENT-LOOP-ACTIVATION. Produce a short docs
+  artifact and record assignment/claim/result/handoff fixtures under tests/fixtures.
+goals:
+  - Exercise Claude→Grok file-based assignment loop end-to-end once
+non_goals:
+  - Enable automatic Grok execution
+  - Network or credential changes
+inputs:
+  - docs/GROK_BUILD_LOOP.md
+  - dispatch/assignment_channel.py
+  - scripts/assignments.py
+outputs:
+  - docs/GROK_BUILD_LOOP_DOGFOOD.md
+  - tests/fixtures/assignment_loop_dogfood/
+constraints:
+  - No merge to protected branches
+  - No enabled_adapters change for composer-restricted
+acceptance:
+  - Assignment claimed and completed via scripts/assignments.py
+  - Fixtures committed under tests/fixtures/assignment_loop_dogfood/
+human_approval_checklist: []
+notes: "Dogfood only. Reviewer is Claude."

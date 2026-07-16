@@ -1,0 +1,21 @@
+{
+  "schema_version": "1.0",
+  "ingested_at": "2026-07-12T15:44:53Z",
+  "count": 1,
+  "results": [
+    {
+      "assignment_id": "assign-20260712T154435Z-T-PHASE3-8B-DOGFOOD-39c5a953",
+      "task_id": "T-PHASE3-8B-DOGFOOD",
+      "outbox_status": "awaiting_review",
+      "assignment_status": "awaiting_review",
+      "handoff_path": "handoffs/T-PHASE3-8B-DOGFOOD__composer__to__claude.md",
+      "handoff_exists": false,
+      "branch_name": "agent/composer/T-PHASE3-8B-ASSIGNMENT-LOOP-ACTIVATION",
+      "branch_tip_sha": "5f27b0ca2c920297ccc9330d4ef50700e320e514",
+      "result_summary": "Dogfood docs artifact docs/GROK_BUILD_LOOP_DOGFOOD.md; assignment loop exercised",
+      "outbox_path": "runtime/dispatch/assignments/outbox/assign-20260712T154435Z-T-PHASE3-8B-DOGFOOD-39c5a953.json",
+      "inbox_path": "runtime/dispatch/assignments/inbox/assign-20260712T154435Z-T-PHASE3-8B-DOGFOOD-39c5a953.json",
+      "ingested_at": "2026-07-12T15:44:53Z"
+    }
+  ]
+}

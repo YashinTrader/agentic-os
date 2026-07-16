@@ -1,0 +1,44 @@
+{
+  "schema_version": "1.0",
+  "assignment_id": "assign-20260712T154435Z-T-PHASE3-8B-DOGFOOD-39c5a953",
+  "task_id": "T-PHASE3-8B-DOGFOOD",
+  "title": "Phase 3.8B assignment-loop dogfood (trivial docs)",
+  "goal": "Exercise Claude→Grok file-based assignment loop end-to-end once",
+  "base_branch": "agent/composer/T-PHASE3-8-COMPOSER-INTEGRATION-DESIGN",
+  "base_sha": "5f27b0ca2c920297ccc9330d4ef50700e320e514",
+  "new_branch": "agent/composer/T-PHASE3-8B-ASSIGNMENT-LOOP-ACTIVATION",
+  "allowed_paths": [
+    "docs/GROK_BUILD_LOOP_DOGFOOD.md",
+    "tests/fixtures/assignment_loop_dogfood/"
+  ],
+  "forbidden_operations": [
+    "deploy",
+    "git_merge",
+    "git_push_to_protected",
+    "mcp_execution",
+    "production_access",
+    "secrets_exfiltration"
+  ],
+  "acceptance_criteria": [
+    "Assignment claimed and completed via scripts/assignments.py",
+    "Fixtures committed under tests/fixtures/assignment_loop_dogfood/"
+  ],
+  "verification_commands": [
+    "python scripts/validate.py",
+    "python scripts/run_tests.py"
+  ],
+  "timeout": 1800,
+  "handoff_path": "handoffs/T-PHASE3-8B-DOGFOOD__composer__to__claude.md",
+  "assigned_by": "claude",
+  "assigned_to": "composer",
+  "created_at": "2026-07-12T15:44:35Z",
+  "updated_at": "2026-07-12T15:44:50Z",
+  "status": "awaiting_review",
+  "adapter_id": "composer-restricted",
+  "execution_route": "composer_local_builder",
+  "task_path": "tasks/active/T-PHASE3-8B-DOGFOOD.yaml",
+  "instructions": "Dogfood only. Reviewer is Claude.",
+  "claimed_at": "2026-07-12T15:44:46Z",
+  "claimed_by": "composer",
+  "handoff_rel": "handoffs/T-PHASE3-8B-DOGFOOD__composer__to__claude.md"
+}

@@ -1,0 +1,133 @@
+id: T-PHASE3-9-1-PHYSICAL-AGENT-LAUNCHER
+title: Physical agent launcher - persistent supervisor that starts agent processes
+  on wake
+status: review
+owner: composer
+reviewer: claude
+created_by: claude
+created_at: '2026-07-15T07:00:00Z'
+updated_at: '2026-07-15T17:19:57Z'
+phase: 3.9.1
+priority: high
+risk_level: medium
+requires_human_approval: false
+depends_on:
+- T-PHASE3-9-AGENT-WAKE-POKE
+blocks: []
+labels:
+- orchestration
+- supervisor
+- launcher
+- milestone
+objective: 'Make wake-on-assign physically start the assigned agent. Authorized by
+  Gabriel 2026-07-15. Target flow: assignment created -> supervisor receives wake
+  -> supervisor STARTS the assigned agent process -> PID/run state recorded -> agent
+  performs the task -> completion and handoff recorded -> assignment moves to awaiting_review
+  -> orchestrator (Claude) receives the poke and records a verdict. The current watch_assignments.py
+  is NOT a launcher (it only claims for an already-running session) and must not be
+  presented as one.
+
+  '
+context: 'Primary builder is Grok 4.5 in Grok Build; when unavailable, Codex (Sol
+  4.6 Light) takes the builder role. Launch mechanisms: for grok/composer use the
+  locally supported Grok Build CLI (you are the authority on its invocation; document
+  exactly what is supported); for codex REUSE the existing local-builder launcher
+  (dispatch/codex_local_builder.py) - do not build a second codex launch path. The
+  supervisor is a persistent local process (scripts/agent_supervisor.py or similar)
+  subsuming the watcher role.
+
+  '
+goals:
+- 'persistent supervisor: consumes wake records, resolves adapter, allocates or binds
+  the correct worktree, starts the agent process'
+- 'run-state capture: PID, session id, stdout/stderr logs, started_at/finished_at,
+  exit status persisted under runtime/dispatch/runs/ conventions'
+- 'quota/auth handling (absorbed from T-PHASE3-9-QUOTA-BLOCKER-HANDLING verbatim):
+  classify auth/quota failures as blocked_external with reason and retry_after hint;
+  do NOT count as agent defect; do NOT burn retry budget; NEVER relaunch on unchanged
+  quota/auth failure; poke orchestrator on external block; dashboard shows blocked
+  runs read-only'
+- concurrency cap of exactly 1 initially, enforced and tested
+- completion routes assignment automatically to awaiting_review and pokes ONLY claude;
+  agent-to-agent topology restrictions preserved with tests
+- no automatic merge, push to protected branches, or deploy - launcher launches builds
+  only
+- docs + ADR amendment describing supervisor architecture, per-agent launch mechanisms
+  (real vs unsupported), and failure classification
+non_goals:
+- No credentials handling or storage; no external network endpoints; no MCP side effects
+- No multi-agent concurrency beyond 1; no auto-merge/deploy; no agent-to-agent wake
+  or poke
+inputs:
+- dispatch/agent_wake.py
+- dispatch/orchestrator_pokes.py
+- dispatch/codex_local_builder.py
+- dispatch/worktree_allocator.py
+- scripts/watch_assignments.py
+- agents/adapter_registry.yaml
+outputs:
+- dispatch/**
+- scripts/**
+- dashboard/**
+- agents/**
+- tests/**
+- docs/**
+- decisions/**
+- handoffs/T-PHASE3-9-1-PHYSICAL-AGENT-LAUNCHER__composer__to__claude.md
+constraints:
+- Supervisor may launch only registry-declared adapters with wake enabled; only claude-created
+  wakes
+- Concurrency 1; no relaunch loops on unchanged blocked_external
+- No merge/push-to-protected/deploy from any launched process or the supervisor itself
+- Read-only dashboard boundary preserved
+acceptance:
+- 'end-to-end demo recorded as evidence: assignment with --assign-to --wake leads
+  to supervisor launching the agent process, run state captured, completion to awaiting_review,
+  poke to claude (for grok use the real Grok Build CLI if locally supported, otherwise
+  demonstrate with codex via the existing launcher and document the grok gap truthfully
+  as a blocker)'
+- blocked_external classification, no-relaunch, retry_after, and override covered
+  by tests
+- concurrency-1 enforcement tested; topology tests preserved and extended to supervisor
+  paths
+- full suite via plain unittest discover single-threaded exit 0; validate.py exit
+  0; handoff closeout gate verified BEFORE push
+execution:
+  mode: auto_local_worktree
+  adapter: composer-restricted
+  timeout_seconds: 3600
+  allowed_paths:
+  - dispatch/**
+  - scripts/**
+  - dashboard/**
+  - agents/**
+  - tests/**
+  - docs/**
+  - decisions/**
+  - tasks/**
+  - handoffs/**
+  forbidden_operations:
+  - git_merge
+  - deploy
+  - production_access
+  - mcp_execution
+  - external_network
+verification:
+  commands:
+  - python scripts/validate.py
+  run_full_tests: true
+notes: 'ORDER OF WORK (Gabriel-directed): FIRST reclaim and complete the changes_requested
+  correction on assign-20260713T205535Z-T-PHASE3-9-AGENT-WAKE-PO-467848b3 (closeout
+  only: regenerate both handoff verification blocks against the actual pushed HEAD,
+  allowlist the handoff paths, run the full suite via plain unittest discover, document
+  the Cognee/Rust/Cargo run_tests.py bootstrap failure as a separate short doc, run
+  scripts/handoff_closeout_gate.py before push). During that correction also close
+  two lifecycle stragglers: run complete for assign-20260712T225332Z-T-PHASE3-8B-REVIEWER-RES-642e2f03
+  (stuck in building though the work shipped on the stacked branch) and complete-or-release
+  the claimed assign-20260715T061616Z-T-PHASE3-9-QUOTA-BLOCKER-2c6b87bb marking it
+  superseded by THIS milestone (its requirements are absorbed above verbatim) - verify
+  it is neither duplicated nor lost. THEN build this launcher milestone from the corrected
+  tip. Anything requiring credentials, paid quota, or external endpoints is a Gabriel
+  gate: report as blocker, do not implement.
+
+  '

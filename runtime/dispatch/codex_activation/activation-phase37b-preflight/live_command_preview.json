@@ -1,0 +1,10 @@
+{
+  "activation_id": "activation-phase37b-preflight",
+  "canary_runner": "python scripts/run_codex_canary.py --execute-canary --activation-id activation-phase37b-preflight --manifest runtime/dispatch/codex_activation/activation-phase37b-preflight/activation_manifest.json --allocation runtime/dispatch/codex_activation/activation-phase37b-preflight/worktree_allocation.json --approval runtime/approvals/<signed-human-approval>.json --reviewed-sha <reviewed-sha>",
+  "emergency_disable": "python scripts/disable_codex_canary.py --activation activation-phase37b-preflight --reason \"operator emergency stop\"",
+  "human_approval_path_placeholder": "runtime/approvals/<signed-human-approval>.json",
+  "note": "Do not run until Gabriel signs approval and Phase 3.7B authorization is recorded.",
+  "phase3_7b_authorization_path_placeholder": "runtime/dispatch/codex_activation/activation-phase37b-preflight/phase3_7b_authorization.json",
+  "run_id": "canary-20260629T204243Z-45a06a4c",
+  "worktree_allocation_id": "alloc-bf6a9f147b674dd8a8525c4757d16920"
+}

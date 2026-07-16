@@ -16,6 +16,13 @@ from dispatch.executor_contract import (
 )
 from dispatch.freshness import compute_preview_hash, is_preview_stale
 from dispatch.preview import validate_command_allowlist
+from dispatch.approval_replay import is_approval_consumed
+from dispatch.approval_signing import SIGNING_VERSION, verify_signed_approval
+from dispatch.execution_route_policy import (
+    ROUTE_GENERIC_DISPATCH,
+    evaluate_execution_route,
+)
+from dispatch.worktree_allocator import evaluate_allocation_for_execution
 from dispatch.worktree_policy import evaluate_worktree_policy
 
 MAX_TIMEOUT_SECONDS = 3600
@@ -32,6 +39,10 @@ class ExecutionGateResult:
     approval_level: str = "none"
     preview_hash: str = ""
     warnings: list[str] = field(default_factory=list)
+    execution_route_requested: str = ROUTE_GENERIC_DISPATCH
+    execution_route_required: str | None = None
+    execution_route_allowed: bool = True
+    route_block_reasons: list[str] = field(default_factory=list)
 
 
 def adapter_supports_execution(adapter: dict[str, Any] | None) -> bool:
@@ -50,12 +61,19 @@ def evaluate_execution_gates(
     operator_execute: bool = False,
     dry_run: bool = False,
     worktree_root: str | None = None,
+    allocation_record: dict[str, Any] | None = None,
     mcp_execution_allowed: bool = False,
+    require_signed_approval: bool = True,
+    check_replay: bool = False,
     now: datetime | None = None,
+    execution_route: str = ROUTE_GENERIC_DISPATCH,
 ) -> ExecutionGateResult:
     """Evaluate all hard execution rules. Does not execute subprocess."""
     blocked: list[str] = []
     warnings: list[str] = []
+    route_required: str | None = None
+    route_allowed = True
+    route_block_reasons: list[str] = []
 
     approval_gate = preview.get("approval_gate") or {}
     required_level = str(approval_gate.get("approval_level", "blocked"))
@@ -73,6 +91,13 @@ def evaluate_execution_gates(
     if adapter is None:
         blocked.append(f"adapter {preview.get('adapter_id')!r} not found in registry")
     else:
+        route_decision = evaluate_execution_route(adapter, execution_route)
+        route_required = route_decision.required_route
+        route_allowed = route_decision.allowed
+        route_block_reasons = list(route_decision.reasons)
+        if not route_decision.allowed:
+            blocked.extend(route_decision.reasons)
+
         adapter_id = str(adapter.get("id", ""))
         if adapter.get("status") != "active":
             blocked.append(f"adapter {adapter_id!r} is not active")
@@ -148,6 +173,18 @@ def evaluate_execution_gates(
                 blocked.append("approval record missing or insufficient")
         if approval_record is None:
             blocked.append("approval record required but not provided")
+        elif require_signed_approval:
+            version = int(approval_record.get("version", 1))
+            if version >= SIGNING_VERSION:
+                sig_result = verify_signed_approval(approval_record, preview=preview, now=now)
+                if sig_result.status != "valid":
+                    blocked.append(f"signed approval verification failed: {sig_result.status}")
+                    for err in sig_result.errors:
+                        blocked.append(err)
+                if check_replay and is_approval_consumed(
+                    repo_root, str(approval_record.get("approval_id", ""))
+                ):
+                    blocked.append("approval already consumed (replay blocked)")
 
     if preview.get("secrets_required"):
         if approval_record is None or str(approval_record.get("approver_type", "")) != "human":
@@ -155,13 +192,37 @@ def evaluate_execution_gates(
 
     adapter_writes = bool((adapter or {}).get("writes_files"))
     worktree_required = bool(preview.get("worktree_required")) or adapter_writes
+    effective_worktree_root = worktree_root
+    if allocation_record is not None:
+        effective_worktree_root = str(allocation_record.get("worktree_path", worktree_root or ""))
+
+    if adapter_writes and worktree_required:
+        base_sha = str(preview.get("base_sha") or preview.get("plan_base_sha") or "")
+        if not base_sha:
+            blocked.append("missing base_sha for worktree-bound file-writing execution")
+        blocked.extend(
+            evaluate_allocation_for_execution(
+                allocation_record,
+                task_id=str(preview.get("task_id", "")),
+                run_id=str(preview.get("run_id", "")),
+                base_sha=base_sha,
+                cwd=str(preview.get("working_directory", "")),
+                scope_paths=preview.get("scope_paths") or [],
+            )
+        )
+        if allocation_record is None:
+            blocked.append(
+                "file-writing execution requires explicit worktree allocation record; "
+                "automatic allocation is not enabled"
+            )
+
     wd_result = evaluate_worktree_policy(
         repo_root,
         cwd=str(preview.get("working_directory", "")),
         scope_paths=preview.get("scope_paths") or [],
         writes_files=adapter_writes,
         worktree_required=worktree_required,
-        worktree_root=worktree_root,
+        worktree_root=effective_worktree_root,
     )
     blocked.extend(wd_result.blocked_reasons)
 
@@ -186,4 +247,8 @@ def evaluate_execution_gates(
         approval_level=required_level,
         preview_hash=preview_hash,
         warnings=warnings,
+        execution_route_requested=execution_route,
+        execution_route_required=route_required,
+        execution_route_allowed=route_allowed,
+        route_block_reasons=route_block_reasons,
     )

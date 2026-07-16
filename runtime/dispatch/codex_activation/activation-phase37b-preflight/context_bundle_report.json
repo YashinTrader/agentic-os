@@ -1,0 +1,33 @@
+{
+  "bundle_hash": "505a3394828f4e62cbd8618981281cb3926c7e5189231fff695b4377d1250240",
+  "manifest": {
+    "approval_level": "human",
+    "base_sha": "dd186e795e8ba414f2023129782420ade0328a1a",
+    "bundle_dir": "C:\\Users\\gabot\\agentic-os\\runtime\\dispatch\\runs\\canary-20260629T204243Z-45a06a4c\\codex_context",
+    "bundle_hash": "505a3394828f4e62cbd8618981281cb3926c7e5189231fff695b4377d1250240",
+    "created_at": "2026-06-29T20:43:19Z",
+    "files": [
+      "task.yaml",
+      "plan.json",
+      "preview.json",
+      "context_pack.md",
+      "adapter_policy.json",
+      "allowed_paths.json",
+      "instructions.md",
+      "expected_handoff.md"
+    ],
+    "run_id": "canary-20260629T204243Z-45a06a4c",
+    "task_id": "T-PHASE3-7B-CODEX-CANARY",
+    "timeout_seconds": 600,
+    "worktree_path": "C:\\Users\\gabot\\agentic-os-worktrees\\t-phase3-7b-codex-canary\\canary-20260"
+  },
+  "size_report": {
+    "bundle_dir": "C:\\Users\\gabot\\agentic-os\\runtime\\dispatch\\runs\\canary-20260629T204243Z-45a06a4c\\codex_context",
+    "bundle_hash": "505a3394828f4e62cbd8618981281cb3926c7e5189231fff695b4377d1250240",
+    "environment_variable_names": [
+      "OPENAI_API_KEY"
+    ],
+    "file_count": 9,
+    "total_bytes": 7435
+  }
+}

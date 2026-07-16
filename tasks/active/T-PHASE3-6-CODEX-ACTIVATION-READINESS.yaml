@@ -1,0 +1,50 @@
+id: T-PHASE3-6-CODEX-ACTIVATION-READINESS
+title: Phase 3.6 Codex activation readiness and canary package
+owner: composer
+status: review
+created_at: 2026-06-28T12:00:00Z
+updated_at: 2026-06-28T12:00:00Z
+objective: >
+  Fix MA1 command defect, lock argv contract, prepare activation manifest and
+  documentation-only canary package while keeping codex-restricted disabled.
+inputs:
+  - agents/codex_restricted_adapter.yaml
+  - dispatch/codex_adapter.py
+  - decisions/ADR-0029 through ADR-0033
+outputs:
+  - dispatch/codex_activation.py
+  - dispatch/codex_canary_contract.py
+  - dispatch/codex_cli_compatibility.py
+  - dispatch/codex_canary_gates.py
+  - docs/PHASE_3_6_*
+  - decisions/ADR-0034 through ADR-0037
+constraints:
+  - supports_execution must remain false for codex-restricted
+  - no live Codex execution or canary run
+  - no human approval consumption
+  - no Phase 3.7 scheduling
+acceptance:
+  - MA1 fixed with regression tests
+  - validator exit 0 at implementation HEAD
+  - test count >= 387 all pass
+  - validate_codex_activation outputs READY_FOR_REVIEW
+  - repository verification Status verified
+notes: Activation readiness only; separate task for live canary.
+risk_level: high
+requires_human_approval: true
+human_approval_checklist:
+  - docs/PHASE_3_6_HUMAN_APPROVAL_CHECKLIST.md
+  - Claude final review of Phase 3.6
+  - Separate activation task before live Codex
+reviewer: claude
+created_by: composer
+phase: "3.6"
+goals:
+  - Fix MA1 and lock command contract
+  - Activation manifest and canary contract
+  - CLI compatibility and refusal gates
+non_goals:
+  - Activating Codex execution
+  - Running documentation canary
+  - Phase 3.7
+priority: high

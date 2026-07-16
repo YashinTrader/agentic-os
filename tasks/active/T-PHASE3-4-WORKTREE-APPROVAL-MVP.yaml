@@ -1,0 +1,78 @@
+id: T-PHASE3-4-WORKTREE-APPROVAL-MVP
+title: Phase 3.4 worktree allocator and signed approval MVP
+owner: composer
+reviewer: claude
+created_by: composer
+status: review
+phase: "3.4"
+created_at: 2026-06-20T12:00:00Z
+updated_at: 2026-06-20T12:00:00Z
+priority: high
+risk_level: medium
+requires_human_approval: false
+human_approval_checklist: []
+objective: >
+  Implement operator-commanded worktree allocation, HMAC-SHA256 signed approvals,
+  single-use anti-replay, and executor integration. Autonomy Level 1 only.
+context: >
+  Continues from approved Phase 3.3.2 closeout (deca717). Implements MVP from
+  Phase 3.3 design without enabling real agents or autonomous execution.
+goals:
+  - Operator-commanded Git worktree allocator with registry
+  - HMAC-SHA256 signed approval records (key possession, not legal identity)
+  - Single-use approval anti-replay before subprocess
+  - Execution gate and executor integration for allocation + signing
+  - Phase 3.4 tests, docs, ADRs, and review packet
+non_goals:
+  - Autonomous scheduling (Level 2+)
+  - Real agent adapter execution promotion
+  - Dashboard execute/approve/allocate controls
+  - Automatic worktree allocation on execute
+  - OS keyring integration (env vars for MVP)
+inputs:
+  - dispatch/worktree_policy.py
+  - dispatch/execution_gate.py
+  - dispatch/executor.py
+  - docs/PHASE_3_3_WORKTREE_ALLOCATOR_DESIGN.md
+  - docs/PHASE_3_3_APPROVAL_AUTHENTICITY_DESIGN.md
+  - decisions/ADR-0020-worktree-allocation-lifecycle.md
+  - decisions/ADR-0021-approval-authenticity-anti-replay.md
+outputs:
+  - dispatch/worktree_allocator.py
+  - dispatch/worktree_registry.py
+  - dispatch/approval_signing.py
+  - dispatch/approval_replay.py
+  - dispatch/atomic_io.py
+  - scripts/allocate_worktree.py
+  - scripts/cleanup_worktree.py
+  - scripts/inspect_worktree.py
+  - scripts/sign_approval.py
+  - scripts/verify_approval.py
+  - schemas/worktree_allocation_record.schema.json
+  - schemas/signed_approval_record.schema.json
+  - docs/PHASE_3_4_BASELINE.md
+  - docs/PHASE_3_4_WORKTREE_ALLOCATOR.md
+  - docs/PHASE_3_4_APPROVAL_AUTHENTICITY.md
+  - docs/PHASE_3_4_EXECUTOR_INTEGRATION.md
+  - docs/PHASE_3_4_HARDENING_REPORT.md
+  - docs/PHASE_3_4_REVIEW_PACKET.md
+  - docs/REVIEW_COMPOSER_PHASE_3_4_SELF_REVIEW.md
+  - decisions/ADR-0025-worktree-allocator-mvp.md
+  - decisions/ADR-0026-hmac-approval-authenticity.md
+  - decisions/ADR-0027-single-use-approval-anti-replay.md
+  - decisions/ADR-0028-phase-3-4-execution-boundary.md
+  - tests/test_phase3_4_*.py
+constraints:
+  - Operator-commanded only; no auto-allocation
+  - HMAC proves key possession, not legal identity
+  - Dirty worktree cleanup refused
+  - Subprocess only in dispatch/executor.py
+  - Only local-python-exec-test supports execution
+  - Autonomy Level 1
+acceptance:
+  - python scripts/run_tests.py exits 0 (306+ tests)
+  - python scripts/validate.py exits 0
+  - Phase 3.4 safety boundaries pass
+  - Claude final review packet complete
+notes: >
+  Baseline commit deca717. Phase 3.4 adds 27 tests (333 total expected).

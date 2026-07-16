@@ -14,7 +14,10 @@ sys.path.insert(0, str(REPO_ROOT))
 from scripts.repository_verification import (  # noqa: E402
     git_changed_files_since,
     git_is_ancestor,
+    load_unittest_artifact,
     parse_verification_block,
+    resolve_head_for_verification,
+    run_validator_at_head,
     validate_repository_verification,
 )
 
@@ -35,17 +38,44 @@ def _git_rev_parse(ref: str = "HEAD") -> str | None:
     return None
 
 
+def _print_result(result) -> None:
+    if result.artifact_status:
+        label = "verified" if result.artifact_status == "verified" else "failed"
+        print(f"Artifact: {label}")
+    if result.git_ancestry_status:
+        print(f"Git ancestry: {result.git_ancestry_status}")
+    if result.post_test_diff_status:
+        print(f"Post-test diff: {result.post_test_diff_status}")
+    if result.validator_status:
+        status = "passed" if result.validator_status == "passed" else "failed"
+        print(f"Validator at HEAD: {status}")
+        if result.validator_exit_code is not None:
+            print(f"Validator exit code: {result.validator_exit_code}")
+    print(f"Status: {result.status}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Verify a v2 handoff Repository Verification block")
-    parser.add_argument("handoff", type=Path, help="Path to handoff markdown file")
+    parser.add_argument("handoff", nargs="?", type=Path, default=None, help="Path to handoff markdown file")
+    parser.add_argument("--handoff", dest="handoff_opt", type=Path, default=None, help="Path to handoff markdown file")
     parser.add_argument(
         "--head",
         default=None,
         help="Actual HEAD SHA (default: git rev-parse HEAD)",
     )
+    parser.add_argument(
+        "--skip-validator",
+        action="store_true",
+        help="Skip validator-at-HEAD subprocess (for tests only)",
+    )
     args = parser.parse_args()
 
-    path = args.handoff if args.handoff.is_absolute() else REPO_ROOT / args.handoff
+    handoff_arg = args.handoff_opt or args.handoff
+    if handoff_arg is None:
+        print("Handoff path required (positional or --handoff)", file=sys.stderr)
+        return 2
+
+    path = handoff_arg if handoff_arg.is_absolute() else REPO_ROOT / handoff_arg
     if not path.exists():
         print(f"Handoff not found: {path}", file=sys.stderr)
         return 2
@@ -84,25 +114,27 @@ def main() -> int:
     else:
         changed = []
 
-    head_for_check = actual_head
-    final_recorded = verification.get("final_head_sha", "")
-    if final_recorded and actual_head.lower() != final_recorded.lower():
-        tip_delta = git_changed_files_since(final_recorded, actual_head, str(REPO_ROOT))
-        if tip_delta is not None and tip_delta and all(
-            p.replace("\\", "/").startswith("handoffs/") for p in tip_delta
-        ):
-            head_for_check = final_recorded
+    head_for_check = resolve_head_for_verification(actual_head, final_head, str(REPO_ROOT))
+
+    artifact, artifact_exists = load_unittest_artifact(REPO_ROOT)
+    validator_result = None if args.skip_validator else run_validator_at_head(REPO_ROOT)
 
     result = validate_repository_verification(
         verification,
         actual_head_sha=head_for_check,
         changed_files_after_tests=changed,
         rel=rel,
+        test_artifact=artifact,
+        artifact_exists=artifact_exists,
+        artifact_is_ancestor=git_is_ancestor,
+        validator_result=validator_result,
+        run_artifact_checks=True,
+        run_validator_checks=not args.skip_validator,
     )
     if head_for_check != actual_head:
         print(
-            f"Note: actual HEAD ({actual_head}) is one handoff-only commit ahead of "
-            f"recorded final_head_sha ({final_recorded})",
+            f"Note: actual HEAD ({actual_head}) is ahead of recorded final_head_sha ({final_head}); "
+            "only allowlisted post-test files differ.",
             file=sys.stderr,
         )
 
@@ -113,7 +145,7 @@ def main() -> int:
     if result.post_test_violations:
         print("Post-test violations:", ", ".join(result.post_test_violations), file=sys.stderr)
 
-    print(f"Status: {result.status}")
+    _print_result(result)
     if result.status == "verified":
         return 0
     if result.status == "structurally_valid":

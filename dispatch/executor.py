@@ -8,8 +8,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from dispatch.approval_replay import try_claim_approval
 from dispatch.approval_store import load_approval_record
+from dispatch.worktree_registry import (
+    allocation_record_to_dict,
+    load_allocation_record,
+)
 from dispatch.execution_gate import evaluate_execution_gates
+from dispatch.execution_route_policy import ROUTE_GENERIC_DISPATCH
 from dispatch.executor_contract import (
     build_execution_request_from_preview,
     execution_request_to_dict,
@@ -88,6 +94,8 @@ def execute_dispatch(
     dry_run: bool = False,
     approval_path: Path | None = None,
     worktree_root: str | None = None,
+    allocation_path: Path | None = None,
+    allocation_id: str | None = None,
 ) -> ExecutionResult:
     """
     Controlled dispatch executor. Subprocess runs only when:
@@ -107,6 +115,16 @@ def execute_dispatch(
     if approval_path and approval_path.exists():
         approval_record = load_approval_record(approval_path)
 
+    allocation_record: dict[str, Any] | None = None
+    if allocation_path and allocation_path.exists():
+        allocation_record = json.loads(allocation_path.read_text(encoding="utf-8"))
+    elif allocation_id:
+        allocation_record = allocation_record_to_dict(load_allocation_record(repo_root, allocation_id))
+
+    effective_worktree_root = worktree_root
+    if allocation_record is not None:
+        effective_worktree_root = str(allocation_record.get("worktree_path", worktree_root or ""))
+
     gate = evaluate_execution_gates(
         repo_root,
         preview,
@@ -115,7 +133,10 @@ def execute_dispatch(
         approval_record=approval_record,
         operator_execute=operator_execute,
         dry_run=dry_run,
-        worktree_root=worktree_root,
+        worktree_root=effective_worktree_root,
+        allocation_record=allocation_record,
+        check_replay=operator_execute and not dry_run,
+        execution_route=ROUTE_GENERIC_DISPATCH,
     )
 
     run_dir = run_directory(repo_root, run_id)
@@ -138,6 +159,10 @@ def execute_dispatch(
     request_dict["dry_run"] = dry_run
     request_dict["preview_hash"] = gate.preview_hash
     request_dict["gate_blocked_reasons"] = gate.blocked_reasons
+    request_dict["execution_route_requested"] = gate.execution_route_requested
+    request_dict["execution_route_required"] = gate.execution_route_required
+    request_dict["execution_route_allowed"] = gate.execution_route_allowed
+    request_dict["route_block_reasons"] = gate.route_block_reasons
     write_execution_request(run_dir, request_dict)
 
     latest_req = repo_root / "runtime" / "dispatch" / "latest_execution_request.json"
@@ -182,12 +207,25 @@ def execute_dispatch(
             handoff_path=handoff_path,
             rollback_path=rollback_path,
             result_path=str((run_dir / "result.json").relative_to(repo_root)),
+            execution_route_requested=gate.execution_route_requested,
+            execution_route_required=gate.execution_route_required,
+            execution_route_allowed=gate.execution_route_allowed,
+            route_block_reasons=gate.route_block_reasons,
         )
         write_result(run_dir, result)
         persist_latest_pointers(repo_root, run_id, result)
         append_run_event(
             run_dir,
-            {"ts": finished_at, "type": "dispatch_blocked", "reasons": gate.blocked_reasons},
+            {
+                "ts": finished_at,
+                "type": "dispatch_blocked",
+                "reasons": gate.blocked_reasons,
+                "adapter_id": adapter_id,
+                "requested_route": gate.execution_route_requested,
+                "required_route": gate.execution_route_required,
+                "approval_consumed": False,
+                "subprocess_invoked": False,
+            },
         )
         _emit_dispatch_event(
             repo_root,
@@ -246,8 +284,64 @@ def execute_dispatch(
         write_result(run_dir, result)
         return result
 
+    if approval_record is not None and operator_execute and not dry_run:
+        claim = try_claim_approval(
+            repo_root,
+            approval_id=str(approval_record.get("approval_id", "")),
+            run_id=run_id,
+            task_id=task_id,
+            preview_hash=gate.preview_hash,
+            execution_request_id=run_id,
+        )
+        if not claim.claimed:
+            finished_at = utc_now()
+            reasons = claim.errors or ["approval claim failed"]
+            result = ExecutionResult(
+                run_id=run_id,
+                task_id=task_id,
+                adapter_id=adapter_id,
+                executed=False,
+                execution_allowed=False,
+                approval_level=gate.approval_level,
+                approval_status="invalid",
+                started_at=started_at,
+                finished_at=finished_at,
+                blocked_reasons=reasons,
+                handoff_path=handoff_path,
+                rollback_path=rollback_path,
+                result_path=str((run_dir / "result.json").relative_to(repo_root)),
+            )
+            write_result(run_dir, result)
+            persist_latest_pointers(repo_root, run_id, result)
+            _emit_dispatch_event(
+                repo_root,
+                "approval_replay_blocked",
+                task_id=task_id,
+                run_id=run_id,
+                detail="; ".join(reasons),
+                ref=result.result_path,
+                run_dir=run_dir,
+                event_emit_errors=event_emit_errors,
+            )
+            result.event_emit_errors = list(event_emit_errors)
+            write_result(run_dir, result)
+            return result
+        _emit_dispatch_event(
+            repo_root,
+            "approval_consumed",
+            task_id=task_id,
+            run_id=run_id,
+            detail=f"approval_id={approval_record.get('approval_id')}",
+            ref=str(claim.claim_path or ""),
+            run_dir=run_dir,
+            event_emit_errors=event_emit_errors,
+        )
+
     command = str(preview.get("command", ""))
     cwd = str(preview.get("working_directory", repo_root))
+    adapter_writes = bool((adapter or {}).get("writes_files"))
+    if effective_worktree_root and adapter_writes:
+        cwd = effective_worktree_root
     timeout_seconds = int(preview.get("timeout_seconds") or 300)
     tokens, _ = command_tokens(command)
 

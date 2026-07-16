@@ -1,0 +1,70 @@
+{
+  "adapter_id": "codex-restricted",
+  "allowed_scope": [
+    "docs/codex-canary-canary-20260629T204243Z-45a06a4c.md"
+  ],
+  "approval_gate": {
+    "approval_level": "human",
+    "approval_status": "pending_human"
+  },
+  "approval_level": "human",
+  "automatic_retry": false,
+  "automatic_suspension": true,
+  "base_sha": "dd186e795e8ba414f2023129782420ade0328a1a",
+  "blocked_reasons": [
+    "Codex authentication variable OPENAI_API_KEY not present in filtered environment",
+    "adapter forbids required structural token: --dangerously-bypass-approvals-and-sandbox",
+    "adapter forbids required structural token: --dangerously-bypass-hook-trust"
+  ],
+  "canary_contract_hash": "43c0bb142f294439959a0bad2abe36ad6dd49ef51db02db6f18d8b9b916ff09e",
+  "codex_executable": "C:\\Users\\gabot\\AppData\\Roaming\\npm\\codex.CMD",
+  "codex_version": "0.136.0",
+  "command": "codex exec -C C:\\Users\\gabot\\agentic-os-worktrees\\t-phase3-7b-codex-canary\\canary-20260 -s workspace-write --json -o C:\\Users\\gabot\\agentic-os-worktrees\\t-phase3-7b-codex-canary\\canary-20260\\runtime\\codex_agent_output.json Follow instructions in C:\\Users\\gabot\\agentic-os\\runtime\\dispatch\\runs\\canary-20260629T204243Z-45a06a4c\\codex_context\\instructions.md",
+  "command_argv": [
+    "codex",
+    "exec",
+    "-C",
+    "C:\\Users\\gabot\\agentic-os-worktrees\\t-phase3-7b-codex-canary\\canary-20260",
+    "-s",
+    "workspace-write",
+    "--json",
+    "-o",
+    "C:\\Users\\gabot\\agentic-os-worktrees\\t-phase3-7b-codex-canary\\canary-20260\\runtime\\codex_agent_output.json",
+    "Follow instructions in C:\\Users\\gabot\\agentic-os\\runtime\\dispatch\\runs\\canary-20260629T204243Z-45a06a4c\\codex_context\\instructions.md"
+  ],
+  "context_bundle_hash": "505a3394828f4e62cbd8618981281cb3926c7e5189231fff695b4377d1250240",
+  "cwd": "C:\\Users\\gabot\\agentic-os-worktrees\\t-phase3-7b-codex-canary\\canary-20260",
+  "dispatch_allowed": false,
+  "environment_variable_names": [
+    "COMSPEC",
+    "PATH",
+    "PATHEXT",
+    "SYSTEMROOT",
+    "TEMP",
+    "TMP",
+    "USERPROFILE"
+  ],
+  "expected_file": "docs/codex-canary-canary-20260629T204243Z-45a06a4c.md",
+  "handoff_path": "handoffs/T-PHASE3-7B-CODEX-CANARY__codex__to__claude.md",
+  "maximum_runs": 1,
+  "output_path": "C:\\Users\\gabot\\agentic-os-worktrees\\t-phase3-7b-codex-canary\\canary-20260\\runtime\\codex_agent_output.json",
+  "plan_path": "runtime/orchestrator/latest_plan.json",
+  "positional_prompt_hash": "33c2a8219684310ba1f428c703688e29457df52de575bf84538b4efcee9ba966",
+  "preview_hash": "c7bc5d1747c508cdc42a381e1c81596b8192d5381bebc33201b68fba4da9d224",
+  "required_execution_route": "codex_canary",
+  "risk_gate": {
+    "approval_level": "high",
+    "risk_level": "high"
+  },
+  "run_id": "canary-20260629T204243Z-45a06a4c",
+  "scope_paths": [
+    "."
+  ],
+  "secrets_required": true,
+  "status": "prepared_not_executed",
+  "task_id": "T-PHASE3-7B-CODEX-CANARY",
+  "timeout_seconds": 600,
+  "working_directory": "C:\\Users\\gabot\\agentic-os-worktrees\\t-phase3-7b-codex-canary\\canary-20260",
+  "worktree_allocation_id": "alloc-bf6a9f147b674dd8a8525c4757d16920",
+  "worktree_required": true
+}

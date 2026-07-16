@@ -10,6 +10,8 @@ from pathlib import Path
 
 import yaml
 
+from cli_encoding import install_encode_safe_stdio
+
 
 RISKY_OUTPUT_PREFIXES = ("scripts/", "docs/", "decisions/")
 PRIORITY_MAP = {"P0": "high", "P1": "high", "P2": "medium", "P3": "low"}
@@ -69,6 +71,7 @@ def normalized_priority(value: str) -> str:
 
 
 def main() -> int:
+    install_encode_safe_stdio()
     args = parser().parse_args()
     if args.owner == args.reviewer:
         print("reviewer must differ from owner", file=sys.stderr)

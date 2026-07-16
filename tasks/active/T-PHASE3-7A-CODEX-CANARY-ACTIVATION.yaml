@@ -1,0 +1,48 @@
+id: T-PHASE3-7A-CODEX-CANARY-ACTIVATION
+title: Phase 3.7A Codex canary activation candidate
+owner: composer
+status: review
+created_at: 2026-06-28T18:00:00Z
+updated_at: 2026-06-28T18:00:00Z
+objective: >
+  Prepare Codex activation candidate with canary-only supports_execution true while
+  every gate blocks live subprocess until Phase 3.7B human authorization.
+inputs:
+  - agents/codex_restricted_adapter.yaml
+  - dispatch/codex_activation_gate.py
+  - decisions/ADR-0034 through ADR-0041
+outputs:
+  - runtime/dispatch/codex_activation/<activation_id>/activation_manifest.json
+  - runtime/dispatch/codex_activation/<activation_id>/human_approval_request.json
+  - docs/PHASE_3_7A_*
+  - tests/test_phase3_7a_*
+constraints:
+  - no live Codex prompt execution
+  - no human approval consumption
+  - no Phase 3.7B authorization artifact
+  - Autonomy Level 1
+acceptance:
+  - supports_execution true with fifteen gates blocking subprocess
+  - validate_codex_activation outputs READY_FOR_CLAUDE_REVIEW
+  - test count >= 426 all pass
+  - validator exit 0
+  - repository verification Status verified
+notes: Activation candidate only; Phase 3.7B required for first live canary.
+risk_level: high
+requires_human_approval: true
+human_approval_checklist:
+  - docs/PHASE_3_7A_HUMAN_APPROVAL_REQUEST.md
+  - Claude final review of Phase 3.7A
+  - Phase 3.7B authorization before live run
+reviewer: claude
+created_by: composer
+phase: "3.7A"
+goals:
+  - Activation candidate adapter state
+  - Fifteen-gate refusal before subprocess
+  - Human approval request package
+non_goals:
+  - Running Codex on a prompt
+  - Creating human approval signature
+  - Phase 3.7B live authorization
+priority: high

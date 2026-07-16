@@ -83,6 +83,103 @@ adapters:
     risk_level: medium
     notes: Preview only. File-writing adapter requires rollback in Phase 3.2+.
 
+  - id: codex-restricted
+    display_name: Codex CLI restricted adapter (Phase 3.7A activation candidate)
+    agent_id: codex
+    adapter_type: cli
+    status: active
+    command_template: "codex exec -C {worktree_path} -s workspace-write --json -o {agent_output_path}"
+    allowed_commands:
+      - codex
+    forbidden_args:
+      - "--dangerously-bypass-approvals-and-sandbox"
+      - "--dangerously-bypass-hook-trust"
+      - "--dangerously-bypass-approvals"
+    required_clis:
+      - codex
+    env_vars_required:
+      - OPENAI_API_KEY
+    secrets_required: true
+    timeout_seconds: 600
+    working_directory_policy: worktree
+    supports_dry_run: true
+    supports_streaming: false
+    supports_execution: true
+    execution_scope: local_worktree
+    dedicated_runner_required: true
+    required_execution_route: codex_local_builder
+    maximum_runs: 0
+    automatic_disable_after_run: false
+    live_run_authorized: true
+    phase3_7b_authorization_required: false
+    writes_files: true
+    approval_level: none
+    risk_level: high
+    promotion_state: restricted_execution
+    supports_preview: true
+    worktree_required: true
+    network_required: true
+    mcp_required: false
+    minimum_version: "0.136.0"
+    context_bundle_required: true
+    handoff_required: true
+    rollback_required: true
+    wake:
+      enabled: true
+      mechanism: codex_local_builder
+      command_or_path: scripts/run_local_builder_worker.py
+    notes: >
+      Autonomous local builder. Standing policy auto_local_worktree authorizes bounded
+      Codex work in isolated worktrees. Generic dispatch blocked. See codex_restricted_adapter.yaml.
+  - id: composer-restricted
+    display_name: Grok Build (Grok 4.5)
+    agent_id: composer
+    adapter_type: cli
+    status: planned
+    command_template: "composer agent run --task-id {task_id} --worktree {worktree_path} --output {agent_output_path}"
+    allowed_commands:
+      - composer
+    forbidden_args:
+      - "--dangerously-bypass-approvals-and-sandbox"
+      - "--dangerously-bypass-hook-trust"
+      - "--execute"
+      - "--force"
+    required_clis:
+      - composer
+    env_vars_required: []
+    secrets_required: false
+    timeout_seconds: 1800
+    working_directory_policy: worktree
+    supports_dry_run: true
+    supports_streaming: false
+    supports_execution: false
+    execution_scope: local_worktree
+    dedicated_runner_required: true
+    required_execution_route: composer_local_builder
+    maximum_runs: 0
+    automatic_disable_after_run: false
+    live_run_authorized: false
+    phase3_7b_authorization_required: false
+    writes_files: true
+    approval_level: none
+    risk_level: high
+    promotion_state: restricted_candidate
+    supports_preview: true
+    worktree_required: true
+    network_required: false
+    mcp_required: false
+    context_bundle_required: true
+    handoff_required: true
+    rollback_required: true
+    wake:
+      enabled: true
+      mechanism: assignment_watcher
+      command_or_path: scripts/watch_assignments.py
+    notes: >
+      Stable adapter id remains composer-restricted (do not rename). Display name updated
+      2026-07-12 for Grok Build (Grok 4.5) as Primary Builder/Integrator. File-based
+      assignment loop is active (Phase 3.8B); automatic execution still disabled.
+      See composer_restricted_adapter.yaml and ADR-0043.
   - id: claude-cli-preview
     display_name: Claude Code CLI (dry-run preview)
     agent_id: claude

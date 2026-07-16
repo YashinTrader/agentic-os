@@ -16,6 +16,9 @@ from dashboard.app import (
     load_handoffs,
     load_adrs,
     get_health_metrics,
+    load_execution_runs,
+    apply_execution_run_filters,
+    generate_dashboard_html,
     append_note_event,
     update_task_file,
     create_task_file,
@@ -120,6 +123,175 @@ class TestDashboardParsing(unittest.TestCase):
         self.assertEqual(metrics["last_event_ts"], "2026-05-23T09:00:00Z")
         self.assertEqual(metrics["tasks_state"], "ok")
         self.assertEqual(metrics["events_state"], "ok")
+
+    def test_load_execution_runs_tolerates_missing_runtime(self) -> None:
+        runs, errors = load_execution_runs(self.root)
+        self.assertEqual(runs, [])
+        self.assertEqual(errors, [])
+
+    def test_load_execution_runs_parses_required_metadata(self) -> None:
+        run_dir = self.root / "runtime" / "dispatch" / "runs" / "build-test"
+        run_dir.mkdir(parents=True, exist_ok=True)
+        (run_dir / "result.json").write_text(
+            json.dumps(
+                {
+                    "run_id": "build-test",
+                    "task_id": "T-TEST",
+                    "adapter_id": "codex-restricted",
+                    "route": "codex_local_builder",
+                    "status": "completed_verified",
+                    "started_at": "2026-06-30T12:00:00Z",
+                    "finished_at": "2026-06-30T12:05:00Z",
+                    "worktree_path": "C:/tmp/worktree",
+                    "handoff_path": "C:/tmp/worktree/handoffs/T-TEST__codex__to__claude.md",
+                    "blocked_reasons": [],
+                }
+            ),
+            encoding="utf-8",
+        )
+        (run_dir / "verification_results.json").write_text(
+            json.dumps(
+                {
+                    "commands": [
+                        {
+                            "command": "python scripts/validate.py",
+                            "exit_code": 0,
+                            "timed_out": False,
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        runs, errors = load_execution_runs(self.root)
+        self.assertEqual(errors, [])
+        self.assertEqual(len(runs), 1)
+        self.assertEqual(runs[0]["task_id"], "T-TEST")
+        self.assertEqual(runs[0]["adapter_id"], "codex-restricted")
+        self.assertEqual(runs[0]["route"], "codex_local_builder")
+        self.assertEqual(runs[0]["status"], "completed_verified")
+        self.assertEqual(runs[0]["verification_status"], "passed")
+        self.assertEqual(runs[0]["blocked_reasons"], [])
+        self.assertEqual(runs[0]["handoff_path"], "C:/tmp/worktree/handoffs/T-TEST__codex__to__claude.md")
+
+    def test_load_execution_runs_reports_malformed_result(self) -> None:
+        run_dir = self.root / "runtime" / "dispatch" / "runs" / "bad-run"
+        run_dir.mkdir(parents=True, exist_ok=True)
+        (run_dir / "result.json").write_text("{not-json", encoding="utf-8")
+
+        runs, errors = load_execution_runs(self.root)
+        self.assertEqual(len(runs), 1)
+        self.assertEqual(runs[0]["run_id"], "bad-run")
+        self.assertEqual(runs[0]["status"], "unknown")
+        self.assertTrue(errors)
+        self.assertTrue(runs[0]["errors"])
+
+    def test_load_execution_runs_includes_claim_state_when_claimed(self) -> None:
+        run_dir = self.root / "runtime" / "dispatch" / "runs" / "build-claimed"
+        run_dir.mkdir(parents=True, exist_ok=True)
+        (run_dir / "result.json").write_text(
+            json.dumps(
+                {
+                    "run_id": "build-claimed",
+                    "task_id": "T-TEST",
+                    "adapter_id": "codex-restricted",
+                    "status": "completed_verified",
+                }
+            ),
+            encoding="utf-8",
+        )
+        claims_dir = self.root / "runtime" / "dispatch" / "local_builder_claims"
+        claims_dir.mkdir(parents=True, exist_ok=True)
+        (claims_dir / "T-TEST.json").write_text(
+            json.dumps(
+                {
+                    "task_id": "T-TEST",
+                    "run_id": "build-claimed",
+                    "claimed_at": "2026-07-01T10:00:00Z",
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        runs, errors = load_execution_runs(self.root)
+        self.assertEqual(errors, [])
+        self.assertEqual(len(runs), 1)
+        self.assertEqual(runs[0]["claim_state"], "claimed")
+        self.assertEqual(runs[0]["task_lifecycle_status"], "in_progress")
+        self.assertEqual(runs[0]["active_claim_run_id"], "build-claimed")
+
+    def test_load_execution_runs_claim_state_review_pending(self) -> None:
+        run_dir = self.root / "runtime" / "dispatch" / "runs" / "build-review"
+        run_dir.mkdir(parents=True, exist_ok=True)
+        (run_dir / "result.json").write_text(
+            json.dumps(
+                {
+                    "run_id": "build-review",
+                    "task_id": "T-TEST",
+                    "adapter_id": "codex-restricted",
+                    "status": "completed_verified",
+                }
+            ),
+            encoding="utf-8",
+        )
+        task_path = self.root / "tasks" / "active" / "T-TEST.yaml"
+        task_data = yaml.safe_load(task_path.read_text(encoding="utf-8"))
+        task_data["status"] = "review"
+        task_path.write_text(yaml.safe_dump(task_data, sort_keys=False), encoding="utf-8")
+
+        runs, _ = load_execution_runs(self.root)
+        self.assertEqual(runs[0]["claim_state"], "review_pending")
+        self.assertEqual(runs[0]["task_lifecycle_status"], "review")
+
+    def test_apply_execution_run_filters_by_adapter_and_status(self) -> None:
+        runs = [
+            {"adapter_id": "codex-restricted", "status": "completed_verified"},
+            {"adapter_id": "local-python-exec-test", "status": "blocked"},
+        ]
+        filtered = apply_execution_run_filters(
+            runs,
+            adapter="codex",
+            status="completed_verified",
+        )
+        self.assertEqual(len(filtered), 1)
+        self.assertEqual(filtered[0]["adapter_id"], "codex-restricted")
+
+    def test_execution_runs_tab_renders_claim_state_and_filters(self) -> None:
+        import dashboard.app as dashboard_app
+
+        original_root = dashboard_app.ROOT_DIR
+        dashboard_app.ROOT_DIR = self.root
+        try:
+            run_dir = self.root / "runtime" / "dispatch" / "runs" / "build-ui"
+            run_dir.mkdir(parents=True, exist_ok=True)
+            (run_dir / "result.json").write_text(
+                json.dumps(
+                    {
+                        "run_id": "build-ui",
+                        "task_id": "T-TEST",
+                        "adapter_id": "codex-restricted",
+                        "status": "completed_verified",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            html = generate_dashboard_html(
+                {
+                    "tab": ["execution_runs"],
+                    "run_adapter": ["codex-restricted"],
+                    "run_status": ["completed_verified"],
+                }
+            )
+            self.assertIn("execution_runs", html)
+            self.assertIn("read-only", html.lower())
+            self.assertIn("Claim / Lifecycle", html)
+            self.assertIn("released", html.lower())
+            self.assertIn("codex-restricted", html)
+            self.assertIn('name="run_adapter"', html)
+            self.assertIn('name="run_status"', html)
+        finally:
+            dashboard_app.ROOT_DIR = original_root
 
     def test_append_note_event(self) -> None:
         append_note_event(self.root, "human", "T-TEST", "This is a test comment")

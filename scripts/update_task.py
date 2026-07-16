@@ -10,6 +10,8 @@ from pathlib import Path
 
 import yaml
 
+from cli_encoding import install_encode_safe_stdio
+
 
 STATE_DIRS = {
     "ready": "active",
@@ -47,6 +49,7 @@ def parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
+    install_encode_safe_stdio()
     args = parser().parse_args()
     root = Path(args.root).resolve()
     current_path = find_task(root, args.id)

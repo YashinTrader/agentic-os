@@ -15,6 +15,11 @@ import yaml
 # Resolve the repository root relative to this file
 ROOT_DIR = Path(__file__).resolve().parents[1]
 
+# Ensure repo root is importable for `python dashboard/app.py` (script launch)
+# and `python -m dashboard.app` alike. Mirrors tests/sys.path setup.
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
 
 # ==========================================
 # 1. DATA PARSING & PARSER LOGIC (Schema v2)
@@ -246,6 +251,586 @@ def load_dispatch_execution_result(root_dir: Path) -> tuple[dict | None, list[st
         return data, errors
     except Exception as exc:
         return None, [f"runtime/dispatch/latest_result.json: failed to parse: {exc}"]
+
+
+def _load_json_object(path: Path, label: str) -> tuple[dict[str, Any] | None, str | None]:
+    if not path.exists():
+        return None, None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        return None, f"{label}: failed to parse: {exc}"
+    if not isinstance(data, dict):
+        return None, f"{label}: root must be a JSON object"
+    return data, None
+
+
+def _infer_run_task_id(run_dir: Path) -> str:
+    task_path = run_dir / "task.yaml"
+    if not task_path.exists():
+        return ""
+    try:
+        data = yaml.safe_load(task_path.read_text(encoding="utf-8"))
+    except Exception:
+        return ""
+    if isinstance(data, dict):
+        return str(data.get("id") or "")
+    return ""
+
+
+def _summarize_verification_status(run_dir: Path, result: dict[str, Any]) -> tuple[str, str | None]:
+    verification_path = run_dir / "verification_results.json"
+    verification, error = _load_json_object(
+        verification_path,
+        f"runtime/dispatch/runs/{run_dir.name}/verification_results.json",
+    )
+    if error:
+        return "parse_error", error
+    if verification is not None:
+        commands = verification.get("commands", [])
+        if not isinstance(commands, list) or not commands:
+            return "not_recorded", None
+        if any(isinstance(cmd, dict) and cmd.get("timed_out") for cmd in commands):
+            return "timed_out", None
+        if all(isinstance(cmd, dict) and cmd.get("exit_code") == 0 for cmd in commands):
+            return "passed", None
+        return "failed", None
+
+    status = str(result.get("status") or "")
+    if status == "completed_verified":
+        return "passed", None
+    if status == "completed_unverified":
+        return "failed", None
+    return "not_recorded", None
+
+
+REVIEW_PENDING_TASK_STATUSES = frozenset({"review", "awaiting_review"})
+RUNNING_RUN_STATUSES = frozenset({"in_progress", "running", "started", "claimed"})
+
+
+def load_local_builder_claims(root_dir: Path) -> tuple[dict[str, dict[str, Any]], list[str]]:
+    """Load active local-builder claim files keyed by task_id (read-only)."""
+    claims_root = root_dir / "runtime" / "dispatch" / "local_builder_claims"
+    if not claims_root.exists():
+        return {}, []
+    if not claims_root.is_dir():
+        return {}, ["runtime/dispatch/local_builder_claims: path exists but is not a directory"]
+
+    errors: list[str] = []
+    claims: dict[str, dict[str, Any]] = {}
+    for path in sorted(claims_root.glob("*.json")):
+        data, error = _load_json_object(path, f"runtime/dispatch/local_builder_claims/{path.name}")
+        if error:
+            errors.append(error)
+            continue
+        if data is None:
+            continue
+        task_id = str(data.get("task_id") or path.stem)
+        claims[task_id] = {
+            "task_id": task_id,
+            "run_id": str(data.get("run_id") or ""),
+            "claimed_at": str(data.get("claimed_at") or ""),
+            "claim_path": f"runtime/dispatch/local_builder_claims/{path.name}",
+        }
+    return claims, errors
+
+
+def load_task_lifecycle_index(root_dir: Path) -> dict[str, str]:
+    """Map task_id -> lifecycle status from tasks/active, blocked, and done."""
+    index: dict[str, str] = {}
+    for folder in ("active", "blocked", "done"):
+        dir_path = root_dir / "tasks" / folder
+        if not dir_path.is_dir():
+            continue
+        for file_path in list(dir_path.glob("*.yaml")) + list(dir_path.glob("*.yml")):
+            if file_path.name == "EXAMPLE.yaml":
+                continue
+            try:
+                data = yaml.safe_load(file_path.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            if isinstance(data, dict) and data.get("id"):
+                index[str(data["id"])] = str(data.get("status") or "")
+    return index
+
+
+def derive_run_claim_state(
+    run: dict[str, Any],
+    claims: dict[str, dict[str, Any]],
+    task_lifecycle: dict[str, str],
+) -> str:
+    """Derive observational claim/lifecycle state for one execution run row."""
+    task_id = str(run.get("task_id") or "")
+    if not task_id:
+        return "unknown"
+
+    claim = claims.get(task_id)
+    if claim:
+        if str(claim.get("run_id")) == str(run.get("run_id")):
+            return "claimed"
+        return "claimed_other_run"
+
+    task_status = str(task_lifecycle.get(task_id) or "").lower()
+    if task_status in REVIEW_PENDING_TASK_STATUSES:
+        return "review_pending"
+
+    run_status = str(run.get("status") or "").lower()
+    if run_status in RUNNING_RUN_STATUSES or (run.get("started_at") and not run.get("finished_at")):
+        return "running"
+
+    return "released"
+
+
+def apply_execution_run_filters(
+    runs: list[dict[str, Any]],
+    *,
+    adapter: str = "",
+    status: str = "",
+) -> list[dict[str, Any]]:
+    """Filter execution runs by adapter substring and exact run status (case-insensitive)."""
+    filtered = runs
+    if adapter:
+        adapter_lower = adapter.lower()
+        filtered = [run for run in filtered if adapter_lower in str(run.get("adapter_id") or "").lower()]
+    if status:
+        status_lower = status.lower()
+        filtered = [run for run in filtered if str(run.get("status") or "").lower() == status_lower]
+    return filtered
+
+
+def _physical_run_lifecycle_label(*, process_state: str, status: str, kind: str) -> str:
+    """Read-only labels distinguishing wake/claim/launch/running/blocked/review."""
+    state = (process_state or status or "").strip().lower()
+    mapping = {
+        "queued": "wake_queued_or_run_queued",
+        "launching": "launching",
+        "running": "actually_running",
+        "completed": "completed",
+        "blocked_authentication": "blocked_external",
+        "blocked_quota": "blocked_external",
+        "blocked_no_adapter": "blocked_external",
+        "blocked_capacity": "blocked_external",
+        "failed_launch": "failed_launch",
+        "failed": "failed",
+        "timed_out": "timed_out",
+        "orphaned": "orphaned",
+        "claimed": "assignment_claimed",
+        "awaiting_review": "awaiting_review",
+    }
+    if state in mapping:
+        return mapping[state]
+    if kind == "physical_agent_launch":
+        return state or "physical_run"
+    return state or "unknown"
+
+
+def load_claude_reviews(root_dir: Path, *, limit: int = 50) -> tuple[dict[str, Any], list[str]]:
+    """Read-only Claude reviewer runs + review requests (no secrets)."""
+    errors: list[str] = []
+    reviews: list[dict[str, Any]] = []
+    reviews_root = root_dir / "runtime" / "dispatch" / "reviews"
+    if reviews_root.is_dir():
+        try:
+            dirs = sorted(
+                [p for p in reviews_root.iterdir() if p.is_dir()],
+                key=lambda p: p.stat().st_mtime,
+                reverse=True,
+            )
+        except OSError as exc:
+            errors.append(f"reviews: {exc}")
+            dirs = []
+        for run_dir in dirs[:limit]:
+            path = run_dir / "review_run.json"
+            data: dict[str, Any] = {}
+            if path.is_file():
+                try:
+                    loaded = json.loads(path.read_text(encoding="utf-8"))
+                    if isinstance(loaded, dict):
+                        data = loaded
+                except (OSError, json.JSONDecodeError) as exc:
+                    errors.append(f"{path}: {exc}")
+            verdict = data.get("verdict") if isinstance(data.get("verdict"), dict) else {}
+            findings = verdict.get("findings") if isinstance(verdict, dict) else []
+            reviews.append(
+                {
+                    "review_run_id": data.get("review_run_id") or run_dir.name,
+                    "assignment_id": data.get("assignment_id") or "",
+                    "task_id": data.get("task_id") or "",
+                    "process_state": data.get("process_state") or "unknown",
+                    "pid": data.get("pid"),
+                    "session_id": data.get("session_id") or "",
+                    "started_at": data.get("started_at") or "",
+                    "completed_at": data.get("completed_at") or "",
+                    "heartbeat_at": data.get("heartbeat_at") or "",
+                    "verdict": verdict.get("verdict") if isinstance(verdict, dict) else "",
+                    "findings_count": len(findings) if isinstance(findings, list) else 0,
+                    "blocked_reason": data.get("blocked_reason") or "",
+                    "auth_mode": data.get("auth_mode") or "",
+                    "kind": data.get("kind") or "claude_review",
+                }
+            )
+    req_root = root_dir / "runtime" / "dispatch" / "review_requests"
+    queue: list[dict[str, Any]] = []
+    if req_root.is_dir():
+        for path in sorted(req_root.glob("*.json")):
+            try:
+                item = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if isinstance(item, dict):
+                queue.append(
+                    {
+                        "assignment_id": item.get("assignment_id") or path.stem,
+                        "status": item.get("status") or "queued",
+                        "review_run_id": item.get("review_run_id") or "",
+                        "verdict": item.get("verdict") or "",
+                        "blocked_reason": item.get("blocked_reason") or "",
+                        "event": item.get("event") or "review.requested",
+                    }
+                )
+    return {"reviews": reviews, "queue": queue}, errors
+
+
+def load_execution_runs(root_dir: Path, *, limit: int = 50) -> tuple[list[dict[str, Any]], list[str]]:
+    """Load recent local-builder runs + assignment lifecycle without side effects."""
+    runs_root = root_dir / "runtime" / "dispatch" / "runs"
+    errors: list[str] = []
+    runs: list[dict[str, Any]] = []
+
+    if runs_root.exists() and not runs_root.is_dir():
+        return [], ["runtime/dispatch/runs: path exists but is not a directory"]
+
+    run_dirs: list[Path] = []
+    if runs_root.is_dir():
+        try:
+            run_dirs = [p for p in runs_root.iterdir() if p.is_dir()]
+        except Exception as exc:
+            errors.append(f"runtime/dispatch/runs: failed to list directory: {exc}")
+
+    def run_sort_key(path: Path) -> tuple[float, str]:
+        try:
+            return (path.stat().st_mtime, path.name)
+        except OSError:
+            return (0.0, path.name)
+
+    for run_dir in sorted(run_dirs, key=run_sort_key, reverse=True)[:limit]:
+        result_path = run_dir / "result.json"
+        result, error = _load_json_object(result_path, f"runtime/dispatch/runs/{run_dir.name}/result.json")
+        run_errors: list[str] = []
+        if error:
+            run_errors.append(error)
+            errors.append(error)
+        if result is None:
+            result = {}
+            if not result_path.exists():
+                run_errors.append(f"runtime/dispatch/runs/{run_dir.name}/result.json: file does not exist")
+
+        allocation, allocation_error = _load_json_object(
+            run_dir / "worktree_allocation.json",
+            f"runtime/dispatch/runs/{run_dir.name}/worktree_allocation.json",
+        )
+        if allocation_error:
+            run_errors.append(allocation_error)
+            errors.append(allocation_error)
+
+        verification_status, verification_error = _summarize_verification_status(run_dir, result)
+        if verification_error:
+            run_errors.append(verification_error)
+            errors.append(verification_error)
+
+        handoff_path = str(result.get("handoff_path") or "")
+        handoff_rel = str(result.get("handoff_rel") or "")
+        if not handoff_path and handoff_rel:
+            handoff_path = handoff_rel
+        elif not handoff_path and (run_dir / "handoff.md").exists():
+            handoff_path = f"runtime/dispatch/runs/{run_dir.name}/handoff.md"
+
+        worktree_path = str(result.get("worktree_path") or "")
+        if not worktree_path and allocation:
+            worktree_path = str(allocation.get("worktree_path") or "")
+
+        task_id = str(result.get("task_id") or _infer_run_task_id(run_dir) or "")
+        process_state = str(result.get("process_state") or result.get("status") or "unknown")
+        display_lifecycle = _physical_run_lifecycle_label(
+            process_state=process_state,
+            status=str(result.get("status") or ""),
+            kind=str(result.get("kind") or ""),
+        )
+        runs.append(
+            {
+                "run_id": str(result.get("run_id") or run_dir.name),
+                "task_id": task_id,
+                "assignment_id": str(result.get("assignment_id") or ""),
+                "adapter_id": str(result.get("adapter_id") or ""),
+                "assigned_agent": str(result.get("assigned_agent") or ""),
+                "route": str(result.get("route") or result.get("execution_route") or ""),
+                "status": str(result.get("status") or "unknown"),
+                "process_state": process_state,
+                "display_lifecycle": display_lifecycle,
+                "pid": result.get("pid"),
+                "session_id": str(result.get("session_id") or ""),
+                "started_at": str(result.get("started_at") or ""),
+                "heartbeat_at": str(result.get("heartbeat_at") or ""),
+                "finished_at": str(result.get("finished_at") or ""),
+                "worktree_path": worktree_path,
+                "verification_status": verification_status,
+                "blocked_reasons": result.get("blocked_reasons") if isinstance(result.get("blocked_reasons"), list) else [],
+                "blocked_reason": str(result.get("blocked_reason") or ""),
+                "handoff_path": handoff_path,
+                "stdout_path": str(result.get("stdout_path") or ""),
+                "stderr_path": str(result.get("stderr_path") or ""),
+                "run_dir": f"runtime/dispatch/runs/{run_dir.name}",
+                "kind": str(result.get("kind") or ""),
+                "errors": run_errors,
+            }
+        )
+
+    claims, claim_errors = load_local_builder_claims(root_dir)
+    errors.extend(claim_errors)
+    task_lifecycle = load_task_lifecycle_index(root_dir)
+    assignment_index, assignment_errors = load_composer_assignment_index(root_dir)
+    errors.extend(assignment_errors)
+
+    for run in runs:
+        task_id = str(run.get("task_id") or "")
+        run["task_lifecycle_status"] = task_lifecycle.get(task_id, "")
+        run["claim_state"] = derive_run_claim_state(run, claims, task_lifecycle)
+        active_claim = claims.get(task_id)
+        run["active_claim_run_id"] = str(active_claim.get("run_id") or "") if active_claim else ""
+        assignment = assignment_index.get("by_task_id", {}).get(task_id)
+        if assignment:
+            run["assignment_id"] = assignment.get("assignment_id", "")
+            run["assignment_status"] = assignment.get("assignment_status", "")
+            run["outbox_status"] = assignment.get("outbox_status", "")
+            run["assigned_to"] = assignment.get("assigned_to", "")
+            run["reassigned_from"] = assignment.get("reassigned_from", "")
+            run["reassigned_to_assignment_id"] = assignment.get(
+                "reassigned_to_assignment_id", ""
+            )
+            run["reassignment_reason"] = assignment.get("reassignment_reason", "")
+
+    seen_tasks = {str(run.get("task_id") or "") for run in runs}
+    seen_assignment_ids = {
+        str(run.get("assignment_id") or "")
+        for run in runs
+        if run.get("assignment_id")
+    }
+    run_backed_tasks = set(seen_tasks)
+    # Full lifecycle surface: pending/claimed/building/awaiting_review/accepted/...
+    lifecycle_entries = assignment_index.get("lifecycle_only") or assignment_index.get(
+        "pending_only", []
+    )
+    for assignment in lifecycle_entries:
+        task_id = str(assignment.get("task_id") or "")
+        assignment_id = str(assignment.get("assignment_id") or "")
+        if assignment_id and assignment_id in seen_assignment_ids:
+            continue
+        if (
+            task_id
+            and task_id in run_backed_tasks
+            and assignment.get("assignment_status") == "pending"
+        ):
+            # Prefer real run row when present; skip duplicate pending-only
+            continue
+        dash_status = str(
+            assignment.get("dashboard_status")
+            or _assignment_dashboard_status(
+                str(assignment.get("assignment_status") or assignment.get("status") or ""),
+                str(assignment.get("outbox_status") or ""),
+            )
+        )
+        claim_state = "unknown"
+        astatus = str(assignment.get("assignment_status") or "")
+        if astatus == "claimed":
+            claim_state = "claimed"
+        elif astatus == "building":
+            claim_state = "running"
+        elif astatus == "awaiting_review":
+            claim_state = "review_pending"
+        elif astatus == "accepted":
+            claim_state = "released"
+        elif astatus == "changes_requested":
+            claim_state = "changes_requested"
+        elif astatus == "rejected":
+            claim_state = "rejected"
+        runs.append(
+            {
+                "run_id": assignment_id or task_id,
+                "task_id": task_id,
+                "adapter_id": str(assignment.get("adapter_id") or "composer-restricted"),
+                "route": str(assignment.get("execution_route") or "composer_local_builder"),
+                "status": dash_status,
+                "started_at": str(assignment.get("created_at") or ""),
+                "finished_at": str(assignment.get("updated_at") or ""),
+                "worktree_path": str(assignment.get("branch_name") or ""),
+                "verification_status": "not_applicable",
+                "blocked_reasons": [],
+                "handoff_path": str(
+                    assignment.get("handoff_path")
+                    or assignment.get("handoff_rel")
+                    or ""
+                ),
+                "result_path": str(assignment.get("result_path") or ""),
+                "run_dir": str(assignment.get("source_path") or ""),
+                "errors": assignment.get("errors") or [],
+                "assignment_id": assignment_id,
+                "assignment_status": astatus or str(assignment.get("status") or "pending"),
+                "outbox_status": str(assignment.get("outbox_status") or ""),
+                "reviewed_by": str(assignment.get("reviewed_by") or ""),
+                "reviewed_at": str(assignment.get("reviewed_at") or ""),
+                "resolution_note": str(assignment.get("resolution_note") or ""),
+                "task_lifecycle_status": task_lifecycle.get(task_id, ""),
+                "claim_state": claim_state,
+                "active_claim_run_id": str(assignment.get("claimed_by") or ""),
+                "assigned_to": str(assignment.get("assigned_to") or ""),
+                "reassigned_from": str(assignment.get("reassigned_from") or ""),
+                "reassigned_to_assignment_id": str(
+                    assignment.get("reassigned_to_assignment_id") or ""
+                ),
+                "reassignment_reason": str(assignment.get("reassignment_reason") or ""),
+            }
+        )
+        if task_id:
+            seen_tasks.add(task_id)
+        if assignment_id:
+            seen_assignment_ids.add(assignment_id)
+
+    return runs, errors
+
+
+def load_orchestrator_pokes(root_dir: Path) -> tuple[list[dict[str, Any]], list[str]]:
+    """Read-only view of pending builder-to-orchestrator notifications."""
+    from dispatch.orchestrator_pokes import list_orchestrator_pokes
+
+    return list_orchestrator_pokes(root_dir, drain=False)
+
+
+def _assignment_dashboard_status(assignment_status: str, outbox_status: str) -> str:
+    """Map assignment lifecycle to Execution Runs status labels.
+
+    Resolution statuses win over outbox so accepted/rejected never look like
+    still-awaiting-review after the outbox is stamped with a resolution.
+    """
+    if assignment_status == "accepted" or outbox_status == "accepted":
+        return "assignment_accepted"
+    if assignment_status in {"changes_requested", "rejected", "cancelled"}:
+        return f"assignment_{assignment_status}"
+    if outbox_status in {"changes_requested", "rejected"}:
+        return f"assignment_{outbox_status}"
+    if assignment_status == "building":
+        return "assignment_building"
+    if assignment_status == "claimed":
+        return "assignment_claimed"
+    if outbox_status in {"completed", "awaiting_review"} or assignment_status == "awaiting_review":
+        return "assignment_awaiting_review"
+    if assignment_status == "superseded":
+        return f"assignment_{assignment_status}"
+    if outbox_status in {"failed", "blocked"}:
+        return f"assignment_{outbox_status}"
+    if assignment_status == "pending":
+        return "assignment_pending"
+    return f"assignment_{assignment_status or 'unknown'}"
+
+
+def load_composer_assignment_index(root_dir: Path) -> tuple[dict[str, Any], list[str]]:
+    """Read-only index of Composer/Grok assignment lifecycle (inbox/outbox/claims)."""
+    from dispatch.assignment_channel import list_inbox_assignments, list_outbox_results
+
+    errors: list[str] = []
+    inbox_records, inbox_errors = list_inbox_assignments(root_dir)
+    outbox_records, outbox_errors = list_outbox_results(root_dir)
+    errors.extend(inbox_errors)
+    errors.extend(outbox_errors)
+
+    outbox_by_id = {r.assignment_id: r for r in outbox_records if r.assignment_id}
+    by_task_id: dict[str, dict[str, Any]] = {}
+    pending_only: list[dict[str, Any]] = []
+    all_entries: list[dict[str, Any]] = []
+
+    for record in inbox_records:
+        outbox = outbox_by_id.get(record.assignment_id)
+        outbox_status = outbox.status if outbox else ""
+        result_path = outbox.source_path if outbox else ""
+        handoff = (outbox.handoff_path if outbox and outbox.handoff_path else None) or record.handoff_path
+        entry = {
+            "assignment_id": record.assignment_id,
+            "task_id": record.task_id,
+            "title": getattr(record, "title", "") or "",
+            "adapter_id": record.adapter_id,
+            "status": record.status,
+            "execution_route": record.execution_route,
+            "created_at": record.created_at,
+            "updated_at": getattr(record, "updated_at", "") or record.created_at,
+            "handoff_rel": handoff,
+            "handoff_path": handoff,
+            "result_path": result_path,
+            "branch_name": getattr(record, "new_branch", "") or (outbox.branch_name if outbox else ""),
+            "branch_tip_sha": outbox.branch_tip_sha if outbox else "",
+            "source_path": record.source_path,
+            "errors": record.parse_errors,
+            "assignment_status": record.status,
+            "outbox_status": outbox_status,
+            "dashboard_status": _assignment_dashboard_status(record.status, outbox_status),
+            "claimed_by": getattr(record, "claimed_by", None) or "",
+            "claimed_at": getattr(record, "claimed_at", None) or "",
+            "reviewed_by": getattr(record, "reviewed_by", None)
+            or (outbox.reviewed_by if outbox else "")
+            or "",
+            "reviewed_at": getattr(record, "reviewed_at", None)
+            or (outbox.reviewed_at if outbox else "")
+            or "",
+            "resolution_note": getattr(record, "resolution_note", None)
+            or (outbox.resolution_note if outbox else "")
+            or "",
+            "correction_note": getattr(record, "correction_note", None) or "",
+            "assigned_by": getattr(record, "assigned_by", "") or "",
+            "assigned_to": getattr(record, "assigned_to", "") or "",
+            "reassigned_from": getattr(record, "reassigned_from", None) or "",
+            "reassigned_to_assignment_id": getattr(
+                record, "reassigned_to_assignment_id", None
+            )
+            or "",
+            "reassignment_reason": getattr(record, "reassignment_reason", None) or "",
+        }
+        all_entries.append(entry)
+        if record.task_id:
+            existing = by_task_id.get(record.task_id)
+            if (
+                existing is None
+                or existing.get("assignment_status") == "superseded"
+                or (
+                    record.status != "superseded"
+                    and entry["updated_at"] >= existing.get("updated_at", "")
+                )
+            ):
+                by_task_id[record.task_id] = entry
+        # Surface any non-run-backed assignment (pending through terminal)
+        if record.status == "pending" and not outbox:
+            pending_only.append(entry)
+
+    # Also surface claimed/building/awaiting_review that may not have a local-builder run
+    lifecycle_only = [
+        e
+        for e in all_entries
+        if e.get("assignment_status")
+        in {
+            "pending",
+            "claimed",
+            "building",
+            "awaiting_review",
+            "accepted",
+            "changes_requested",
+            "rejected",
+            "superseded",
+        }
+    ]
+
+    return {
+        "by_task_id": by_task_id,
+        "pending_only": pending_only,
+        "all_entries": all_entries,
+        "lifecycle_only": lifecycle_only,
+    }, errors
 
 
 def load_orchestrator_latest(root_dir: Path) -> tuple[dict | None, dict | None, list[str]]:
@@ -667,6 +1252,13 @@ def generate_dashboard_html(query_params: dict[str, list[str]]) -> str:
     dispatch_preview, dispatch_preview_errors = load_dispatch_latest(ROOT_DIR)
     dispatch_exec_request, dispatch_exec_request_errors = load_dispatch_execution_request(ROOT_DIR)
     dispatch_exec_result, dispatch_exec_result_errors = load_dispatch_execution_result(ROOT_DIR)
+    execution_runs, execution_run_errors = load_execution_runs(ROOT_DIR)
+    claude_reviews_payload, claude_review_errors = load_claude_reviews(ROOT_DIR)
+    claude_reviews = claude_reviews_payload.get("reviews") or []
+    claude_review_queue = claude_reviews_payload.get("queue") or []
+    execution_run_errors.extend(claude_review_errors)
+    orchestrator_pokes, poke_errors = load_orchestrator_pokes(ROOT_DIR)
+    execution_run_errors.extend(poke_errors)
     obsidian_last_sync, obsidian_sync_errors = load_obsidian_last_sync_report(ROOT_DIR, obsidian_mapping)
     obsidian_notes_planned = count_obsidian_notes_planned(ROOT_DIR)
     
@@ -688,6 +1280,13 @@ def generate_dashboard_html(query_params: dict[str, list[str]]) -> str:
     role_filter_approval = query_params.get("role_approval", [""])[0].strip()
     role_filter_can_execute = query_params.get("role_can_execute", [""])[0].strip()
     role_filter_can_review = query_params.get("role_can_review", [""])[0].strip()
+    run_filter_adapter = query_params.get("run_adapter", [""])[0].strip()
+    run_filter_status = query_params.get("run_status", [""])[0].strip()
+    execution_runs = apply_execution_run_filters(
+        execution_runs,
+        adapter=run_filter_adapter,
+        status=run_filter_status,
+    )
     suggest_task_id = query_params.get("suggest_task", [""])[0].strip()
     read_file_path = query_params.get("read_file", [None])[0]
     success_alert = query_params.get("success", [None])[0]
@@ -1381,6 +1980,7 @@ def generate_dashboard_html(query_params: dict[str, list[str]]) -> str:
                 <a href="/?tab=obsidian" class="tab-link {'active' if active_tab == 'obsidian' else ''}">📓 Obsidian Sync</a>
                 <a href="/?tab=orchestrator" class="tab-link {'active' if active_tab == 'orchestrator' else ''}">🧭 Orchestrator</a>
                 <a href="/?tab=dispatch" class="tab-link {'active' if active_tab == 'dispatch' else ''}">🚀 Dispatch Preview</a>
+                <a href="/?tab=execution_runs" class="tab-link {'active' if active_tab == 'execution_runs' else ''}">Execution Runs</a>
                 <a href="/?tab=health" class="tab-link {'active' if active_tab == 'health' else ''}">🏥 Health Panel</a>
             </div>
     """)
@@ -2591,6 +3191,222 @@ python scripts/execute_dispatch.py --preview ... --execute --approval runtime/di
         html_out.append('<div style="margin-top:8px; font-size:11px; color:#f87171;">Blocked: ' + escape("; ".join(str(e) for e in de_blocked[:5])) + '</div>')
     if not dispatch_preview:
         html_out.append('<div style="margin-top:12px; font-size:12px; color:#64748b;">No dispatch preview yet. Run orchestration then <code>python scripts/preview_dispatch.py</code>.</div>')
+    html_out.append("""
+            </div>
+    """)
+
+    # ==========================================
+    # TAB PANEL: EXECUTION RUNS (Phase 3.7C local builder)
+    # ==========================================
+    html_out.append(f"""
+            <div class="tab-panel {'active' if active_tab == 'execution_runs' else ''}">
+                <h3>Execution Runs</h3>
+                <p style="font-size:12px; color:#94a3b8; margin-bottom:16px;">
+                    <strong>Read-only.</strong> Recent local-builder run artifacts from
+                    <code>runtime/dispatch/runs/</code>, Grok Build assignment lifecycle from
+                    <code>runtime/dispatch/assignments/</code> (inbox/outbox/claims:
+                    pending → claimed → building → awaiting_review → accepted|changes_requested|rejected),
+                    plus claim/lifecycle state from <code>runtime/dispatch/local_builder_claims/</code>
+                    and task YAML. Result and handoff paths are links to file paths only.
+                    This page does not execute, claim, retry, approve, merge, push, or deploy anything.
+                    Automatic Grok execution remains disabled (ADR-0043); file-bridge pickup is manual.
+                </p>
+                <form method="GET" class="filter-bar" style="margin-bottom:16px;" id="execution-runs-filter-form" action="/">
+                    <input type="hidden" name="tab" value="execution_runs">
+                    <input type="text" name="run_adapter" class="filter-input" placeholder="Filter by adapter" value="{escape(run_filter_adapter)}">
+                    <input type="text" name="run_status" class="filter-input" placeholder="Filter by run status" value="{escape(run_filter_status)}">
+                    <button type="submit" class="filter-button">Apply</button>
+                    {(f'<a href="/?tab=execution_runs" class="clear-link">Clear</a>' if run_filter_adapter or run_filter_status else '')}
+                </form>
+    """)
+
+    html_out.append('<div style="margin-bottom:16px;"><div class="inspector-section-title">Claude reviewer (read-only)</div>')
+    if claude_review_queue or claude_reviews:
+        html_out.append(
+            '<table class="tools-table"><thead><tr>'
+            "<th>Review run</th><th>Assignment</th><th>State</th><th>PID / Session</th>"
+            "<th>Verdict</th><th>Findings</th><th>Blocked</th><th>Times</th>"
+            "</tr></thead><tbody>"
+        )
+        for rev in claude_reviews[:30]:
+            html_out.append(
+                "<tr>"
+                f"<td><code>{escape(str(rev.get('review_run_id') or '-'))}</code></td>"
+                f"<td><code>{escape(str(rev.get('assignment_id') or '-'))}</code><br/>"
+                f"<span style='font-size:10px;color:#94a3b8;'>{escape(str(rev.get('task_id') or ''))}</span></td>"
+                f"<td>{escape(str(rev.get('process_state') or '-'))}</td>"
+                f"<td style='font-size:11px;'>PID {escape(str(rev.get('pid') or '-'))}<br/>"
+                f"{escape(str(rev.get('session_id') or '-'))}</td>"
+                f"<td>{escape(str(rev.get('verdict') or '-'))}</td>"
+                f"<td>{escape(str(rev.get('findings_count') or 0))}</td>"
+                f"<td style='font-size:11px;color:#fca5a5;'>{escape(str(rev.get('blocked_reason') or '-'))}</td>"
+                f"<td style='font-size:10px;'>start {escape(str(rev.get('started_at') or '-'))}<br/>"
+                f"end {escape(str(rev.get('completed_at') or '-'))}</td>"
+                "</tr>"
+            )
+        for q in claude_review_queue[:20]:
+            html_out.append(
+                "<tr>"
+                f"<td><code>queue:{escape(str(q.get('review_run_id') or '-'))}</code></td>"
+                f"<td><code>{escape(str(q.get('assignment_id') or '-'))}</code></td>"
+                f"<td>queue:{escape(str(q.get('status') or '-'))}</td>"
+                "<td>-</td>"
+                f"<td>{escape(str(q.get('verdict') or '-'))}</td>"
+                "<td>-</td>"
+                f"<td style='font-size:11px;color:#fca5a5;'>{escape(str(q.get('blocked_reason') or '-'))}</td>"
+                f"<td style='font-size:10px;'>{escape(str(q.get('event') or ''))}</td>"
+                "</tr>"
+            )
+        html_out.append("</tbody></table>")
+    else:
+        html_out.append(
+            '<div style="font-size:12px; color:#64748b;">No Claude review runs yet. '
+            "Supervisor launches headless Claude for awaiting_review assignments.</div>"
+        )
+    html_out.append("</div>")
+
+    html_out.append('<div style="margin-bottom:16px;"><div class="inspector-section-title">Pending orchestrator pokes</div>')
+    if orchestrator_pokes:
+        html_out.append('<table class="tools-table"><thead><tr><th>When</th><th>Source</th><th>Assignment</th><th>Event</th></tr></thead><tbody>')
+        for poke in reversed(orchestrator_pokes[-20:]):
+            html_out.append(
+                f"<tr><td>{escape(poke.get('created_at'))}</td><td>{escape(poke.get('source'))}</td>"
+                f"<td><code>{escape(poke.get('assignment_id'))}</code></td><td>{escape(poke.get('event'))}</td></tr>"
+            )
+        html_out.append('</tbody></table>')
+    else:
+        html_out.append('<div style="font-size:12px; color:#64748b;">No pending orchestrator pokes.</div>')
+    html_out.append('</div>')
+
+    if execution_run_errors:
+        html_out.append(
+            '<div class="event-type-warn">Run artifact warnings: '
+            + escape("; ".join(execution_run_errors[:5]))
+            + (" ..." if len(execution_run_errors) > 5 else "")
+            + "</div>"
+        )
+
+    if execution_runs:
+        html_out.append("""
+                <table class="tools-table">
+                    <thead>
+                        <tr>
+                            <th>Run</th>
+                            <th>Task / Adapter</th>
+                            <th>Route</th>
+                            <th>Status / Process</th>
+                            <th>Claim / Lifecycle</th>
+                            <th>PID / Session</th>
+                            <th>Timestamps</th>
+                            <th>Worktree</th>
+                            <th>Verification</th>
+                            <th>Blocked Reasons</th>
+                            <th>Result / Handoff</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        """)
+        for run in execution_runs:
+            blocked = run.get("blocked_reasons") or []
+            blocked_text = "; ".join(str(reason) for reason in blocked) if blocked else "-"
+            if run.get("blocked_reason") and not blocked:
+                blocked_text = str(run.get("blocked_reason"))
+            status = str(run.get("status") or "unknown")
+            process_state = str(run.get("process_state") or status)
+            display_lifecycle = str(run.get("display_lifecycle") or "")
+            status_color = "#94a3b8"
+            if status == "completed_verified" or status == "assignment_accepted" or process_state == "completed":
+                status_color = "#34d399"
+            elif status in {
+                "completed_unverified",
+                "blocked",
+                "failed",
+                "timed_out",
+                "scope_violation",
+                "assignment_rejected",
+                "assignment_failed",
+                "assignment_blocked",
+                "assignment_superseded",
+            } or process_state in {
+                "blocked_authentication",
+                "blocked_quota",
+                "blocked_no_adapter",
+                "blocked_capacity",
+                "failed",
+                "failed_launch",
+                "timed_out",
+                "orphaned",
+            }:
+                status_color = "#f87171"
+            elif status in {
+                "assignment_pending",
+                "assignment_claimed",
+                "assignment_building",
+                "assignment_awaiting_review",
+            } or process_state in {"queued", "launching", "running"}:
+                status_color = "#60a5fa"
+            elif status == "assignment_changes_requested":
+                status_color = "#fbbf24"
+            verification_status = str(run.get("verification_status") or "not_recorded")
+            verification_color = "#94a3b8"
+            if verification_status == "passed":
+                verification_color = "#34d399"
+            elif verification_status in {"failed", "timed_out", "parse_error"}:
+                verification_color = "#f87171"
+            claim_state = str(run.get("claim_state") or "unknown")
+            claim_color = "#94a3b8"
+            if claim_state == "claimed":
+                claim_color = "#fbbf24"
+            elif claim_state == "review_pending":
+                claim_color = "#60a5fa"
+            elif claim_state == "running":
+                claim_color = "#22d3ee"
+            elif claim_state == "claimed_other_run":
+                claim_color = "#fb923c"
+            task_lifecycle_status = str(run.get("task_lifecycle_status") or "-")
+            active_claim_run_id = str(run.get("active_claim_run_id") or "")
+            run_warnings = run.get("errors") or []
+            warning_html = ""
+            if run_warnings:
+                warning_html = (
+                    '<br/><span style="font-size:10px; color:#fbbf24;">'
+                    + escape("; ".join(str(err) for err in run_warnings[:2]))
+                    + "</span>"
+                )
+            pid_text = str(run.get("pid") or "-")
+            session_text = str(run.get("session_id") or "-")
+            html_out.append(f"""
+                        <tr>
+                            <td><b>{escape(run.get('run_id') or '-')}</b><br/><code style="font-size:10px; color:#64748b;">{escape(run.get('run_dir') or '')}</code>{warning_html}</td>
+                            <td>{escape(run.get('task_id') or '-')}<br/><code style="font-size:10px; color:#94a3b8;">{escape(run.get('adapter_id') or '-')}</code>{('<br/><span style="font-size:10px; color:#64748b;">builder: ' + escape(run.get('assigned_to') or run.get('assigned_agent') or '') + '</span>') if (run.get('assigned_to') or run.get('assigned_agent')) else ''}</td>
+                            <td><code style="font-size:10px;">{escape(run.get('route') or '-')}</code></td>
+                            <td><span style="color:{status_color}; font-weight:700;">{escape(status)}</span><br/><span style="font-size:10px; color:#94a3b8;">process: {escape(process_state)}</span>{('<br/><span style="font-size:10px; color:#64748b;">lifecycle: ' + escape(display_lifecycle) + '</span>') if display_lifecycle else ''}</td>
+                            <td><span style="color:{claim_color}; font-weight:700;">{escape(claim_state)}</span><br/><span style="font-size:10px; color:#94a3b8;">task: {escape(task_lifecycle_status)}</span>{('<br/><span style="font-size:10px; color:#64748b;">active claim: ' + escape(active_claim_run_id) + '</span>') if active_claim_run_id else ''}</td>
+                            <td style="font-size:11px; color:#cbd5e1;">PID: {escape(pid_text)}<br/>Session: {escape(session_text)}</td>
+                            <td style="font-size:11px; color:#cbd5e1;">Start: {escape(run.get('started_at') or '-')}<br/>HB: {escape(run.get('heartbeat_at') or '-')}<br/>Finish: {escape(run.get('finished_at') or '-')}</td>
+                            <td><code style="font-size:10px; word-break:break-all;">{escape(run.get('worktree_path') or '-')}</code></td>
+                            <td><span style="color:{verification_color}; font-weight:700;">{escape(verification_status)}</span></td>
+                            <td style="font-size:11px; color:#fca5a5;">{escape(blocked_text)}</td>
+                            <td style="font-size:10px; word-break:break-all;">
+                                <div>result: <code>{escape(run.get('result_path') or run.get('outbox_status') or '-')}</code></div>
+                                <div>handoff: <code>{escape(run.get('handoff_path') or '-')}</code></div>
+                                {(f"<div>assignment: <code>{escape(str(run.get('assignment_status') or ''))}</code></div>" if run.get('assignment_id') else "")}
+                                {(f"<div>fallback from: <code>{escape(str(run.get('reassigned_from') or ''))}</code> ({escape(str(run.get('reassignment_reason') or ''))})</div>" if run.get('reassigned_from') else "")}
+                                {(f"<div>superseded by: <code>{escape(str(run.get('reassigned_to_assignment_id') or ''))}</code></div>" if run.get('reassigned_to_assignment_id') else "")}
+                            </td>
+                        </tr>
+            """)
+        html_out.append("""
+                    </tbody>
+                </table>
+        """)
+    else:
+        html_out.append("""
+                <div style="color:#475569; padding:40px 0; text-align:center; font-style:italic; border:1px dashed rgba(255,255,255,0.05); border-radius:8px;">
+                    No local-builder runs found under <code>runtime/dispatch/runs/</code>.
+                </div>
+        """)
+
     html_out.append("""
             </div>
     """)

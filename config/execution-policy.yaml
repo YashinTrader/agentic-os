@@ -1,0 +1,22 @@
+version: 1
+mode: auto_local_worktree
+enabled: true
+enabled_adapters:
+  - codex-restricted
+maximum_concurrent_runs: 1
+automatic_worktree_allocation: true
+automatic_execution: true
+automatic_test_execution: true
+automatic_handoff: true
+automatic_retry_count: 0
+allow_merge: false
+allow_push: false
+allow_deploy: false
+allow_production_access: false
+allow_mcp_execution: false
+preserve_worktree: true
+require_clean_base: true
+require_tests_before_completion: true
+notes: >
+  Standing local development policy. Task activation authorizes bounded Codex work
+  in isolated worktrees without per-run human approval. Merge and deploy remain manual.

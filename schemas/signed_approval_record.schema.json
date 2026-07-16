@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentic-os.local/schemas/signed_approval_record.schema.json",
+  "title": "SignedApprovalRecord",
+  "type": "object",
+  "required": [
+    "approval_id",
+    "version",
+    "task_id",
+    "run_id",
+    "preview_id",
+    "preview_hash",
+    "adapter_id",
+    "approval_level",
+    "approver_type",
+    "approved_by",
+    "issued_at",
+    "expires_at",
+    "nonce",
+    "key_id",
+    "algorithm",
+    "allowed_command_hash",
+    "allowed_cwd",
+    "allowed_scope_paths",
+    "worktree_allocation_id",
+    "revoked",
+    "signature"
+  ],
+  "properties": {
+    "approval_id": { "type": "string", "minLength": 1 },
+    "version": { "type": "integer", "minimum": 2 },
+    "task_id": { "type": "string" },
+    "run_id": { "type": "string" },
+    "preview_id": { "type": "string" },
+    "preview_hash": { "type": "string", "minLength": 8 },
+    "adapter_id": { "type": "string" },
+    "approval_level": {
+      "type": "string",
+      "enum": ["none", "reviewer", "human", "blocked"]
+    },
+    "approver_type": {
+      "type": "string",
+      "enum": ["human", "reviewer", "system"]
+    },
+    "approved_by": { "type": "string" },
+    "issued_at": { "type": "string" },
+    "expires_at": { "type": "string" },
+    "nonce": { "type": "string", "minLength": 8 },
+    "key_id": { "type": "string" },
+    "algorithm": { "type": "string", "const": "HMAC-SHA256" },
+    "allowed_command_hash": { "type": "string" },
+    "allowed_cwd": { "type": "string" },
+    "allowed_scope_paths": { "type": "array", "items": { "type": "string" } },
+    "worktree_allocation_id": { "type": "string" },
+    "notes": { "type": "string" },
+    "revoked": { "type": "boolean" },
+    "signature": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+  },
+  "additionalProperties": false
+}

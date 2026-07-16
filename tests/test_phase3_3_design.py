@@ -70,9 +70,17 @@ class Phase33DesignTests(unittest.TestCase):
 
     def test_real_adapters_remain_execution_false(self) -> None:
         registry = yaml.safe_load((REPO_ROOT / "agents" / "adapter_registry.yaml").read_text(encoding="utf-8"))
+        phase37a = (REPO_ROOT / "dispatch" / "codex_activation_gate.py").is_file()
+        phase37c = (REPO_ROOT / "config" / "execution-policy.yaml").is_file()
         for adapter in registry["adapters"]:
             if adapter["id"] == "local-python-exec-test":
                 self.assertTrue(adapter["supports_execution"])
+            elif adapter["id"] == "codex-restricted" and (phase37a or phase37c):
+                self.assertTrue(adapter["supports_execution"])
+                if phase37c:
+                    self.assertEqual(adapter.get("execution_scope"), "local_worktree")
+                else:
+                    self.assertEqual(adapter.get("execution_scope"), "canary_only")
             else:
                 self.assertFalse(adapter["supports_execution"])
 
@@ -84,9 +92,12 @@ class Phase33DesignTests(unittest.TestCase):
                 self.assertNotIn("subprocess.run", source, str(py))
                 self.assertNotIn("execute_dispatch", source, str(py))
 
-    def test_no_worktree_git_implementation(self) -> None:
+    def test_worktree_allocator_is_operator_commanded_only(self) -> None:
         allocator = REPO_ROOT / "dispatch" / "worktree_allocator.py"
-        self.assertFalse(allocator.exists())
+        self.assertTrue(allocator.exists())
+        source = allocator.read_text(encoding="utf-8")
+        self.assertIn("allocate_worktree", source)
+        self.assertNotIn("shell=True", source)
 
     def test_promotion_states_in_schema(self) -> None:
         schema = json.loads((REPO_ROOT / "schemas/adapter_promotion.schema.json").read_text(encoding="utf-8"))

@@ -9,7 +9,8 @@ A lightweight, zero-dependency, local-first read-only web dashboard for observin
 1. **📋 Dynamic Kanban Board:** Displays all repository tasks across five columns (`ready`, `in_progress`, `review`, `blocked`, `done`) in real-time. Clicking on a card launches a deep-inspection details panel of all Schema v2 fields (`goals`, `non_goals`, `context`, `acceptance`, `requires_human_approval`, `human_approval_checklist`, `notes`, `created_at`, `updated_at`, `created_by`, `reviewer`, `priority`).
 2. **📜 Event Timeline:** Renders the events log (`logs/agent-events.jsonl`) following the **ADR-0004 standard vocabulary**. It reverses events to show the newest 30 events first and adds live filters for agents and tasks. It also features non-fatal warning highlights for non-compliant event types.
 3. **📑 Handoffs & ADRs Reader:** Lists all Markdown handoffs (`handoffs/*.md`) and architectural decision records (`decisions/ADR-*.md`). Scans the first 10 lines of ADRs to detect status (`accepted` | `proposed` | `rejected`) case-insensitively and renders them.
-4. **🏥 System Health Diagnostic Panel:** Sidebar health indicator distinguishing three states per surface: **OK** (green), **EMPTY** (yellow), and **ERROR** (red), complete with error stack traces for YAML parsing failures.
+4. **Execution Runs:** Displays recent local-builder artifacts from `runtime/dispatch/runs/` and Grok Build assignment lifecycle from `runtime/dispatch/assignments/` (inbox/outbox/claims per ADR-0043 / Phase 3.8B): pending → claimed → building → awaiting_review → accepted|changes_requested|rejected. Shows task ID, adapter, route, run/assignment status, claim/lifecycle state (from `runtime/dispatch/local_builder_claims/` and task YAML), timestamps, worktree/branch, verification status, blocked reasons, result path, and handoff path. Adapter and run-status filters persist via URL query parameters (`run_adapter`, `run_status`). Missing or malformed runtime files are shown as non-fatal warnings.
+5. **🏥 System Health Diagnostic Panel:** Sidebar health indicator distinguishing three states per surface: **OK** (green), **EMPTY** (yellow), and **ERROR** (red), complete with error stack traces for YAML parsing failures.
 
 ---
 
@@ -17,6 +18,7 @@ A lightweight, zero-dependency, local-first read-only web dashboard for observin
 
 To maintain the strict file-based safety and local-first architecture of Phase 1, the dashboard explicitly does **NOT** do the following:
 * **No Write Operations:** It performs zero writes, no file mutations, and no shell subprocess execution to call CLI helper scripts.
+* **No Execution Controls:** The execution-runs page is observational only. It does not execute, retry, approve, merge, push, or deploy local-builder runs. Claim/lifecycle filters are read-only views over existing files — they do not create or release claims.
 * **No Database or Daemon:** Uses the Git repository files directly as the single source of truth. No server-side persistence or daemon is added.
 * **No Authentication:** It is designed for single-user local-only execution. No user accounts, multi-tenant state, or server state exist.
 * **No New Dependencies:** It introduces absolutely zero third-party dependencies beyond the pre-existing `pyyaml` (in `requirements.txt`).
@@ -34,9 +36,11 @@ pip install -r requirements.txt
 ```
 
 ### 2. Launch Dashboard
-Run the standard Python application:
+Either form works (repo root is added to `sys.path` so `dispatch` imports resolve):
 ```bash
 python dashboard/app.py
+# or:
+python -m dashboard.app
 ```
 Open **`http://localhost:8501/`** in your browser to view the real-time control plane!
 

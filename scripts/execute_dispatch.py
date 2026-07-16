@@ -25,6 +25,8 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--execute", action="store_true", help="Execute command after all gates pass (narrow allowlist).")
     p.add_argument("--approval", help="Path to approval record JSON (required when approval level needs it).")
     p.add_argument("--worktree-root", help="Optional approved worktree root for file-writing execution.")
+    p.add_argument("--allocation", help="Path to worktree allocation record JSON.")
+    p.add_argument("--allocation-id", help="Worktree allocation_id (loads runtime record).")
     return p
 
 
@@ -49,6 +51,12 @@ def main() -> int:
         if not approval_path.is_absolute():
             approval_path = (root / approval_path).resolve()
 
+    allocation_path = None
+    if args.allocation:
+        allocation_path = Path(args.allocation)
+        if not allocation_path.is_absolute():
+            allocation_path = (root / allocation_path).resolve()
+
     try:
         result = execute_dispatch(
             root,
@@ -57,6 +65,8 @@ def main() -> int:
             dry_run=args.dry_run,
             approval_path=approval_path,
             worktree_root=args.worktree_root,
+            allocation_path=allocation_path,
+            allocation_id=args.allocation_id,
         )
     except Exception as exc:
         print(f"execute failed: {exc}", file=sys.stderr)

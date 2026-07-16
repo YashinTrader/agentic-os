@@ -9,6 +9,8 @@ from pathlib import Path
 
 import yaml
 
+from cli_encoding import install_encode_safe_stdio, safe_print
+
 
 def parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="List tasks from tasks/active, tasks/done, and tasks/blocked.")
@@ -25,6 +27,7 @@ def load_task(path: Path) -> dict:
 
 
 def main() -> int:
+    install_encode_safe_stdio()
     args = parser().parse_args()
     root = Path(args.root).resolve()
     states = ["active", "done", "blocked"] if args.state == "all" else [args.state]
@@ -35,7 +38,7 @@ def main() -> int:
             try:
                 task = load_task(path)
             except Exception as exc:
-                print(f"Skipping {path.relative_to(root)}: {exc}", file=sys.stderr)
+                safe_print(f"Skipping {path.relative_to(root)}: {exc}", file=sys.stderr)
                 continue
             rows.append(
                 (
@@ -47,10 +50,10 @@ def main() -> int:
                 )
             )
 
-    print("state    id        status       owner   title")
-    print("-------  --------  -----------  ------  -----")
+    safe_print("state    id        status       owner   title")
+    safe_print("-------  --------  -----------  ------  -----")
     for state, task_id, status, owner, title in rows:
-        print(f"{state:<7}  {task_id:<8}  {status:<11}  {owner:<6}  {title}")
+        safe_print(f"{state:<7}  {task_id:<8}  {status:<11}  {owner:<6}  {title}")
     return 0
 
 

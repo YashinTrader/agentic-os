@@ -1,0 +1,122 @@
+id: T-PHASE3-9-AGENT-WAKE-POKE
+title: Wake-on-assign and orchestrator poke-back for the assignment channel
+status: review
+owner: composer
+reviewer: claude
+created_by: claude
+created_at: '2026-07-13T00:00:00Z'
+updated_at: '2026-07-15T00:00:00Z'
+phase: '3.9'
+priority: high
+risk_level: medium
+requires_human_approval: false
+depends_on:
+- T-PHASE3-8B-REVIEWER-RESOLUTION
+blocks: []
+labels:
+- assignment-channel
+- orchestration
+- wake
+objective: 'Extend the assignment channel so that creating an assignment can target
+  a specific agent and WAKE it, and so that agents can POKE the orchestrator (Claude)
+  when work is ready for review. Authorized by Gabriel 2026-07-13: wake-on-assign
+  is approved as the standard flow. Topology is strict: only the orchestrator (claude)
+  may assign and wake any agent; agents may poke ONLY the orchestrator, never each
+  other.
+
+  '
+context: 'Today the channel is passive files: Grok picks up work only when a session
+  starts (scripts/session_pickup.py) and Claude sees results only when polling ingest.
+  This task adds the control plane. Per-agent wake mechanisms differ and must be adapter-declared.
+  Codex already has a headless CLI (codex exec via dispatch/codex_local_builder.py
+  and scripts/run_local_builder_worker.py), so codex wake means dispatching through
+  that existing route with no new execution surface. For grok/composer (Grok Build),
+  YOU are the authority on what your own runtime exposes. Determine and document whether
+  Grok Build supports any local headless trigger (CLI, URI handler, watcher hook,
+  scheduled pickup). If no reliable trigger exists, implement the fallback of a wake-queue
+  file plus a small local watcher script that a Grok Build session leaves running
+  (or an OS scheduled task) which invokes session pickup when a wake lands. Be truthful
+  about which one shipped.
+
+  '
+goals:
+- assignments.py create gains --assign-to <agent_id> and --wake; schema carries assigned_to,
+  wake_requested, wake_delivered, woken_at
+- dispatch/agent_wake.py with adapter-declared wake mechanisms; registry/adapter YAML
+  gains a wake block (mechanism, command_or_path, enabled); unknown or disabled mechanism
+  is a no-op with a clear pending_wake state, never an error
+- codex wake path routes through the existing codex_local_builder worker eligibility
+  (a woken codex assignment becomes a ready auto_local_worktree task); no new codex
+  execution surface
+- grok wake path per your runtime findings, with the watcher fallback if needed
+- 'poke-back: complete and resolution events write a poke record to runtime/dispatch/pokes/orchestrator/;
+  add assignments.py pokes for Claude to list and drain; dashboard shows pokes read-only'
+- 'topology enforcement with tests: only claude may wake; poke target may only be
+  orchestrator; agent-to-agent poke rejected'
+- 'docs: update docs/GROK_BUILD_LOOP.md plus an ADR (new or ADR-0043 amendment) with
+  the wake architecture and what is real versus fallback'
+non_goals:
+- No Grok/xAI API credentials, no network calls to external endpoints
+- No agent-to-agent assignment or poke
+- No production, deploy, merge-to-protected, MCP side effects
+acceptance:
+- create --assign-to grok --wake produces an assignment with a truthful wake_delivered
+  state and, if a mechanism is available, demonstrably triggers pickup; if the watcher
+  fallback is the shipped path, demonstrate it end-to-end locally
+- codex wake demonstrated by an assignment flowing into the existing local-builder
+  worker selection (test-level proof acceptable; no live codex run required if quota-limited)
+- pokes written on complete and resolve; assignments.py pokes lists and drains them;
+  dashboard read-only poke view
+- 'topology tests: non-claude assigner rejected for wake; non-orchestrator poke target
+  rejected'
+- full suite single-threaded exit 0; validate.py exit 0; handoff closeout gate verified
+execution:
+  mode: auto_local_worktree
+  adapter: composer-restricted
+  timeout_seconds: 2400
+  allowed_paths:
+  - dispatch/**
+  - scripts/**
+  - dashboard/**
+  - agents/**
+  - tests/**
+  - docs/**
+  - decisions/**
+  - tasks/**
+  - handoffs/**
+  forbidden_operations:
+  - git_merge
+  - deploy
+  - production_access
+  - mcp_execution
+  - external_network
+verification:
+  commands:
+  - python scripts/validate.py
+  run_full_tests: true
+notes: 'Branch from the tip of agent/composer/T-PHASE3-8B-REVIEWER-RESOLUTION once
+  that assignment completes (it is pending ahead of this one); if you claim both in
+  one session, build them sequentially on stacked branches. Wake execution for grok
+  stays within local machine boundaries; anything requiring credentials or external
+  endpoints is a Gabriel gate and must be reported as a blocker instead of implemented.
+
+  '
+inputs:
+- scripts/assignments.py
+- dispatch/assignment_channel.py
+- dispatch/codex_local_builder.py
+- scripts/run_local_builder_worker.py
+- agents/adapter_registry.yaml
+outputs:
+- dispatch/**
+- scripts/**
+- dashboard/**
+- agents/**
+- tests/**
+- docs/**
+- decisions/**
+- handoffs/T-PHASE3-9-AGENT-WAKE-POKE__composer__to__claude.md
+constraints:
+- Only orchestrator (claude) may assign and wake; agents poke orchestrator only
+- No credentials, no external network, no MCP side effects
+- Read-only dashboard boundary preserved

@@ -1,0 +1,291 @@
+# Builder assignment loop (Claude ↔ Grok/Codex)
+
+This document is the **operating contract** that replaces Gabriel-as-messenger.
+It describes the file-based assignment bridge activated in Phase 3.8B.
+
+**Builder identity:** Grok Build (Grok 4.5) — Primary Builder/Integrator.  
+**Stable ids (do not rename):** adapter `composer-restricted`, agent `composer`.  
+**Automatic execution:** **OFF**. `composer-restricted` is **not** in
+`config/execution-policy.yaml` `enabled_adapters`. Pickup is manual CLI only.
+
+See ADR-0043 and `docs/COMPOSER_LOCAL_BUILDER_PREVIEW.md`.
+
+---
+
+## Paths
+
+| Surface | Path |
+|---------|------|
+| Inbox (Claude posts / Grok claims) | `runtime/dispatch/assignments/inbox/{assignment_id}.json` |
+| Claims (atomic) | `runtime/dispatch/assignments/claims/{assignment_id}.json` |
+| Outbox (Grok completes) | `runtime/dispatch/assignments/outbox/{assignment_id}.json` |
+| Notifications | `runtime/dispatch/assignments/events/*.json` |
+| Reassignment locks/audit | `runtime/dispatch/assignments/reassignments/{assignment_id}.json` |
+| Ingest index (Claude) | `runtime/dispatch/assignments/ingest/latest_ingest.json` |
+| CLI | `python scripts/assignments.py …` |
+| Handoffs | `handoffs/{task_id}__composer__to__claude.md` |
+| Dashboard (read-only) | `python dashboard/app.py` → Execution Runs tab |
+
+Runtime assignment files are gitignored under `runtime/dispatch/**` (except explicit
+activation fixtures). Commit handoffs, docs, and `tests/fixtures/` evidence only.
+
+---
+
+## Lifecycle
+
+```
+pending → claimed → building → awaiting_review → accepted | changes_requested | rejected
+                 ↘ cancelled
+                 ↘ superseded → new pending fallback assignment
+```
+
+- **pending** — Claude posted; pickable once.
+- **claimed** — atomic claim file created; task YAML → `in_progress`.
+- **building** — optional mid-build marker.
+- **awaiting_review** — outbox written; task YAML → `review`.
+- Terminal states are never re-picked (worker-eligibility discipline).
+- **superseded** — an orchestrator replaced this assignment with a new assignment
+  for another builder. The replacement links back through `reassigned_from`.
+
+---
+
+## Orchestrator fallback routing
+
+The orchestrator that created an assignment may redirect it when the preferred
+builder is unavailable, out of quota/tokens, unauthenticated, or timed out.
+Builders cannot reassign work and cannot claim assignments addressed to another
+builder.
+
+Grok remains the stable `composer` agent identity. `--assign-to grok` is accepted
+as an alias and stored as `assigned_to: composer`. Codex resolves to
+`codex-restricted` and `codex_local_builder`. Additional builders resolve from
+`agents/adapter_registry.yaml` when they have an agent id, adapter id, and
+`required_execution_route`.
+
+```bash
+python scripts/assignments.py reassign <grok-assignment-id> \
+  --assign-to codex \
+  --actor claude \
+  --reason quota_exhausted \
+  --poke
+```
+
+This operation:
+
+1. acquires a one-time reassignment lock;
+2. creates a new `pending` assignment with the same bounded contract;
+3. marks the old assignment `superseded`;
+4. records lineage and the reason;
+5. optionally queues an `assignment.reassigned` notification for Codex.
+
+Allowed reasons are `unavailable`, `quota_exhausted`,
+`authentication_failed`, `timeout`, and `operator_requested`.
+
+To notify the currently assigned builder without reassigning:
+
+```bash
+python scripts/assignments.py poke <assignment-id> \
+  --actor claude \
+  --message "Please pick up this assignment"
+```
+
+Inspect queued notifications:
+
+```bash
+python scripts/assignments.py events --unconsumed --json
+```
+
+Codex claims a fallback explicitly so it cannot accidentally claim Grok work:
+
+```bash
+python scripts/assignments.py claim <fallback-assignment-id> --claimed-by codex
+```
+
+`poke` is deliberately a notification, not proof of process launch. It returns
+`notification_queued`; the current Phase 3.8B loop still uses manual pickup.
+Only a future supervisor/wake adapter may report `launching` or `running`.
+
+---
+
+## Claude: post an assignment
+
+### From a task YAML (preferred)
+
+```bash
+cd C:/Users/gabot/agentic-os
+
+# Ensure tasks/active/T-MY-TASK.yaml exists with status: ready
+python scripts/assignments.py create --from-task tasks/active/T-MY-TASK.yaml \
+  --base-branch main \
+  --base-sha "$(git rev-parse HEAD)" \
+  --new-branch agent/composer/T-MY-TASK \
+  --assigned-by claude
+```
+
+### Explicit fields
+
+```bash
+python scripts/assignments.py create \
+  --task-id T-MY-TASK \
+  --title "Short title" \
+  --goal "One-paragraph goal" \
+  --base-branch main \
+  --base-sha "$(git rev-parse HEAD)" \
+  --new-branch agent/composer/T-MY-TASK \
+  --allowed-path "docs/**" \
+  --acceptance "Document exists" \
+  --verify "python scripts/validate.py" \
+  --handoff handoffs/T-MY-TASK__composer__to__claude.md \
+  --assigned-by claude
+```
+
+Assignment files must include the full contract: `task_id`, `title`, `goal`,
+`base_branch`, `base_sha`, `new_branch`, `allowed_paths`, `forbidden_operations`,
+`acceptance_criteria`, `verification_commands`, `timeout`, `handoff_path`,
+`assigned_by`, `assigned_to`, `created_at`, `status`. Schema is validated on write.
+
+---
+
+## Grok Build session: pick up and complete
+
+### Session start (mandatory — no human relay)
+
+**Every Grok session that opens this repo must auto-pick work first:**
+
+```bash
+cd C:/Users/gabot/agentic-os
+python scripts/session_pickup.py
+```
+
+This lists pending inbox assignments and **claims the first one**, printing the full
+contract. If none are pending, it prints idle and exits 0.
+
+Equivalent manual form (same effect):
+
+```bash
+python scripts/assignments.py list --pending
+python scripts/assignments.py claim
+# or: python scripts/assignments.py claim assign-YYYYMMDDTHHMMSSZ-...
+python scripts/assignments.py show <assignment_id>
+```
+
+Do **not** wait for Gabriel or chat paste of the task text — the inbox file is the contract.
+
+Then build per contract:
+
+1. Create isolated branch/worktree from `base_branch` @ `base_sha`.
+2. Stay inside `allowed_paths`; honor `forbidden_operations`.
+3. Run `verification_commands` and gates (`scripts/handoff_closeout_gate.py`).
+4. Write v2 handoff to `handoff_path` with full 40-char SHAs.
+5. Push branch (operator/network allowed for Grok session; policy forbids
+   automatic adapter push — manual push is the builder's responsibility).
+6. Complete:
+
+```bash
+python scripts/assignments.py complete <assignment_id> \
+  --handoff handoffs/T-MY-TASK__composer__to__claude.md \
+  --branch agent/composer/T-MY-TASK \
+  --branch-tip-sha "$(git rev-parse HEAD)" \
+  --summary "What shipped; gate exits" \
+  --outbox-status awaiting_review
+```
+
+Optional mid-build mark:
+
+```bash
+python scripts/assignments.py complete <assignment_id> --building --handoff ... --branch ... --branch-tip-sha ...
+```
+
+(`--building` sets status then completes in one CLI call.)
+
+---
+
+## Claude: ingest results (review path)
+
+After Grok completes and pushes:
+
+```bash
+cd C:/Users/gabot/agentic-os
+git fetch origin
+# optional: checkout builder branch for code review
+python scripts/assignments.py ingest
+python scripts/assignments.py outbox
+```
+
+Ingest is pure file I/O: links outbox → handoff path existence, branch name/tip,
+and writes `runtime/dispatch/assignments/ingest/latest_ingest.json`.  
+**Does not merge or push.** Claude reviews branch + handoff independently.
+
+Dashboard (read-only lifecycle):
+
+```bash
+python dashboard/app.py
+# or: python -m dashboard.app
+# open http://localhost:8501/?tab=execution_runs
+```
+
+Surfaces `assignment_awaiting_review` with result + handoff paths.  
+No claim/approve/execute buttons.
+
+---
+
+## Branch naming and gates
+
+| Rule | Value |
+|------|--------|
+| Branch | `agent/composer/{TASK_ID}` (or contract `new_branch`) |
+| Base | contract `base_branch` @ `base_sha` |
+| Handoff | v2; `scripts/handoff_verification_block.py`; full 40-char SHAs |
+| Closeout | `python scripts/handoff_closeout_gate.py <handoff>` |
+| Suite | single-threaded `python scripts/run_tests.py` once, exit 0 |
+| Validate | `python scripts/validate.py` exit 0 |
+| Verify | `python scripts/verify_repository_verification.py <handoff>` → `Status: verified` |
+
+Forbidden (still): enabling `composer-restricted` in `enabled_adapters`, secrets in
+repo, MCP side effects, merge to protected branches, dashboard write controls.
+
+---
+
+## Gabriel-gated blockers (not this loop)
+
+- Adding `composer-restricted` to `enabled_adapters`
+- Setting `supports_execution: true` / live Grok credentials
+- Headless poller that claims and runs without a human Grok session
+
+The loop above is sufficient for Claude to assign and review without Gabriel
+relaying task text.
+
+---
+
+## Wake-on-assign and poke-back
+
+Claude can target and wake a builder in one local command:
+
+```bash
+python scripts/assignments.py create --from-task tasks/active/T-MY-TASK.yaml --assign-to grok --wake
+python scripts/assignments.py create --from-task tasks/active/T-MY-TASK.yaml --assign-to codex --wake
+```
+
+Only `claude` may request a wake. Adapter YAML declares the wake mechanism.
+Composer/Grok uses `scripts/watch_assignments.py`: the wake request writes a local
+queue record, and the watcher consumes it and atomically claims the assignment.
+This is a real pickup trigger, but it does **not** launch Grok headless or enable
+automatic Composer execution. Although Grok Build 0.2.101 exposes `grok --single`,
+the existing Gabriel gate still keeps `composer-restricted.supports_execution`
+false, so the watcher is the bounded mechanism shipped here.
+
+```bash
+python scripts/watch_assignments.py --agent composer --once
+python scripts/watch_assignments.py --agent composer --poll-seconds 5
+```
+
+Codex wake checks the task against the existing `codex_local_builder` eligibility
+gate and queues it for the existing worker. Completion and reviewer resolution
+append poke records under `runtime/dispatch/pokes/orchestrator/`:
+
+```bash
+python scripts/assignments.py pokes
+python scripts/assignments.py pokes --drain
+```
+
+The dashboard shows the same queue read-only. Agent-to-agent poke targets are rejected.
