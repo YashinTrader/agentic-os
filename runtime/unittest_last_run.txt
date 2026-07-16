@@ -1,10 +1,11 @@
-timestamp: 2026-07-15T17:21:13Z
+timestamp: 2026-07-16T08:53:33Z
 repo_root: C:/Users/gabot/agentic-os
-commit: 56cb740
-commit_full: 56cb74072daf30f5d6ad09451fa1788a7c42d7be
+commit: 65e225a
+commit_full: 65e225a06697f566e2fb07370656313a6f94a55f
 python: C:\Users\gabot\AppData\Local\hermes\hermes-agent\venv\Scripts\python.exe
-test_count: 19
+test_count: 15
 exit_code: 0
+command: python -m unittest tests.test_claude_reviewer_adapter -v
 --- tail ---
-Ran 19 tests in 3.205s
+Ran 15 tests in 2.245s
 OK
