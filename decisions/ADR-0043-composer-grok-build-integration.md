@@ -104,6 +104,24 @@ to `runtime/dispatch/pokes/orchestrator/`. The CLI can list/drain this queue and
 the dashboard may read it, but the dashboard gains no write control. Direct
 agent-to-agent poke routing is not permitted.
 
+### 2026-07-16 amendment: execution vs notification layers remain separate
+
+The physical supervisor (execution) and orchestrator pokes (notification) are
+independent layers and both remain active:
+
+1. `--wake` notifies the supervisor queue (does not prove a process ran).
+2. Supervisor launches the agent when capacity permits (PID/run record proves launch).
+3. Completion writes outbox, sets `awaiting_review`, then emits an idempotent poke
+   addressed only to `orchestrator`.
+4. Claude drains pokes/outbox, reviews branch+handoff, and records
+   `accept` / `request-changes` / `reject`.
+5. `request-changes` re-enters via Claude-owned correction + `--wake`.
+6. Agents never assign, wake, or poke other builders.
+7. Duplicate completion pokes for the same undrained `(assignment_id, event)` are
+   idempotent and must not spawn duplicate reviews/assignments.
+
+Contract doc: `docs/AUTONOMOUS_LOOP_LAYERS.md`.
+
 ### 2026-07-15 amendment: physical agent launcher (Phase 3.9.1)
 
 Gabriel authorized physical process launch. The supervisor

@@ -291,9 +291,24 @@ class SupervisorFlowTests(PhysicalLauncherFixture):
         rec, _ = read_assignment(self.root, self.assignment_id)
         self.assertEqual(rec.status, "awaiting_review")
         pokes, _ = list_orchestrator_pokes(self.root)
-        self.assertTrue(any(p.get("target") == "orchestrator" for p in pokes))
+        completion_pokes = [p for p in pokes if p.get("event") == "assignment_completed"]
+        # Exactly one undrained completion poke (notification layer); not a launch record.
+        self.assertEqual(len(completion_pokes), 1)
+        self.assertEqual(completion_pokes[0].get("target"), "orchestrator")
+        self.assertFalse(completion_pokes[0].get("is_process_launch"))
+        self.assertEqual(completion_pokes[0].get("layer"), "notification")
+        # Execution evidence is the PID/run record, not the poke.
+        self.assertEqual(report["pid"], 5555)
+        self.assertIsNotNone(state.pid)
         # No peer-builder poke targets.
         self.assertFalse(any(p.get("target") in {"codex", "composer", "grok"} for p in pokes))
+        # Route layers stay distinct when present.
+        if "route" in report and isinstance(report["route"], dict):
+            route = report["route"]
+            if "execution_layer" in route:
+                self.assertEqual(route["execution_layer"].get("pid"), 5555)
+            if "notification_layer" in route:
+                self.assertFalse(route["notification_layer"].get("is_process_launch"))
 
     def test_no_duplicate_launch_and_concurrency_one(self) -> None:
         lease1, reason1 = try_acquire_concurrency(

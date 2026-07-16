@@ -21,9 +21,25 @@ class WakePokeTests(unittest.TestCase):
         agents = self.root / "agents"
         agents.mkdir()
         (agents / "adapter_registry.yaml").write_text("adapters: []\n", encoding="utf-8")
-        for adapter, mechanism in (("composer-restricted", "assignment_watcher"), ("codex-restricted", "codex_local_builder")):
+        for adapter, mechanism in (
+            ("composer-restricted", "physical_supervisor"),
+            ("codex-restricted", "codex_local_builder"),
+        ):
             (agents / f"{adapter.replace('-', '_')}_adapter.yaml").write_text(
-                yaml.safe_dump({"wake": {"enabled": True, "mechanism": mechanism, "command_or_path": "worker.py"}}), encoding="utf-8"
+                yaml.safe_dump(
+                    {
+                        "wake": {
+                            "enabled": True,
+                            "mechanism": mechanism,
+                            "command_or_path": (
+                                "scripts/run_orchestrator.py"
+                                if mechanism == "physical_supervisor"
+                                else "worker.py"
+                            ),
+                        }
+                    }
+                ),
+                encoding="utf-8",
             )
 
     def tearDown(self) -> None:
@@ -38,16 +54,29 @@ class WakePokeTests(unittest.TestCase):
         assert path is not None
         return path.stem
 
-    def test_composer_wake_queue_is_consumed_by_watcher_and_claims(self) -> None:
+    def test_composer_wake_notifies_supervisor_queue(self) -> None:
+        """--wake must queue a supervisor signal; queue write is not a launch."""
         assignment_id = self._assignment()
         record, _ = read_assignment(self.root, assignment_id)
         assert record is not None
         self.assertTrue(record.wake_delivered)
         self.assertEqual(record.wake_state, "wake_delivered")
+        self.assertIn(record.wake_detail or "", ("physical supervisor wake queued", "watcher signal queued"))
+        wake_path = (
+            self.root
+            / "runtime"
+            / "dispatch"
+            / "wake_queue"
+            / "composer"
+            / f"{assignment_id}.json"
+        )
+        self.assertTrue(wake_path.is_file(), "wake must notify supervisor queue")
+        # Passive watcher may still claim; that is not process launch evidence.
         report = process_one(self.root, "composer")
         self.assertEqual(report["status"], "claimed")
         claimed, _ = read_assignment(self.root, assignment_id)
         self.assertEqual(claimed.status, "claimed")
+        self.assertNotIn("pid", report)
 
     def test_non_claude_wake_is_rejected(self) -> None:
         path, errors = write_assignment(
@@ -100,12 +129,27 @@ class WakePokeTests(unittest.TestCase):
         assignment_id = self._assignment(wake=False)
         claim_assignment(self.root, assignment_id, sync_task_yaml=False)
         complete_assignment(self.root, assignment_id, sync_task_yaml=False)
+        # Duplicate complete must be idempotent for undrained completion poke.
         complete_assignment(self.root, assignment_id, sync_task_yaml=False)
         pokes, _ = list_orchestrator_pokes(self.root)
         self.assertEqual([p["event"] for p in pokes], ["assignment_completed"])
+        self.assertTrue(all(p.get("is_process_launch") is False for p in pokes))
+        rec, _ = read_assignment(self.root, assignment_id)
+        self.assertEqual(rec.status, "awaiting_review")
         resolve_assignment(self.root, assignment_id, resolution="accepted", sync_task_yaml=False)
         pokes, _ = list_orchestrator_pokes(self.root)
         self.assertEqual({p["event"] for p in pokes}, {"assignment_completed", "assignment_accepted"})
+
+    def test_complete_requires_awaiting_review_before_poke(self) -> None:
+        assignment_id = self._assignment(wake=False)
+        claim_assignment(self.root, assignment_id, sync_task_yaml=False)
+        complete_assignment(self.root, assignment_id, sync_task_yaml=False)
+        rec, _ = read_assignment(self.root, assignment_id)
+        self.assertEqual(rec.status, "awaiting_review")
+        pokes, _ = list_orchestrator_pokes(self.root)
+        self.assertEqual(len(pokes), 1)
+        self.assertEqual(pokes[0]["target"], "orchestrator")
+        self.assertEqual(pokes[0]["layer"], "notification")
 
 
 if __name__ == "__main__":

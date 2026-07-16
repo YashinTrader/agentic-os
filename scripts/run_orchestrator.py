@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
-"""Persistent physical agent supervisor entrypoint.
+"""Persistent physical agent supervisor entrypoint (execution layer).
 
 Consumes wake records, claims assignments, launches real agent processes
-(Grok primary / Codex fallback), records PID/run state, and routes completion
-to awaiting_review with Claude-only pokes.
+(Grok primary / Codex fallback), and records PID/run state.
 
+On process end, completion routing:
+  1) outbox + assignment → awaiting_review
+  2) structured poke to orchestrator only (notification layer)
+
+Pokes are never launch evidence. PID/run records are never completion evidence.
 This is NOT the passive watcher — claim alone is never reported as a launch.
+Keep this process running for the autonomous loop's execution layer.
 """
 
 from __future__ import annotations

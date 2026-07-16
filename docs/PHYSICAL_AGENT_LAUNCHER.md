@@ -1,5 +1,14 @@
 # Physical Agent Launcher (Phase 3.9.1)
 
+## Layering
+
+The supervisor is the **execution layer**. Completion pokes are the **notification layer**.
+Both stay enabled — see `docs/AUTONOMOUS_LOOP_LAYERS.md`.
+
+- Wake queue / PID / run records → execution
+- Outbox + `awaiting_review` + orchestrator poke → completion + notification
+- Never treat a poke as a launched process; never treat a PID as assignment completion
+
 ## What shipped
 
 A persistent local supervisor that turns wake records into **real agent processes**.

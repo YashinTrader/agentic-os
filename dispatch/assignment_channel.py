@@ -1191,8 +1191,16 @@ def complete_assignment(
     blocked_reasons: list[str] | None = None,
     outbox_status: str = "awaiting_review",
     sync_task_yaml: bool = True,
+    emit_poke: bool = True,
+    poke_event: str = "assignment_completed",
 ) -> tuple[OutboxRecord | None, list[str]]:
-    """Mark assignment awaiting_review and write outbox result."""
+    """Write outbox, transition to awaiting_review, then emit notification poke.
+
+    Layering rules:
+    - Outbox + status transition are completion evidence (not process launch).
+    - Poke is notification-only and is emitted only after status is awaiting_review.
+    - Duplicate complete calls are idempotent for the undrained completion poke.
+    """
     record, errors = read_assignment(repo_root, assignment_id)
     if record is None:
         return None, errors
@@ -1222,12 +1230,14 @@ def complete_assignment(
     if out_path is None:
         return None, errors
 
+    # Terminal completion state for review must land before any poke.
     record.status = "awaiting_review"
     record.updated_at = utc_now()
     try:
         _write_inbox_record(repo_root, record)
     except ValueError as exc:
         errors.append(str(exc))
+        return None, errors
 
     if sync_task_yaml and record.task_id:
         errors.extend(
@@ -1241,12 +1251,22 @@ def complete_assignment(
 
     out_record, read_errors = read_outbox_result(repo_root, assignment_id)
     errors.extend(read_errors)
-    if not was_awaiting_review:
+
+    # Notification layer (separate from execution): only after awaiting_review.
+    if emit_poke:
         from dispatch.orchestrator_pokes import write_orchestrator_poke
 
+        confirmed, _ = read_assignment(repo_root, assignment_id)
+        if confirmed is None or confirmed.status != "awaiting_review":
+            errors.append("refusing poke: assignment is not awaiting_review after complete")
+            return out_record, errors
         _, poke_errors = write_orchestrator_poke(
-            repo_root, source=record.assigned_to, assignment_id=record.assignment_id,
-            task_id=record.task_id, event="assignment_completed",
+            repo_root,
+            source=record.assigned_to,
+            assignment_id=record.assignment_id,
+            task_id=record.task_id,
+            event=poke_event or "assignment_completed",
+            target="orchestrator",
         )
         errors.extend(poke_errors)
     return out_record, errors

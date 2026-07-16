@@ -1,4 +1,9 @@
-"""Local, adapter-declared wake delivery for assignment builders."""
+"""Wake notification for the execution layer (physical supervisor).
+
+Creating an assignment with ``--wake`` queues a wake record so the persistent
+supervisor can claim and launch. Delivering a wake is **not** process launch
+evidence — only a PID/run record from the supervisor is.
+"""
 
 from __future__ import annotations
 
@@ -60,7 +65,7 @@ def request_agent_wake(
     task_path: str,
     requested_by: str,
 ) -> WakeOutcome:
-    """Deliver a bounded local wake signal; never launches a new execution surface."""
+    """Queue a wake for the supervisor. Does not start an agent process itself."""
     if requested_by.strip().lower() != "claude":
         return WakeOutcome("wake_rejected", False, "none", "only claude may request wakes")
 
