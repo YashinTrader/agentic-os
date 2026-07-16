@@ -10,6 +10,8 @@ from pathlib import Path
 
 import yaml
 
+from cli_encoding import install_encode_safe_stdio
+
 
 V2_HEADER_FIELDS = {"id", "title", "status", "owner", "reviewer", "created_by", "created_at", "updated_at", "phase"}
 
@@ -66,6 +68,7 @@ def parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
+    install_encode_safe_stdio()
     args = parser().parse_args()
     root = Path(args.root).resolve()
     header_error = validate_task_header(root, args.task)

@@ -13,7 +13,9 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from cli_encoding import install_encode_safe_stdio  # noqa: E402
 from dispatch.assignment_channel import (  # noqa: E402
     accept_assignment,
     claim_assignment,
@@ -653,6 +655,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
+    install_encode_safe_stdio()
     parser = build_parser()
     args = parser.parse_args()
     return int(args.func(args))

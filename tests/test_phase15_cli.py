@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -200,6 +201,54 @@ class Phase15CliTests(unittest.TestCase):
         self.assertIn("T-0014", result.stdout)
         self.assertIn("active", result.stdout)
         self.assertIn("Visible task", result.stdout)
+
+    def test_list_tasks_encoding_safe_under_cp1252(self) -> None:
+        """Regression: Windows pipe default (cp1252) must not crash on arrow/em-dash titles."""
+        title = "Path A \u2192 B \u2014 encoding probe"
+        self.run_script(
+            "create_task.py",
+            "--id",
+            "T-ENC-01",
+            "--title",
+            title,
+            "--reviewer",
+            "claude",
+            "--objective",
+            "Prove list_tasks survives narrow stdout codecs.",
+            "--output",
+            "tasks/active/T-ENC-01.yaml",
+        )
+
+        task_path = self.root / "tasks" / "active" / "T-ENC-01.yaml"
+        on_disk = yaml.safe_load(task_path.read_text(encoding="utf-8"))
+        self.assertEqual(on_disk["title"], title)
+
+        # Capture as bytes and decode as cp1252: child stdout is narrow-codec
+        # bytes under PYTHONIOENCODING=cp1252 (em dash is 0x97, not valid UTF-8).
+        env = os.environ.copy()
+        env["PYTHONIOENCODING"] = "cp1252"
+        raw = subprocess.run(
+            [sys.executable, str(self.root / "scripts" / "list_tasks.py"), "--root", str(self.root)],
+            cwd=self.root,
+            capture_output=True,
+            check=False,
+            env=env,
+        )
+        stdout = raw.stdout.decode("cp1252", errors="replace")
+        stderr = raw.stderr.decode("cp1252", errors="replace")
+        self.assertEqual(
+            raw.returncode,
+            0,
+            msg=f"stdout={stdout!r}\nstderr={stderr!r}",
+        )
+        self.assertNotIn("UnicodeEncodeError", stderr)
+        self.assertIn("T-ENC-01", stdout)
+        # ASCII spans of the title must survive; unencodable glyphs may be replaced.
+        self.assertIn("Path A", stdout)
+        self.assertIn("encoding probe", stdout)
+        # Underlying YAML must remain untouched after the print path runs.
+        after = yaml.safe_load(task_path.read_text(encoding="utf-8"))
+        self.assertEqual(after["title"], title)
 
 
 if __name__ == "__main__":
