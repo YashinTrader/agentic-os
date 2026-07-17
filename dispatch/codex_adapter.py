@@ -12,6 +12,12 @@ from typing import Any
 
 from dispatch.agent_context_bundle import bundle_root, compute_bundle_hash
 from dispatch.agent_environment import environment_preview
+from dispatch.mcp_isolation import (
+    CODEX_CONFIG_FLAG,
+    CODEX_IGNORE_USER_CONFIG_FLAG,
+    build_codex_mcp_isolation_flags,
+    normalize_required_mcp_servers,
+)
 from dispatch.worktree_allocator import evaluate_allocation_for_execution
 
 CODEX_EXECUTABLE = "codex"
@@ -53,6 +59,8 @@ class CodexCommandPlan:
     context_bundle_dir: str = ""
     context_bundle_hash: str = ""
     prompt: str = ""
+    required_mcp_servers: list[str] = field(default_factory=list)
+    mcp_isolation: dict[str, Any] = field(default_factory=dict)
 
 
 def parse_semver(version_text: str) -> tuple[int, int, int] | None:
@@ -122,10 +130,28 @@ def build_codex_exec_options(
     *,
     worktree_path: str,
     agent_output_path: str,
+    required_mcp_servers: list[str] | None = None,
+    user_mcp_servers: dict[str, Any] | None = None,
+    mcp_isolation_flags: list[str] | None = None,
 ) -> list[str]:
-    """Validated option tokens before positional prompt (no prompt)."""
+    """Validated option tokens before positional prompt (no prompt).
+
+    MCP isolation flags (``--ignore-user-config``, ``-c mcp_servers={}``, and
+    optional rehydrated required-server overrides) are injected immediately
+    after the ``exec`` subcommand.
+    """
+    del adapter  # adapter reserved for future option wiring
+    if mcp_isolation_flags is None:
+        flags, _blocked, _evidence = build_codex_mcp_isolation_flags(
+            required_mcp_servers,
+            user_mcp_servers=user_mcp_servers,
+        )
+        isolation = flags
+    else:
+        isolation = list(mcp_isolation_flags)
     return [
         CODEX_ALLOWED_SUBCOMMAND,
+        *isolation,
         "-C",
         str(worktree_path),
         "-s",
@@ -188,6 +214,14 @@ def validate_codex_argv_contract(
         "-s",
         "--json",
         CODEX_OUTPUT_FLAG,
+        CODEX_CONFIG_FLAG,
+        CODEX_IGNORE_USER_CONFIG_FLAG,
+    }
+    # Flags that take no value.
+    valueless_flags = {
+        CODEX_ALLOWED_SUBCOMMAND,
+        "--json",
+        CODEX_IGNORE_USER_CONFIG_FLAG,
     }
     i = 1
     while i < len(argv):
@@ -197,7 +231,7 @@ def validate_codex_argv_contract(
         if token.startswith("-") and token not in allowed_flags:
             blocked.append(f"unknown or unsupported option: {token}")
             break
-        if token in allowed_flags and token not in {CODEX_ALLOWED_SUBCOMMAND, "--json"}:
+        if token in allowed_flags and token not in valueless_flags:
             i += 2
             continue
         i += 1
@@ -210,9 +244,19 @@ def compute_command_contract_hash() -> str:
     template = {
         "executable": CODEX_EXECUTABLE,
         "subcommand": CODEX_ALLOWED_SUBCOMMAND,
-        "options": ["-C", "-s", CODEX_SANDBOX_MODE, "--json", CODEX_OUTPUT_FLAG],
+        "options": [
+            CODEX_IGNORE_USER_CONFIG_FLAG,
+            CODEX_CONFIG_FLAG,
+            "mcp_servers={}",
+            "-C",
+            "-s",
+            CODEX_SANDBOX_MODE,
+            "--json",
+            CODEX_OUTPUT_FLAG,
+        ],
         "prompt_mode": CODEX_PROMPT_MODE,
         "output_flag": CODEX_OUTPUT_FLAG,
+        "mcp_isolation": "required_mcp_servers_default_empty",
     }
     payload = json.dumps(template, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
@@ -234,10 +278,13 @@ def build_codex_command(
     base_sha: str = "",
     scope_paths: list[str] | None = None,
     prompt: str | None = None,
+    required_mcp_servers: list[str] | None = None,
+    user_mcp_servers: dict[str, Any] | None = None,
 ) -> CodexCommandPlan:
     """Construct argv-only Codex exec invocation; does not execute."""
     blocked = _validate_adapter_contract(adapter)
     scope = list(scope_paths or ["."])
+    required = normalize_required_mcp_servers(list(required_mcp_servers or []))
 
     worktree = Path(worktree_path).resolve()
     if not worktree.exists():
@@ -285,6 +332,12 @@ def build_codex_command(
     if len(prompt_arg) > 4000:
         blocked.append("constructed prompt exceeds size bound")
 
+    isolation_flags, isolation_blocked, isolation_evidence = build_codex_mcp_isolation_flags(
+        required,
+        user_mcp_servers=user_mcp_servers,
+    )
+    blocked.extend(isolation_blocked)
+
     argv = append_codex_prompt(
         [
             str(adapter.get("executable", CODEX_EXECUTABLE)),
@@ -292,6 +345,7 @@ def build_codex_command(
                 adapter,
                 worktree_path=str(worktree),
                 agent_output_path=agent_output_path,
+                mcp_isolation_flags=isolation_flags,
             ),
         ],
         prompt_arg,
@@ -324,6 +378,8 @@ def build_codex_command(
         context_bundle_dir=str(bundle_dir),
         context_bundle_hash=bundle_hash,
         prompt=prompt_arg,
+        required_mcp_servers=required,
+        mcp_isolation=isolation_evidence,
     )
 
 

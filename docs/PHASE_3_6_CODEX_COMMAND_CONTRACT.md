@@ -17,6 +17,8 @@ codex exec [OPTIONS] [PROMPT]
 [
   "codex",
   "exec",
+  "--ignore-user-config",
+  "-c", "mcp_servers={}",
   "-C", "<worktree_path>",
   "-s", "workspace-write",
   "--json",
@@ -24,6 +26,11 @@ codex exec [OPTIONS] [PROMPT]
   "<prompt>"
 ]
 ```
+
+MCP isolation (Phase 3.9.5): see `docs/MCP_ISOLATION_POLICY.md`. Default
+`required_mcp_servers: []` injects `--ignore-user-config` and
+`-c mcp_servers={}` so user-level optional MCP servers cannot abort unrelated
+runs.
 
 ## MA1 fix
 

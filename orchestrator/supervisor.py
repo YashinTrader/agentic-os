@@ -273,6 +273,7 @@ def process_wake_signal(
         if is_continuation and existing
         else _default_prompt(assignment_id, state.task_id, task_path or record.task_path)
     )
+    required_mcp_servers = list(getattr(record, "required_mcp_servers", None) or [])
     builder = launch_plan_builder or build_grok_launch_plan
     plan = builder(
         worktree=worktree,
@@ -280,6 +281,7 @@ def process_wake_signal(
         max_turns=config.max_turns,
         timeout_hint_seconds=config.timeout_seconds,
         grok_executable=config.grok_executable,
+        required_mcp_servers=required_mcp_servers,
     )
 
     used_fallback = False
@@ -294,6 +296,7 @@ def process_wake_signal(
             task_path=task_file,
             agent_output_path=out_path,
             codex_executable=config.codex_executable,
+            required_mcp_servers=required_mcp_servers,
         )
         used_fallback = True
         state.fallback_to_agent = "codex"
@@ -381,6 +384,7 @@ def process_wake_signal(
         stdout=mon.stdout,
         stderr=mon.stderr,
         timed_out=mon.timed_out,
+        required_mcp_servers=list(getattr(plan, "required_mcp_servers", None) or required_mcp_servers),
     )
     state.process_state = classification.process_state if classification.process_state != "completed" else STATE_COMPLETED
     state.blocked_reason = classification.detail if state.process_state != STATE_COMPLETED else ""
@@ -436,6 +440,7 @@ def process_wake_signal(
                 task_path=task_file,
                 agent_output_path=out_path,
                 codex_executable=config.codex_executable,
+                required_mcp_servers=required_mcp_servers,
             )
             if cplan.ok:
                 # Preserve lineage on a new run state.
@@ -486,6 +491,9 @@ def process_wake_signal(
                         stdout=fb_mon.stdout,
                         stderr=fb_mon.stderr,
                         timed_out=fb_mon.timed_out,
+                        required_mcp_servers=list(
+                            getattr(cplan, "required_mcp_servers", None) or required_mcp_servers
+                        ),
                     )
                     fb_state.process_state = (
                         STATE_COMPLETED if fb_class.process_state == "completed" else fb_class.process_state

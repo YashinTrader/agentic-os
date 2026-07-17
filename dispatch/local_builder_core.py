@@ -24,6 +24,7 @@ from dispatch.worktree_allocator import (
     run_git,
 )
 from dispatch.worktree_registry import allocation_record_to_dict
+from dispatch.mcp_isolation import extract_required_mcp_servers, load_user_mcp_servers
 from orchestrator.loaders import load_task_yaml
 
 SubprocessRunner = Callable[..., subprocess.CompletedProcess[str]]
@@ -70,6 +71,8 @@ class CommandPlan:
     argv: list[str]
     cwd: str
     blocked_reasons: list[str] = field(default_factory=list)
+    required_mcp_servers: list[str] = field(default_factory=list)
+    mcp_isolation: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -352,6 +355,9 @@ def run_adapter_local_builder(
     agent_output_path = worktree / config.agent_output_relpath
     agent_output_path.parent.mkdir(parents=True, exist_ok=True)
 
+    required_mcp_servers = extract_required_mcp_servers(task)
+    # Read-only snapshot of operator MCP tables for optional rehydration.
+    user_mcp_servers = load_user_mcp_servers() if required_mcp_servers else {}
     plan = build_command_plan(
         adapter=adapter,
         repo_root=repo_root,
@@ -365,6 +371,8 @@ def run_adapter_local_builder(
         task_id=task_id,
         base_sha=base,
         prompt=_build_prompt(instructions_path, handoff_rel),
+        required_mcp_servers=required_mcp_servers,
+        user_mcp_servers=user_mcp_servers,
     )
     if plan.blocked_reasons:
         return LocalBuilderResult(
@@ -377,8 +385,14 @@ def run_adapter_local_builder(
             run_dir=str(run_dir),
         )
 
+    command_payload: dict[str, Any] = {
+        "argv": plan.argv,
+        "cwd": plan.cwd,
+        "required_mcp_servers": list(required_mcp_servers),
+        "mcp_isolation": getattr(plan, "mcp_isolation", {}) or {},
+    }
     (run_dir / "command.json").write_text(
-        json.dumps({"argv": plan.argv, "cwd": plan.cwd}, indent=2), encoding="utf-8"
+        json.dumps(command_payload, indent=2), encoding="utf-8"
     )
     env, env_names, auth_source = prepare_environment(adapter)
     (run_dir / "environment_names.json").write_text(
