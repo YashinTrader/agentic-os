@@ -13,6 +13,7 @@ from typing import Any, Callable
 from dispatch.agent_wake import read_wake_signal
 from dispatch.assignment_channel import claim_assignment, read_assignment, set_assignment_status
 from dispatch.runtime_capture import run_directory
+from dispatch.worktree_allocator import allocate_worktree
 from orchestrator.agent_launcher import (
     build_codex_fallback_plan,
     build_grok_launch_plan,
@@ -37,6 +38,8 @@ from orchestrator.runtime_store import (
     STATE_LAUNCHING,
     STATE_QUEUED,
     STATE_RUNNING,
+    STATE_MAX_TURNS,
+    STATE_BLOCKED_EXTERNAL,
     FailureFingerprint,
     RunState,
     find_latest_run_for_assignment,
@@ -89,6 +92,15 @@ def _default_prompt(assignment_id: str, task_id: str, task_path: str) -> str:
         f"(task {task_id}). Read the assignment contract and task YAML at {task_path}. "
         "Implement only within allowed paths. Do not merge, push to protected branches, "
         "or deploy. Produce a handoff when done."
+    )
+
+
+def _continuation_prompt(previous: RunState, task_path: str) -> str:
+    return (
+        f"Continue assignment {previous.assignment_id} (task {previous.task_id}) in the existing "
+        f"worktree. Prior run {previous.run_id} reached its turn limit after making committed "
+        f"progress on branch {previous.branch}. Inspect prior commits and the working tree, then "
+        f"finish the remaining contract in {task_path}. Do not discard prior work."
     )
 
 
@@ -214,8 +226,27 @@ def process_wake_signal(
 
     set_assignment_status(repo_root, assignment_id, "building")
 
-    worktree = Path(config.worktree) if config.worktree else repo_root
-    worktree.mkdir(parents=True, exist_ok=True)
+    is_continuation = bool(existing and existing.process_state == STATE_MAX_TURNS)
+    if is_continuation:
+        worktree = Path(existing.worktree)
+        branch_name = existing.branch
+    elif config.worktree:
+        worktree = Path(config.worktree).resolve()
+        if worktree == repo_root.resolve():
+            release_lease(repo_root, assignment_id)
+            return {"status": "error", "reason": "canonical repo cannot be used as a build worktree"}
+        branch_name = record.new_branch
+    else:
+        allocation = allocate_worktree(
+            repo_root, task_id=task_id or record.task_id, run_id=run_id,
+            base_sha=record.base_sha, base_branch=record.base_branch,
+            owner="supervisor", cleanup_policy="preserve",
+        )
+        if not allocation.success:
+            release_lease(repo_root, assignment_id)
+            return {"status": "error", "reason": "; ".join(allocation.errors), "run_id": run_id}
+        worktree = Path(allocation.worktree_path)
+        branch_name = allocation.branch_name
 
     state = RunState(
         run_id=run_id,
@@ -225,17 +256,23 @@ def process_wake_signal(
         adapter=adapter_id or record.adapter_id,
         process_state=STATE_QUEUED,
         worktree=str(worktree),
-        branch=record.new_branch,
+        branch=branch_name,
         base_sha=record.base_sha,
         wake_signal_path=signal_path.relative_to(repo_root).as_posix()
         if signal_path.is_relative_to(repo_root)
         else str(signal_path),
         retry_count=(existing.retry_count + 1) if existing else 0,
         fallback_from_run_id=existing.run_id if existing else None,
+        continuation_from_run_id=existing.run_id if is_continuation else None,
+        auto_resume_count=(existing.auto_resume_count + 1) if is_continuation else 0,
     )
     save_run_state(repo_root, state)
 
-    prompt = _default_prompt(assignment_id, state.task_id, task_path or record.task_path)
+    prompt = (
+        _continuation_prompt(existing, task_path or record.task_path)
+        if is_continuation and existing
+        else _default_prompt(assignment_id, state.task_id, task_path or record.task_path)
+    )
     builder = launch_plan_builder or build_grok_launch_plan
     plan = builder(
         worktree=worktree,
@@ -269,7 +306,7 @@ def process_wake_signal(
         state.completed_at = utc_now()
         state.retry_eligible = False
         save_run_state(repo_root, state)
-        route, route_errors = route_completion(repo_root, state, branch=record.new_branch, source="composer")
+        route, route_errors = route_completion(repo_root, state, branch=state.branch, source="composer")
         release_lease(repo_root, assignment_id)
         _consume_wake(repo_root, signal_path)
         return {
@@ -301,7 +338,7 @@ def process_wake_signal(
         state.blocked_reason = launch_msg
         state.completed_at = utc_now()
         save_run_state(repo_root, state)
-        route, route_errors = route_completion(repo_root, state, branch=record.new_branch, source=state.assigned_agent)
+        route, route_errors = route_completion(repo_root, state, branch=state.branch, source=state.assigned_agent)
         release_lease(repo_root, assignment_id)
         _consume_wake(repo_root, signal_path)
         return {
@@ -355,6 +392,18 @@ def process_wake_signal(
         exit_code=mon.exit_code,
     )
     state.failure_fingerprint = fp.to_dict() if classification.category != "completed" else None
+
+    if state.process_state == STATE_MAX_TURNS:
+        save_run_state(repo_root, state)
+        release_lease(repo_root, assignment_id)
+        if state.auto_resume_count < 1:
+            return {
+                "status": "requeued_continuation", "assignment_id": assignment_id,
+                "run_id": run_id, "worktree": str(worktree), "branch": state.branch,
+            }
+        state.process_state = STATE_BLOCKED_EXTERNAL
+        state.blocked_reason = "automatic max-turn continuation budget exhausted"
+        state.retry_eligible = False
 
     # Codex fallback after Grok quota/auth/unavailable — one time max, no loops.
     if (
@@ -453,7 +502,7 @@ def process_wake_signal(
                     )
                     save_run_state(repo_root, fb_state)
                     route, route_errors = route_completion(
-                        repo_root, fb_state, branch=record.new_branch, source="codex"
+                        repo_root, fb_state, branch=state.branch, source="codex"
                     )
                     release_lease(repo_root, assignment_id)
                     _consume_wake(repo_root, signal_path)
@@ -473,7 +522,7 @@ def process_wake_signal(
 
     save_run_state(repo_root, state)
     route, route_errors = route_completion(
-        repo_root, state, branch=record.new_branch, source=state.assigned_agent
+        repo_root, state, branch=state.branch, source=state.assigned_agent
     )
     release_lease(repo_root, assignment_id)
     _consume_wake(repo_root, signal_path)

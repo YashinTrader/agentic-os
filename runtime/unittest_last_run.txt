@@ -1,10 +1,15 @@
-timestamp: 2026-07-15T17:21:13Z
-repo_root: C:/Users/gabot/agentic-os
-commit: 56cb740
-commit_full: 56cb74072daf30f5d6ad09451fa1788a7c42d7be
+timestamp: 2026-07-17T09:51:51Z
+repo_root: C:/Users/gabot/agentic-os-worktrees/manual-4e-clone
+commit: unknown
+commit_full: bfcfe556b628ba7c2aefc0d176eca7596f8ef6f4
 python: C:\Users\gabot\AppData\Local\hermes\hermes-agent\venv\Scripts\python.exe
-test_count: 19
-exit_code: 0
+exit_code: 1
 --- tail ---
-Ran 19 tests in 3.205s
-OK
+ERROR: Could not find a version that satisfies the requirement cognee==1.1.0 (from versions: none)
+ERROR: No matching distribution found for cognee==1.1.0
+WARNING: Failed to remove contents in a temporary directory 'C:\Users\gabot\AppData\Local\Temp\pip-build-tracker-t0vkb3gc'.
+You can safely remove it manually.
+WARNING: Failed to remove contents in a temporary directory 'C:\Users\gabot\AppData\Local\Temp\pip-ephem-wheel-cache-a9tftx3z'.
+You can safely remove it manually.
+WARNING: Failed to remove contents in a temporary directory 'C:\Users\gabot\AppData\Local\Temp\pip-install-8nhxs1jw'.
+You can safely remove it manually.

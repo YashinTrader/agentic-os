@@ -5,7 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from dispatch.assignment_channel import complete_assignment, set_assignment_status
+from dispatch.assignment_channel import (
+    complete_assignment,
+    read_assignment,
+    set_assignment_status,
+    write_outbox_result,
+)
 from dispatch.orchestrator_pokes import write_orchestrator_poke
 from orchestrator.runtime_store import (
     BLOCKED_EXTERNAL_STATES,
@@ -35,7 +40,7 @@ def route_completion(
 
     if state.process_state == STATE_COMPLETED:
         outbox_status = "awaiting_review"
-        event = "assignment_completed"
+        event = None
         blocked = None
         out, complete_errors = complete_assignment(
             repo_root,
@@ -53,53 +58,66 @@ def route_completion(
         outbox_status = "blocked"
         event = "assignment_blocked_external"
         blocked = [state.blocked_reason or state.process_state]
-        # Keep assignment claimed/building but write blocked outbox via complete with blocked status
-        # when still claimable; otherwise set status and poke.
-        out, complete_errors = complete_assignment(
-            repo_root,
-            state.assignment_id,
-            handoff_path=state.handoff_path or None,
-            branch_name=branch or state.branch or None,
-            branch_tip_sha=branch_tip_sha,
-            result_summary=summary or f"blocked_external: {state.process_state}",
-            blocked_reasons=blocked,
-            outbox_status="blocked",
-        )
-        errors.extend(complete_errors)
-        if out is None:
-            # Fallback: mark building stays, still poke.
-            set_assignment_status(repo_root, state.assignment_id, "building")
+        record, read_errors = read_assignment(repo_root, state.assignment_id)
+        errors.extend(read_errors)
+        out_path = None
+        if record is not None:
+            out_path, out_errors = write_outbox_result(
+                repo_root, assignment_id=state.assignment_id, task_id=record.task_id,
+                adapter_id=record.adapter_id, run_id=state.run_id,
+                handoff_path=state.handoff_path or None, branch_name=branch or state.branch or None,
+                branch_tip_sha=branch_tip_sha, blocked_reasons=blocked, status="blocked",
+                result_summary=summary or f"blocked_external: {state.process_state}",
+            )
+            errors.extend(out_errors)
+            _, status_errors = set_assignment_status(
+                repo_root, state.assignment_id, "reviewable_failure", sync_task_yaml=False
+            )
+            errors.extend(status_errors)
         result["outbox_status"] = "blocked"
-        result["outbox"] = out.status if out else None
+        result["outbox"] = "blocked" if out_path else None
     else:
         outbox_status = "failed"
         event = "assignment_failed"
         blocked = [state.blocked_reason or state.process_state]
-        out, complete_errors = complete_assignment(
-            repo_root,
-            state.assignment_id,
-            handoff_path=state.handoff_path or None,
-            branch_name=branch or state.branch or None,
-            branch_tip_sha=branch_tip_sha,
-            result_summary=summary or f"physical launch failed: {state.process_state}",
-            blocked_reasons=blocked,
-            outbox_status="failed",
-        )
-        errors.extend(complete_errors)
+        record, read_errors = read_assignment(repo_root, state.assignment_id)
+        errors.extend(read_errors)
+        out_path = None
+        if record is not None:
+            out_path, out_errors = write_outbox_result(
+                repo_root,
+                assignment_id=state.assignment_id,
+                task_id=record.task_id,
+                adapter_id=record.adapter_id,
+                run_id=state.run_id,
+                claim_path=f"runtime/dispatch/assignments/claims/{state.assignment_id}.json",
+                handoff_path=state.handoff_path or None,
+                branch_name=branch or state.branch or None,
+                branch_tip_sha=branch_tip_sha,
+                result_summary=summary or f"physical launch failed: {state.process_state}",
+                blocked_reasons=blocked,
+                status="failed",
+            )
+            errors.extend(out_errors)
+            _, status_errors = set_assignment_status(
+                repo_root, state.assignment_id, "reviewable_failure", sync_task_yaml=False
+            )
+            errors.extend(status_errors)
         result["outbox_status"] = "failed"
-        result["outbox"] = out.status if out else None
+        result["outbox"] = "failed" if out_path else None
 
     # Topology: poke ONLY orchestrator/claude — never peer builders.
-    poke, poke_errors = write_orchestrator_poke(
-        repo_root,
-        source=source if source in {"composer", "grok", "codex", "claude"} else "composer",
-        assignment_id=state.assignment_id,
-        task_id=state.task_id,
-        event=event,
-        target="orchestrator",
-    )
-    errors.extend(poke_errors)
-    result["poke"] = poke
+    if event is not None:
+        poke, poke_errors = write_orchestrator_poke(
+            repo_root,
+            source=source if source in {"composer", "grok", "codex", "claude"} else "composer",
+            assignment_id=state.assignment_id,
+            task_id=state.task_id,
+            event=event,
+            target="orchestrator",
+        )
+        errors.extend(poke_errors)
+        result["poke"] = poke
     return result, errors
 
 

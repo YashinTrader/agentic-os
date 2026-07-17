@@ -8,7 +8,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import yaml
 
@@ -34,7 +34,7 @@ from orchestrator.failure_classify import (  # noqa: E402
     should_relaunch,
 )
 from orchestrator.leases import count_active_leases, try_acquire_concurrency  # noqa: E402
-from orchestrator.process_monitor import monitor_process  # noqa: E402
+from orchestrator.process_monitor import monitor_process, pid_is_alive  # noqa: E402
 from orchestrator.runtime_store import (  # noqa: E402
     STATE_COMPLETED,
     STATE_RUNNING,
@@ -73,6 +73,14 @@ class PhysicalLauncherFixture(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.root = Path(self.tmp.name) / "repo"
+        self.allocated_worktree = Path(self.tmp.name) / "allocated-worktree"
+        self.allocated_worktree.mkdir(parents=True)
+        allocation = MagicMock(
+            success=True, errors=[], worktree_path=str(self.allocated_worktree),
+            branch_name="agentic/t-phys-launch/run",
+        )
+        self.allocator_patch = patch("orchestrator.supervisor.allocate_worktree", return_value=allocation)
+        self.mock_allocator = self.allocator_patch.start()
         # Minimal repo surface for assignment channel + supervisor.
         for rel in (
             "tasks/active",
@@ -161,6 +169,7 @@ class PhysicalLauncherFixture(unittest.TestCase):
         self.wake_path.write_text(json.dumps(wake), encoding="utf-8")
 
     def tearDown(self) -> None:
+        self.allocator_patch.stop()
         self.tmp.cleanup()
 
     def _fake_popen_success(self, *args, **kwargs):
@@ -241,6 +250,14 @@ class FailureClassifyTests(unittest.TestCase):
         self.assertEqual(quota.process_state, "blocked_quota")
         self.assertIsNotNone(quota.retry_after)
 
+    def test_max_turns_classification_is_resume_eligible(self) -> None:
+        result = classify_process_output(
+            agent="composer", adapter="composer-restricted", exit_code=1,
+            stderr="Stopped after reaching max turns (30)",
+        )
+        self.assertEqual(result.process_state, "max_turns")
+        self.assertTrue(result.retry_eligible)
+
     def test_unchanged_failure_no_relaunch(self) -> None:
         c = classify_process_output(
             agent="composer",
@@ -252,6 +269,15 @@ class FailureClassifyTests(unittest.TestCase):
         ok, reason = should_relaunch(previous=fp, current=fp, retry_count=0)
         self.assertFalse(ok)
         self.assertIn("unchanged", reason)
+
+
+
+class ProcessMonitorTests(unittest.TestCase):
+    def test_pid_probe_contains_system_error(self) -> None:
+        with patch("orchestrator.process_monitor.sys.platform", "linux"), patch(
+            "orchestrator.process_monitor.os.kill", side_effect=SystemError("dead PID")
+        ):
+            self.assertIsNone(pid_is_alive(999999))
 
 
 class SupervisorFlowTests(PhysicalLauncherFixture):
@@ -294,6 +320,35 @@ class SupervisorFlowTests(PhysicalLauncherFixture):
         self.assertTrue(any(p.get("target") == "orchestrator" for p in pokes))
         # No peer-builder poke targets.
         self.assertFalse(any(p.get("target") in {"codex", "composer", "grok"} for p in pokes))
+
+
+    def test_supervisor_allocates_isolated_worktree(self) -> None:
+        report = process_wake_signal(
+            self.root, self.wake_path,
+            config=SupervisorConfig(agent="composer", allow_codex_fallback=False),
+            popen=self._fake_popen_success, launch_plan_builder=self._plan_ok,
+        )
+        self.assertEqual(report["status"], "completed")
+        self.mock_allocator.assert_called_once()
+        state = load_run_state(self.root, report["run_id"])
+        self.assertEqual(state.worktree, str(self.allocated_worktree))
+        self.assertNotEqual(Path(state.worktree), self.root)
+
+    def test_failed_run_has_only_failure_poke_and_reviewable_state(self) -> None:
+        def failed_monitor(process, **kwargs):
+            del process, kwargs
+            return type("M", (), {"exit_code": 2, "timed_out": False, "stdout": "", "stderr": "boom"})()
+        report = process_wake_signal(
+            self.root, self.wake_path,
+            config=SupervisorConfig(agent="composer", allow_codex_fallback=False),
+            popen=self._fake_popen_success, launch_plan_builder=self._plan_ok, monitor=failed_monitor,
+        )
+        self.assertEqual(report["process_state"], "failed")
+        record, _ = read_assignment(self.root, self.assignment_id)
+        self.assertEqual(record.status, "reviewable_failure")
+        pokes, _ = list_orchestrator_pokes(self.root)
+        events = [poke["event"] for poke in pokes]
+        self.assertEqual(events, ["assignment_failed"])
 
     def test_no_duplicate_launch_and_concurrency_one(self) -> None:
         lease1, reason1 = try_acquire_concurrency(

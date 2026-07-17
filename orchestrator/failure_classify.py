@@ -13,6 +13,7 @@ from orchestrator.runtime_store import (
     STATE_FAILED,
     STATE_FAILED_LAUNCH,
     STATE_TIMED_OUT,
+    STATE_MAX_TURNS,
     FailureFingerprint,
 )
 
@@ -105,6 +106,14 @@ def classify_process_output(
 
     blob = f"{stdout}\n{stderr}"
     retry_after = _parse_retry_after(blob)
+
+    if re.search(r"max(?:imum)?[\s_-]*turns?|turn limit", blob, re.I):
+        return Classification(
+            process_state=STATE_MAX_TURNS,
+            category="max_turns",
+            detail="agent reached the bounded turn limit",
+            retry_eligible=True,
+        )
 
     for pattern in _AUTH_PATTERNS:
         if pattern.search(blob):

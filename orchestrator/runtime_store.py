@@ -24,6 +24,8 @@ STATE_FAILED_LAUNCH = "failed_launch"
 STATE_FAILED = "failed"
 STATE_TIMED_OUT = "timed_out"
 STATE_ORPHANED = "orphaned"
+STATE_MAX_TURNS = "max_turns"
+STATE_BLOCKED_EXTERNAL = "blocked_external"
 
 TERMINAL_STATES = frozenset(
     {
@@ -32,10 +34,13 @@ TERMINAL_STATES = frozenset(
         STATE_BLOCKED_QUOTA,
         STATE_BLOCKED_NO_ADAPTER,
         STATE_BLOCKED_CAPACITY,
+        STATE_BLOCKED_EXTERNAL,
         STATE_FAILED_LAUNCH,
         STATE_FAILED,
         STATE_TIMED_OUT,
         STATE_ORPHANED,
+        STATE_MAX_TURNS,
+        STATE_BLOCKED_EXTERNAL,
     }
 )
 
@@ -107,6 +112,8 @@ class RunState:
     failure_fingerprint: dict[str, Any] | None = None
     fallback_from_run_id: str | None = None
     fallback_to_agent: str | None = None
+    continuation_from_run_id: str | None = None
+    auto_resume_count: int = 0
     wake_signal_path: str = ""
     schema_version: str = "1.0"
     kind: str = "physical_agent_launch"

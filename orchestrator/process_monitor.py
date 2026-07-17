@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -129,14 +131,23 @@ def mark_orphaned(repo_root: Path, state: RunState, *, detail: str = "process mi
 def pid_is_alive(pid: int) -> bool | None:
     if pid <= 0:
         return False
-    try:
-        import os
+    if sys.platform == "win32":
+        try:
+            import ctypes
 
+            process = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)
+            if process:
+                ctypes.windll.kernel32.CloseHandle(process)
+                return True
+            return True if ctypes.get_last_error() == 5 else False
+        except (AttributeError, OSError, SystemError):
+            return None
+    try:
         os.kill(pid, 0)
         return True
     except ProcessLookupError:
         return False
     except PermissionError:
         return True
-    except OSError:
+    except (OSError, SystemError):
         return None
