@@ -1,32 +1,11 @@
-timestamp: 2026-07-17T11:14:47Z
-repo_root: C:/Users/gabot/agentic-os-worktrees/t-phase3-9-5-agent-mcp-isolation/phys-2026071
-commit: unknown
-commit_full: 7aa62a572849ac3f66e55165312f3b3764f4f2c4
+timestamp: 2026-07-17T16:33:35Z
+repo_root: C:/Users/gabot/agentic-os
+commit: fe57658
+commit_full: fe57658bc7b32e9841c874d30c2a3ab2019477d6
 python: C:\Users\gabot\AppData\Local\hermes\hermes-agent\venv\Scripts\python.exe
-exit_code: 1
+test_count: 17
+exit_code: 0
+command: python -m unittest tests.test_mcp_isolation -v
 --- tail ---
-      warn: Updating existing toolchain, profile choice will be ignored
-      info: syncing channel updates for stable-x86_64-pc-windows-msvc
-      info: default toolchain set to stable-x86_64-pc-windows-msvc
-      Checking if cargo is installed
-      cargo 1.97.1 (c980f4866 2026-06-30)
-      
-      Cargo, the Rust package manager, is not installed or is not on PATH.
-      This package requires Rust and Cargo to compile extensions. Install it through
-      the system's package manager or via https://rustup.rs/
-      
-      Checking for Rust toolchain....
-      Rust not found, installing into a temporary directory
-      [end of output]
-  
-  note: This error originates from a subprocess, and is likely not a problem with pip.
-error: metadata-generation-failed
-
-× Encountered error while generating package metadata.
-╰─> See above for output.
-
-note: This is an issue with the package mentioned above, not pip.
-hint: See above for details.
-
-[notice] A new release of pip is available: 24.0 -> 26.1.2
-[notice] To update, run: python.exe -m pip install --upgrade pip
+Ran 17 tests in 0.055s
+OK
