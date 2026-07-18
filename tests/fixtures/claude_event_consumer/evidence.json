@@ -1,0 +1,22 @@
+﻿{
+  "fixture_kind": "deterministic_consumer_evidence",
+  "live_claude": false,
+  "reason": "Task forbids external_network; live Claude acceptance must be run by operator.",
+  "event": {
+    "created_at": "2026-07-17T16:00:00Z",
+    "assignment_id": "assign-fixture",
+    "task_id": "T-FIXTURE",
+    "event": "assignment_completed"
+  },
+  "review": {
+    "claimed_at": "2026-07-17T16:00:01Z",
+    "started_at": "2026-07-17T16:00:02Z",
+    "pid": 4242,
+    "session_id": "fixture-session-1",
+    "activity_at": "2026-07-17T16:00:03Z",
+    "verdict_recorded_at": "2026-07-17T16:00:04Z",
+    "verdict": "accepted"
+  },
+  "transitions": ["pending", "claimed", "review_starting", "review_running", "resolved"],
+  "resulting_assignment_state": "accepted"
+}

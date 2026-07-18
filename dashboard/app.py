@@ -3506,3 +3506,21 @@ def serve_dashboard(port: int = 8501) -> None:
 
 if __name__ == "__main__":
     serve_dashboard(8501)
+
+
+def load_claude_event_consumer_status(root_dir: Path) -> tuple[dict[str, Any] | None, list[str]]:
+    """Read-only dashboard view of Claude watcher health and pending alert."""
+    path = root_dir / "runtime" / "dispatch" / "claude_event_consumer" / "status.json"
+    if not path.is_file():
+        return None, []
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return None, [f"claude event consumer status: {exc}"]
+    if not isinstance(value, dict):
+        return None, ["claude event consumer status: expected object"]
+    value["system_alert"] = (
+        "Claude review poke unhandled for over five minutes"
+        if value.get("alert_active") else None
+    )
+    return value, []

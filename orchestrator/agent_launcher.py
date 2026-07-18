@@ -39,6 +39,7 @@ class LaunchPlan:
     env: dict[str, str] = field(default_factory=dict)
     blocked_reasons: list[str] = field(default_factory=list)
     command_redacted: list[str] = field(default_factory=list)
+    stdin_text: str | None = None
 
     @property
     def ok(self) -> bool:
@@ -275,11 +276,19 @@ def launch_process(
             shell=False,
             env={**os.environ, **plan.env} if plan.env else None,
             text=True,
+            stdin=subprocess.PIPE if plan.stdin_text is not None else None,
         )
     except OSError as exc:
         stdout_f.close()
         stderr_f.close()
         return None, f"{STATE_FAILED_LAUNCH}: {exc}"
+
+    if plan.stdin_text is not None and getattr(proc, "stdin", None) is not None:
+        try:
+            proc.stdin.write(plan.stdin_text)
+            proc.stdin.close()
+        except (OSError, BrokenPipeError):
+            pass
 
     # File handles owned by process; close our copies after handoff on platforms that dup.
     try:
