@@ -76,12 +76,12 @@ python -m unittest tests.test_activity_detect tests.test_claude_event_consumer -
 repo_root: C:/Users/gabot/agentic-os
 branch: agent/composer/T-PHASE3-9-6-ACTIVITY-DETECTION-FIX
 base_sha: 3bdc02ef081ccb9a2ab97d309bbbc0e1bb810634
-implementation_sha: 970b3c58a711bd8def5ecf0c290b6f9c612d643f
-tests_commit_sha: 970b3c58a711bd8def5ecf0c290b6f9c612d643f
+implementation_sha: 8cc0ea622cc140b7a50821c39837c9345447aab9
+tests_commit_sha: 8cc0ea622cc140b7a50821c39837c9345447aab9
 final_head_sha: 8cc0ea622cc140b7a50821c39837c9345447aab9
 remote_head_sha: 8cc0ea622cc140b7a50821c39837c9345447aab9
 git_status_clean: true
-validator_commit_sha: 970b3c58a711bd8def5ecf0c290b6f9c612d643f
+validator_commit_sha: 8cc0ea622cc140b7a50821c39837c9345447aab9
 test_count: 12
 test_exit_code: 0
 validator_exit_code: 0
