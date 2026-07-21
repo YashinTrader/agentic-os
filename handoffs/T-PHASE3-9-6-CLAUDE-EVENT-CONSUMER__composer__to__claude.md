@@ -78,13 +78,14 @@ branch: agent/composer/T-PHASE3-9-6-ACTIVITY-DETECTION-FIX
 base_sha: 3bdc02ef081ccb9a2ab97d309bbbc0e1bb810634
 implementation_sha: 970b3c58a711bd8def5ecf0c290b6f9c612d643f
 tests_commit_sha: 970b3c58a711bd8def5ecf0c290b6f9c612d643f
-final_head_sha: 970b3c58a711bd8def5ecf0c290b6f9c612d643f
-remote_head_sha: 970b3c58a711bd8def5ecf0c290b6f9c612d643f
+final_head_sha: 8cc0ea622cc140b7a50821c39837c9345447aab9
+remote_head_sha: 8cc0ea622cc140b7a50821c39837c9345447aab9
 git_status_clean: true
 validator_commit_sha: 970b3c58a711bd8def5ecf0c290b6f9c612d643f
 test_count: 12
 test_exit_code: 0
 validator_exit_code: 0
 post_test_diff_policy: POST_TEST_ALLOWLIST_EXACT
-post_test_files: handoffs/T-PHASE3-9-6-CLAUDE-EVENT-CONSUMER__composer__to__claude.md, runtime/unittest_last_run.txt, scripts/repository_verification.py
+post_test_files: handoffs/T-PHASE3-9-6-CLAUDE-EVENT-CONSUMER__composer__to__claude.md, runtime/unittest_last_run.txt
 working_copy_path: C:/Users/gabot/agentic-os
+

@@ -1,11 +1,10 @@
-timestamp: 2026-07-21T21:16:10Z
+timestamp: 2026-07-21T21:16:43Z
 repo_root: C:/Users/gabot/agentic-os
 commit: 970b3c5
 commit_full: 970b3c58a711bd8def5ecf0c290b6f9c612d643f
 python: C:\Users\gabot\AppData\Local\hermes\hermes-agent\venv\Scripts\python.exe
 test_count: 12
 exit_code: 0
-command: python -m unittest tests.test_activity_detect tests.test_claude_event_consumer -v
 --- tail ---
 Ran 12 tests in 0.379s
 OK
