@@ -75,6 +75,41 @@ class ClaudeEventConsumerTests(unittest.TestCase):
         self.assertNotIn("review_running", report["transitions"])
         self.assertTrue((self.root / self.poke["source_path"]).exists())
 
+    def test_exit_with_valid_verdict_without_session_id_is_genuine_activity(self):
+        """Buffered stdout may omit session mid-run; valid verdict at exit must resolve."""
+        consumer = ClaudeEventConsumer(self.root, processor=lambda **_: {
+            "status": "completed",
+            "pid": 39292,
+            "session_id": None,
+            "verdict": "accepted",
+            "assignment_status": "accepted",
+            "review_run_id": "review-buffered-stdout",
+            "activity_evidence": {
+                "genuine_activity": True,
+                "valid_structured_result": True,
+                "mid_run_activity": False,
+            },
+        })
+        report = consumer.process_once()
+        self.assertEqual(report["status"], "resolved")
+        self.assertEqual(report["verdict"], "accepted")
+        self.assertIn("review_running", report["transitions"])
+        self.assertIn("resolved", report["transitions"])
+        self.assertFalse(Path(self.root / self.poke["source_path"]).exists())
+
+    def test_completed_valid_verdict_never_rewritten_to_failed_launch(self):
+        consumer = ClaudeEventConsumer(self.root, processor=lambda **_: {
+            "status": "completed",
+            "pid": 1,
+            "session_id": "late-session",
+            "verdict": "changes_requested",
+            "assignment_status": "changes_requested",
+        })
+        report = consumer.process_once()
+        self.assertEqual(report["status"], "resolved")
+        self.assertNotEqual(report["status"], "failed_launch")
+        self.assertEqual(report["verdict"], "changes_requested")
+
     def test_pending_over_five_minutes_surfaces_alert(self):
         path = self.root / self.poke["source_path"]
         data = json.loads(path.read_text(encoding="utf-8"))

@@ -341,6 +341,86 @@ def apply_verdict(
     return result, errors
 
 
+def _wait_for_review_process(
+    *,
+    process: Any,
+    stdout_path: Path,
+    stderr_path: Path,
+    timeout_seconds: int,
+    activity_timeout_seconds: int,
+) -> dict[str, Any]:
+    """Poll process with incremental log reads for genuine activity.
+
+    Does not rely solely on fully-buffered stdout at the end of a long wait.
+    """
+    import time
+
+    from orchestrator.activity_detect import (
+        detect_activity_from_paths,
+        merge_activity_with_exit_result,
+        read_text_best_effort,
+    )
+
+    started = time.monotonic()
+    activity_deadline = started + max(1, activity_timeout_seconds)
+    overall_deadline = started + max(1, timeout_seconds)
+    mid_run_activity = False
+    exit_code: int | None = None
+    timed_out = False
+    activity_watchdog_expired = False
+
+    while True:
+        code = process.poll()
+        evidence = detect_activity_from_paths(stdout_path, stderr_path)
+        if evidence.get("genuine_activity"):
+            mid_run_activity = True
+        if code is not None:
+            exit_code = int(code)
+            break
+        now = time.monotonic()
+        if not mid_run_activity and now >= activity_deadline:
+            activity_watchdog_expired = True
+            try:
+                process.kill()
+            except OSError:
+                pass
+            try:
+                exit_code = int(process.wait(timeout=5))
+            except Exception:
+                exit_code = None
+            timed_out = True
+            break
+        if now >= overall_deadline:
+            timed_out = True
+            try:
+                process.kill()
+            except OSError:
+                pass
+            try:
+                exit_code = int(process.wait(timeout=5))
+            except Exception:
+                exit_code = None
+            break
+        time.sleep(0.2)
+
+    stdout = read_text_best_effort(stdout_path)
+    stderr = read_text_best_effort(stderr_path)
+    final = merge_activity_with_exit_result(
+        mid_run_activity=mid_run_activity,
+        exit_code=exit_code,
+        stdout=stdout,
+        stderr=stderr,
+    )
+    return {
+        "exit_code": exit_code,
+        "timed_out": timed_out,
+        "activity_watchdog_expired": activity_watchdog_expired and not final["genuine_activity"],
+        "activity_evidence": final,
+        "stdout": stdout,
+        "stderr": stderr,
+    }
+
+
 def process_one_review(
     repo_root: Path,
     *,
@@ -348,6 +428,7 @@ def process_one_review(
     adapter: ClaudeReviewerAdapter | None = None,
     review_concurrency: int = DEFAULT_REVIEW_CONCURRENCY,
     timeout_seconds: int = 1800,
+    activity_timeout_seconds: int = 90,
     monitor: Callable[..., Any] | None = None,
     apply: bool = True,
 ) -> dict[str, Any]:
@@ -452,14 +533,52 @@ def process_one_review(
                 # Write mon stdout/stderr already captured; re-poll
                 state = reviewer.poll_review(review_run_id)
         elif handle is not None:
-            # Block until exit with simple wait + timeout
-            try:
-                code = handle.process.wait(timeout=timeout_seconds)
-            except Exception:
-                reviewer.cancel_review(review_run_id)
-                state = load_review_state(repo_root, review_run_id) or state
+            wait_info = _wait_for_review_process(
+                process=handle.process,
+                stdout_path=repo_root / state.stdout_path,
+                stderr_path=repo_root / state.stderr_path,
+                timeout_seconds=timeout_seconds,
+                activity_timeout_seconds=activity_timeout_seconds,
+            )
+            activity_evidence = wait_info.get("activity_evidence") or {}
+            # Always poll after exit so structured stdout is parsed (even if buffered).
+            state = reviewer.poll_review(review_run_id)
+            # Recover schema-valid verdict after timeout if stdout already has it.
+            if (
+                (state.process_state != STATE_COMPLETED or not state.verdict)
+                and activity_evidence.get("valid_structured_result")
+            ):
+                from orchestrator.review_schema import parse_review_stdout
+
+                recovered, _ = parse_review_stdout(str(wait_info.get("stdout") or ""))
+                if recovered is not None:
+                    state.process_state = STATE_COMPLETED
+                    state.verdict = recovered.to_dict()
+                    state.session_id = state.session_id or activity_evidence.get("session_id")
+                    state.blocked_reason = ""
+                    save_review_state(repo_root, state)
+            elif wait_info.get("activity_watchdog_expired") and not activity_evidence.get(
+                "genuine_activity"
+            ):
                 state.process_state = STATE_TIMED_OUT
-                state.blocked_reason = "timed out"
+                state.blocked_reason = "genuine activity watchdog expired"
+                save_review_state(repo_root, state)
+                request_payload["status"] = STATE_TIMED_OUT
+                request_payload["blocked_reason"] = state.blocked_reason
+                atomic_write_json(review_request_path(repo_root, aid), request_payload)
+                return {
+                    "status": "failed_launch",
+                    "assignment_id": aid,
+                    "review_run_id": review_run_id,
+                    "pid": state.pid,
+                    "session_id": state.session_id,
+                    "blocked_reason": state.blocked_reason,
+                    "assignment_status": "awaiting_review",
+                    "activity_evidence": activity_evidence,
+                }
+            elif wait_info.get("timed_out") and state.process_state != STATE_COMPLETED:
+                state.process_state = STATE_TIMED_OUT
+                state.blocked_reason = state.blocked_reason or "timed out"
                 save_review_state(repo_root, state)
                 request_payload["status"] = STATE_TIMED_OUT
                 atomic_write_json(review_request_path(repo_root, aid), request_payload)
@@ -468,12 +587,13 @@ def process_one_review(
                     "assignment_id": aid,
                     "review_run_id": review_run_id,
                     "pid": state.pid,
+                    "session_id": state.session_id,
                     "assignment_status": "awaiting_review",
+                    "activity_evidence": activity_evidence,
                 }
-            del code
-            state = reviewer.poll_review(review_run_id)
         else:
             state = reviewer.poll_review(review_run_id)
+            activity_evidence = {}
 
         if state.process_state != STATE_COMPLETED or not state.verdict:
             request_payload["status"] = state.process_state
@@ -487,6 +607,7 @@ def process_one_review(
                 "session_id": state.session_id,
                 "blocked_reason": state.blocked_reason,
                 "assignment_status": "awaiting_review",
+                "activity_evidence": locals().get("activity_evidence") or {},
             }
 
         verdict, v_errors = validate_review_payload(state.verdict)
@@ -523,6 +644,12 @@ def process_one_review(
             "verdict": verdict.verdict,
             "applied": applied,
             "apply_errors": apply_errors,
+            # Exit with valid structured result is genuine activity.
+            "activity_evidence": {
+                "genuine_activity": True,
+                "valid_structured_result": True,
+                **(locals().get("activity_evidence") or {}),
+            },
         }
     finally:
         release_review_lease(repo_root, aid)

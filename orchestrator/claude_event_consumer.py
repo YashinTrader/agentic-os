@@ -52,15 +52,47 @@ def event_fingerprint(poke: dict[str, Any]) -> str:
     return hashlib.sha256(stable.encode("utf-8")).hexdigest()
 
 
+DEFAULT_REVIEW_TIMEOUT_SECONDS = 1800
+
+
 def _default_processor(repo_root: Path, **kwargs: Any) -> dict[str, Any]:
     from orchestrator.review_dispatcher import process_one_review
 
+    # activity_timeout is only the startup genuine-activity budget.
+    # Full review wall-clock timeout must remain large enough for real Claude work.
     return process_one_review(
         repo_root,
         assignment_id=str(kwargs["assignment_id"]),
-        timeout_seconds=int(kwargs.get("activity_timeout_seconds") or STARTUP_ACTIVITY_TIMEOUT_SECONDS),
+        timeout_seconds=int(kwargs.get("timeout_seconds") or DEFAULT_REVIEW_TIMEOUT_SECONDS),
+        activity_timeout_seconds=int(
+            kwargs.get("activity_timeout_seconds") or STARTUP_ACTIVITY_TIMEOUT_SECONDS
+        ),
         apply=True,
     )
+
+
+def has_genuine_activity(
+    *,
+    pid: Any,
+    session_id: Any,
+    verdict: Any,
+    status: Any = None,
+    activity_evidence: dict[str, Any] | None = None,
+) -> bool:
+    """True when Claude did real work, not merely that a process was spawned.
+
+    A schema-valid structured verdict at exit always counts — even if mid-run
+    stdout was buffered and invisible to the activity watchdog.
+    """
+    if activity_evidence and activity_evidence.get("genuine_activity"):
+        return True
+    if verdict in VALID_VERDICTS:
+        return True
+    if session_id:
+        return True
+    if status == "completed" and verdict in VALID_VERDICTS:
+        return True
+    return False
 
 
 class ClaudeEventConsumer:
@@ -155,38 +187,79 @@ class ClaudeEventConsumer:
                 pid = last.get("pid")
                 verdict = last.get("verdict")
                 session_id = last.get("session_id")
-                genuine_activity = bool(session_id) or verdict in VALID_VERDICTS
+                evidence = last.get("activity_evidence") if isinstance(last.get("activity_evidence"), dict) else None
+                genuine_activity = has_genuine_activity(
+                    pid=pid,
+                    session_id=session_id,
+                    verdict=verdict,
+                    status=last.get("status"),
+                    activity_evidence=evidence,
+                )
+                # PID proves process spawn; genuine activity proves Claude worked.
                 launch_ok = bool(pid) and genuine_activity
-                if launch_ok:
-                    transitions.append("review_running")
-                    self._status(
-                        lifecycle_state="review_running", pid=pid,
-                        claude_session_id=session_id, attempt_count=attempt,
-                    )
-                elif last.get("status") == "completed" or not pid or not genuine_activity:
-                    reason = str(last.get("blocked_reason") or (
-                        "PID startup watchdog expired" if not pid else "genuine activity watchdog expired"
-                    ))
-                    last = {**last, "status": "failed_launch", "blocked_reason": reason}
 
-                if last.get("status") == "completed" and verdict in VALID_VERDICTS and launch_ok:
+                # Successful structured completion must never be rewritten to failed_launch.
+                # Exit-with-valid-verdict counts even when session_id was buffered/late.
+                completed_ok = (
+                    last.get("status") == "completed"
+                    and verdict in VALID_VERDICTS
+                    and (bool(pid) or bool(last.get("recovered")))
+                )
+                if completed_ok:
+                    # Ensure review_running appears in the evidence chain when activity is proven.
+                    if "review_running" not in transitions:
+                        transitions.append("review_running")
+                    self._status(
+                        lifecycle_state="review_running",
+                        pid=pid,
+                        claude_session_id=session_id,
+                        attempt_count=attempt,
+                    )
                     resolution = {
-                        "fingerprint": fingerprint, "assignment_id": poke.get("assignment_id"),
-                        "review_run_id": last.get("review_run_id"), "pid": pid,
-                        "session_id": session_id, "verdict": verdict,
+                        "fingerprint": fingerprint,
+                        "assignment_id": poke.get("assignment_id"),
+                        "review_run_id": last.get("review_run_id"),
+                        "pid": pid,
+                        "session_id": session_id,
+                        "verdict": verdict,
                         "assignment_status": last.get("assignment_status"),
-                        "recorded_at": _now(), "attempt_count": attempt,
+                        "recorded_at": _now(),
+                        "attempt_count": attempt,
+                        "activity_evidence": evidence,
                     }
                     resolved_path.parent.mkdir(parents=True, exist_ok=True)
                     atomic_write_json(resolved_path, resolution)
                     transitions.append("resolved")
                     self._archive(poke)
                     self._status(
-                        lifecycle_state="resolved", active_review_assignment=None,
-                        pid=pid, claude_session_id=session_id, attempt_count=attempt,
-                        last_verdict=verdict, last_blocker=None,
+                        lifecycle_state="resolved",
+                        active_review_assignment=None,
+                        pid=pid,
+                        claude_session_id=session_id,
+                        attempt_count=attempt,
+                        last_verdict=verdict,
+                        last_blocker=None,
                     )
                     return {"status": "resolved", "transitions": transitions, **resolution}
+
+                if launch_ok:
+                    transitions.append("review_running")
+                    self._status(
+                        lifecycle_state="review_running",
+                        pid=pid,
+                        claude_session_id=session_id,
+                        attempt_count=attempt,
+                    )
+                else:
+                    if not pid:
+                        reason = str(last.get("blocked_reason") or "PID startup watchdog expired")
+                    elif not genuine_activity:
+                        reason = str(
+                            last.get("blocked_reason") or "genuine activity watchdog expired"
+                        )
+                    else:
+                        reason = str(last.get("blocked_reason") or last.get("status") or "failed_launch")
+                    last = {**last, "status": "failed_launch", "blocked_reason": reason}
 
                 if last.get("status") != "failed_launch":
                     break
