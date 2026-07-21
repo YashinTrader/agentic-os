@@ -1,11 +1,12 @@
-timestamp: 2026-07-17T16:33:35Z
+timestamp: 2026-07-21T21:13:08Z
 repo_root: C:/Users/gabot/agentic-os
-commit: fe57658
-commit_full: fe57658bc7b32e9841c874d30c2a3ab2019477d6
+commit: b16d4e0
+commit_full: b16d4e0be380f987629f170bd54b378860d6ceb8
 python: C:\Users\gabot\AppData\Local\hermes\hermes-agent\venv\Scripts\python.exe
-test_count: 17
+test_count: 623
 exit_code: 0
-command: python -m unittest tests.test_mcp_isolation -v
+command: python -m unittest discover -s tests -p test_*.py
+elapsed_seconds: 3350.194
 --- tail ---
-Ran 17 tests in 0.055s
-OK
+Ran 623 tests in 3350.194s
+OK (skipped=3)

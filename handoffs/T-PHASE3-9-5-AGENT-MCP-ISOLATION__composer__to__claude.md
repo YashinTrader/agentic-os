@@ -60,7 +60,7 @@ python -m unittest tests.test_mcp_isolation tests.test_assignment_channel -v
 | `python scripts/validate.py` | exit 0 (after handoff sections fixed) |
 | `python -m unittest tests.test_mcp_isolation` | **17 OK** |
 | focused suite (mcp + local_builder + assignment_channel) | **81 OK** |
-| plain full discover in long-path worktree | noisy errors (Windows path length / corrupted nested worktree); re-run preferred on canonical short path |
+| python -m unittest discover -s tests -p test_*.py | **Ran 623 tests in 3350s, OK (skipped=3)** |
 | prior Grok physical run | exit 1, 402 quota exhausted — implementation preserved |
 
 ## Risks / Caveats
@@ -80,13 +80,13 @@ python -m unittest tests.test_mcp_isolation tests.test_assignment_channel -v
 repo_root: C:/Users/gabot/agentic-os
 branch: agent/composer/T-PHASE3-9-5-AGENT-MCP-ISOLATION
 base_sha: 7aa62a572849ac3f66e55165312f3b3764f4f2c4
-implementation_sha: ecce2286a16a2096fbab0abb3b05324f019b3fc4
-tests_commit_sha: ecce2286a16a2096fbab0abb3b05324f019b3fc4
-final_head_sha: fe57658bc7b32e9841c874d30c2a3ab2019477d6
-remote_head_sha: fe57658bc7b32e9841c874d30c2a3ab2019477d6
+implementation_sha: b16d4e0be380f987629f170bd54b378860d6ceb8
+tests_commit_sha: b16d4e0be380f987629f170bd54b378860d6ceb8
+final_head_sha: b16d4e0be380f987629f170bd54b378860d6ceb8
+remote_head_sha: b16d4e0be380f987629f170bd54b378860d6ceb8
 git_status_clean: true
-validator_commit_sha: ecce2286a16a2096fbab0abb3b05324f019b3fc4
-test_count: 17
+validator_commit_sha: b16d4e0be380f987629f170bd54b378860d6ceb8
+test_count: 623
 test_exit_code: 0
 validator_exit_code: 0
 post_test_diff_policy: POST_TEST_ALLOWLIST_EXACT
