@@ -75,6 +75,27 @@ class ClaudeEventConsumerTests(unittest.TestCase):
         self.assertNotIn("review_running", report["transitions"])
         self.assertTrue((self.root / self.poke["source_path"]).exists())
 
+    def test_buffered_output_valid_verdict_at_exit_is_not_failed_launch(self):
+        consumer = ClaudeEventConsumer(self.root, processor=lambda **_: {
+            "status": "completed", "pid": 89, "session_id": None,
+            "verdict": "accepted", "assignment_status": "accepted",
+        })
+        report = consumer.process_once()
+        self.assertEqual(report["status"], "resolved")
+        self.assertEqual(report["verdict"], "accepted")
+        self.assertFalse((self.root / self.poke["source_path"]).exists())
+
+    def test_late_valid_verdict_is_recorded_even_after_timeout_classification(self):
+        consumer = ClaudeEventConsumer(self.root, processor=lambda **_: {
+            "status": "timed_out", "pid": 90, "session_id": None,
+            "verdict": "changes_requested", "assignment_status": "changes_requested",
+            "blocked_reason": "activity watchdog expired before final output",
+        })
+        report = consumer.process_once()
+        self.assertEqual(report["status"], "resolved")
+        self.assertEqual(report["verdict"], "changes_requested")
+        self.assertFalse((self.root / self.poke["source_path"]).exists())
+
     def test_pending_over_five_minutes_surfaces_alert(self):
         path = self.root / self.poke["source_path"]
         data = json.loads(path.read_text(encoding="utf-8"))

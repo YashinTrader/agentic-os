@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -348,6 +349,7 @@ def process_one_review(
     adapter: ClaudeReviewerAdapter | None = None,
     review_concurrency: int = DEFAULT_REVIEW_CONCURRENCY,
     timeout_seconds: int = 1800,
+    activity_timeout_seconds: int = 90,
     monitor: Callable[..., Any] | None = None,
     apply: bool = True,
 ) -> dict[str, Any]:
@@ -452,9 +454,34 @@ def process_one_review(
                 # Write mon stdout/stderr already captured; re-poll
                 state = reviewer.poll_review(review_run_id)
         elif handle is not None:
-            # Block until exit with simple wait + timeout
+            # Observe stream-json incrementally; process exit also permits parsing a
+            # buffered final result before classifying launch activity.
+            activity_started = time.monotonic()
+            while handle.process.poll() is None:
+                try:
+                    if (repo_root / state.stdout_path).stat().st_size > 0:
+                        break
+                except OSError:
+                    pass
+                if time.monotonic() - activity_started >= activity_timeout_seconds:
+                    reviewer.cancel_review(review_run_id)
+                    state = load_review_state(repo_root, review_run_id) or state
+                    state.process_state = "failed_launch"
+                    state.blocked_reason = "genuine activity watchdog expired"
+                    save_review_state(repo_root, state)
+                    request_payload["status"] = "failed_launch"
+                    request_payload["blocked_reason"] = state.blocked_reason
+                    atomic_write_json(review_request_path(repo_root, aid), request_payload)
+                    return {
+                        "status": "failed_launch", "assignment_id": aid,
+                        "review_run_id": review_run_id, "pid": state.pid,
+                        "blocked_reason": state.blocked_reason,
+                        "assignment_status": "awaiting_review",
+                    }
+                time.sleep(0.1)
+            elapsed = time.monotonic() - activity_started
             try:
-                code = handle.process.wait(timeout=timeout_seconds)
+                code = handle.process.wait(timeout=max(0.1, timeout_seconds - elapsed))
             except Exception:
                 reviewer.cancel_review(review_run_id)
                 state = load_review_state(repo_root, review_run_id) or state

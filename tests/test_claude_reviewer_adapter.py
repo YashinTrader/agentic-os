@@ -146,6 +146,16 @@ class SchemaTests(unittest.TestCase):
         self.assertEqual(e, [])
         self.assertEqual(v.verdict, "accepted")
 
+    def test_parse_stream_json_result_after_activity_events(self) -> None:
+        stream = "\n".join([
+            json.dumps({"type": "system", "session_id": "sess-stream"}),
+            json.dumps({"type": "assistant", "message": {"content": "working"}}),
+            json.dumps({"type": "result", "structured_output": _valid_verdict(), "session_id": "sess-stream"}),
+        ])
+        verdict, errors = parse_review_stdout(stream)
+        self.assertEqual(errors, [])
+        self.assertEqual(verdict.verdict, "accepted")
+
     def test_parse_non_json_prose_captures_stdout(self) -> None:
         prose = "I don't see an actual task or question in your message yet"
         envelope = {"type": "result", "result": prose, "session_id": "sess-x"}
@@ -191,7 +201,8 @@ class ArgvPolicyTests(unittest.TestCase):
         self.assertIn("dontAsk", plan.argv)
         self.assertIn("--json-schema", plan.argv)
         self.assertIn("--output-format", plan.argv)
-        self.assertIn("json", plan.argv)
+        self.assertIn("stream-json", plan.argv)
+        self.assertIn("--verbose", plan.argv)
         self.assertIn("Read", joined)
         self.assertIn("Glob", joined)
         self.assertIn("Grep", joined)

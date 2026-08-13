@@ -58,7 +58,8 @@ def _default_processor(repo_root: Path, **kwargs: Any) -> dict[str, Any]:
     return process_one_review(
         repo_root,
         assignment_id=str(kwargs["assignment_id"]),
-        timeout_seconds=int(kwargs.get("activity_timeout_seconds") or STARTUP_ACTIVITY_TIMEOUT_SECONDS),
+        timeout_seconds=1800,
+        activity_timeout_seconds=int(kwargs.get("activity_timeout_seconds") or STARTUP_ACTIVITY_TIMEOUT_SECONDS),
         apply=True,
     )
 
@@ -155,7 +156,9 @@ class ClaudeEventConsumer:
                 pid = last.get("pid")
                 verdict = last.get("verdict")
                 session_id = last.get("session_id")
-                genuine_activity = bool(session_id) or verdict in VALID_VERDICTS
+                valid_verdict = verdict in VALID_VERDICTS
+                # A schema-valid result is conclusive activity even when stdout was buffered.
+                genuine_activity = bool(session_id) or valid_verdict
                 launch_ok = bool(pid) and genuine_activity
                 if launch_ok:
                     transitions.append("review_running")
@@ -169,7 +172,7 @@ class ClaudeEventConsumer:
                     ))
                     last = {**last, "status": "failed_launch", "blocked_reason": reason}
 
-                if last.get("status") == "completed" and verdict in VALID_VERDICTS and launch_ok:
+                if valid_verdict and bool(pid):
                     resolution = {
                         "fingerprint": fingerprint, "assignment_id": poke.get("assignment_id"),
                         "review_run_id": last.get("review_run_id"), "pid": pid,

@@ -249,6 +249,17 @@ def parse_review_stdout(stdout: str) -> tuple[ReviewVerdict | None, list[str]]:
     if not text:
         return None, ["empty stdout"]
 
+    # stream-json is JSON Lines. Scan final-to-initial so the result event wins
+    # over earlier assistant/token events while preserving raw/json compatibility.
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if len(lines) > 1:
+        line_errors: list[str] = []
+        for line in reversed(lines):
+            verdict, errors = parse_review_stdout(line)
+            if verdict is not None:
+                return verdict, []
+            line_errors.extend(errors[:1])
+        return None, line_errors or ["no structured verdict in stream-json output"]
     capture = f"stdout_capture: {_stdout_capture_snippet(text)}"
     candidates: list[str] = [text]
     # Claude --output-format json wraps in {"type":"result","result":"..."} or nested JSON.

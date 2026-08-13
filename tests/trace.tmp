@@ -1,0 +1,12 @@
+Timeout (0:00:03)!
+Thread 0x000087e4 (most recent call first):
+  File "C:\Users\gabot\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\tempfile.py", line 385 in mkdtemp
+  File "C:\Users\gabot\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\tempfile.py", line 871 in __init__
+  File "C:\Users\gabot\agentic-os-worktrees\manual-9-6-fix\tests\test_claude_event_consumer.py", line 14 in setUp
+  File "C:\Users\gabot\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\unittest\case.py", line 576 in _callSetUp
+  File "C:\Users\gabot\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\unittest\case.py", line 619 in run
+  File "C:\Users\gabot\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\unittest\case.py", line 678 in __call__
+  File "C:\Users\gabot\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\unittest\suite.py", line 122 in run
+  File "C:\Users\gabot\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\unittest\suite.py", line 84 in __call__
+  File "C:\Users\gabot\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\unittest\runner.py", line 217 in run
+  File "<string>", line 1 in <module>

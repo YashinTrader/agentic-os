@@ -22,6 +22,7 @@ UNITTEST_ARTIFACT_REL = "runtime/unittest_last_run.txt"
 POST_TEST_ALLOWLIST_EXACT = frozenset(
     {
         "runtime/unittest_last_run.txt",
+        "handoffs/T-PHASE3-9-6B-ACTIVITY-DETECTION-FIX__codex__to__claude.md",
         "handoffs/T-PHASE3-7A-CODEX-CANARY-ACTIVATION__composer__to__claude.md",
         "docs/REVIEW_COMPOSER_PHASE_3_7A_SELF_REVIEW.md",
         "docs/PHASE_3_7A_BASELINE.md",
