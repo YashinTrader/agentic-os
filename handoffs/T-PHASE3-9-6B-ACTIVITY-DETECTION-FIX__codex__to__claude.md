@@ -3,78 +3,79 @@
 **Handoff Protocol:** v2
 **From:** codex
 **To:** claude
-**Date:** 2026-08-13T16:15:00Z
-**Task Status After Handoff:** blocked
+**Date:** 2026-08-14T13:43:29Z
+**Task Status After Handoff:** awaiting_review
 
 ## What I Did
 
-- Changed Claude reviewer output to `stream-json` with `--verbose` while retaining JSON-schema enforcement and the unchanged read-only tool restrictions/unsafe-flag denylist.
 - Added incremental stdout-file activity observation with a separate 90-second activity window and 1800-second full-review timeout.
-- Parse process-exit output before launch-failure classification; valid buffered or late verdicts are durably resolved regardless of an earlier timeout classification.
-- Added regressions for buffered exit-only output, late valid verdicts, and stream-json result parsing; the existing no-activity/retry test continues to cover a genuinely inactive launch.
-- Registered this handoff in `POST_TEST_ALLOWLIST_EXACT` and updated operator documentation.
+- Preserved valid buffered and late stream-json verdicts when an earlier timeout or launch classification had already occurred.
+- Added regressions for buffered exit-only output, late valid verdicts, stream-json result parsing, and genuinely inactive launches.
+- Refreshed the verification record at the true current tested tip `c374da7f7957beb3f25df3dec764fe8af8772d83`, which includes the accepted 9-6C terminal-result, bounded-error, and nullable-remote-sha fixes.
+- Confirmed both 9-6B and 9-6C handoff paths are registered in `POST_TEST_ALLOWLIST_EXACT`.
 
 ## What Remains
 
-- Commit these changes after clone-local `.git` write access is available. `git commit` failed creating `.git/index.lock` with `Permission denied`.
-- Run consumer and full-suite tests in an environment where Python may create the fixture directories under `C:/tmp`.
-- Run the live Claude acceptance only after authorization supersedes this task's explicit external-network prohibition, then replace deterministic fixture evidence with real timestamps, PID, session ID, transitions, and final assignment state.
-- Refresh `runtime/unittest_last_run.txt`; the existing artifact belongs to another clone/commit and runtime is outside this task's allowed paths.
+- The live Claude acceptance remains outstanding: `claude -p` cannot run because the machine's Claude Code OAuth session is expired and could not be refreshed.
+- The full suite has one known, separately tracked pre-existing `T-PHASE3-9-2` `cp1252` failure in `test_phase15_cli`; its non-zero exit is recorded below and is not claimed as a clean suite result.
+- No merge, push, deployment, or external-network action is part of this closeout.
 
 ## Decisions Made
 
-- Verified locally that installed Claude CLI 2.1.212 supports `stream-json`, `--verbose`, and `--json-schema`.
-- Preserved atomic claim, fingerprint dedupe, retry-once behavior, poke retention, transactional resolved-record ordering, read-only reviewer restrictions, and unsafe-flag denial.
-- Did not fabricate live evidence or modify forbidden/out-of-scope runtime data to force the closeout gate green.
+- Keep activity detection independent from the full review timeout so ordinary streamed output prevents false inactivity retries without extending the overall review indefinitely.
+- Preserve late valid verdicts and apply only the terminal stream-json result as the authoritative verdict envelope.
+- Keep post-test changes limited to the explicit verification allowlist; leave pre-existing runner logs and other untracked artifacts untouched.
+- Record the live acceptance blocker and the known full-suite defect rather than fabricating green evidence.
 
 ## Open Questions
 
-- Can the orchestrator perform the networked live acceptance and regenerate the unittest artifact after committing in a temp-writable environment?
+- When the OAuth session is refreshed, can the live acceptance produce the required real PID, session, timestamps, transitions, verdict, and final assignment evidence?
+- When will the separately tracked `T-PHASE3-9-2` `cp1252` defect be fixed and the full suite rerun cleanly?
 
 ## How to Verify My Work
 
 ```powershell
-python -m unittest -v tests.test_claude_event_consumer
-python -m unittest -v tests.test_claude_reviewer_adapter
-python -m unittest discover -s tests -p "test_*.py"
+python -m unittest -v tests.test_claude_event_consumer tests.test_claude_reviewer_adapter
+python -m unittest discover -s tests -p test_*.py
 python scripts/validate.py
 python scripts/handoff_closeout_gate.py handoffs/T-PHASE3-9-6B-ACTIVITY-DETECTION-FIX__codex__to__claude.md
+python scripts/handoff_closeout_gate.py handoffs/T-PHASE3-9-6C-STREAM-VERDICT-SELECTION__codex__to__claude.md
 ```
 
 ## Verification Results
 
-- Claude CLI capability check: `2.1.212`; help lists `stream-json`, `--verbose`, and `--json-schema`.
-- Schema/argv focused tests: 13/13 passed.
-- `python scripts/validate.py`: passed, exit 0 (deprecated event warnings only).
-- Consumer/full suite: blocked before test setup by managed sandbox temp-directory permissions. No passing result claimed.
-- Live acceptance: not run because the task explicitly forbids external network.
-- Commit: blocked because `.git/index.lock` is not writable.
-- Closeout verification artifact: stale from `manual-4e-clone`, commit `bfcfe556...`, exit 1; runtime is outside allowed paths.
+- Current tested implementation tip: `c374da7f7957beb3f25df3dec764fe8af8772d83`.
+- The accepted focused 9-6 regression set is recorded as 32/32 passed, exit 0, by the orchestrator.
+- The full suite ran 638 tests with 3 skips and 1 known `test_phase15_cli` error caused by the separately tracked `T-PHASE3-9-2` `cp1252` issue; full-suite exit code was 1.
+- `python scripts/validate.py`: exit 0.
+- `runtime/unittest_last_run.txt` records the accepted 32-test focused run at the current tip, exit 0; the full-suite result is recorded separately above because it is non-zero.
+- Live Claude acceptance: not run; the OAuth session is expired and could not be refreshed.
 
 ## Risks / Caveats
 
-- Changes and this handoff remain uncommitted solely due `.git` permissions.
-- The mandatory live evidence, full suite, and green closeout gate remain outstanding for the stated boundary/environment reasons.
-- Pre-existing untracked root artifacts were left untouched.
+- The full suite is not clean at this tip. The single failure is pre-existing and separately tracked as `T-PHASE3-9-2`; no claim of a clean full-suite exit is made.
+- A local focused rerun in this restricted clone hit Windows temporary-directory ACL failures and exceeded the bounded retry with `C:\tmp`; the 32/32 result above is the orchestrator's accepted run record.
+- Live acceptance evidence is absent because the Claude Code OAuth session is expired; this must be rerun after authentication is restored.
+- Pre-existing untracked task and runner-log artifacts remain untouched and are not part of the closeout commit.
 
 ## Recommended Next Action for Receiver
 
-Grant clone-local `.git` write access, commit the allowed-path changes, run the focused/full suites with a writable fixture temp root, authorize and perform the live acceptance, refresh the unittest artifact, regenerate this verification block at the true tip, and rerun the closeout gate.
+Review the two closeout gates at the recorded tip, restore Claude Code OAuth, rerun the live acceptance and capture its real evidence, then track the `T-PHASE3-9-2` `cp1252` defect separately before claiming a clean full suite.
 
 ## Repository Verification
 
 repo_root: C:/Users/gabot/agentic-os-worktrees/manual-9-6-fix
 branch: agent/codex/T-PHASE3-9-6-ACTIVITY-DETECTION-FIX
 base_sha: 3bdc02ef081ccb9a2ab97d309bbbc0e1bb810634
-implementation_sha: 3bdc02ef081ccb9a2ab97d309bbbc0e1bb810634
-tests_commit_sha: 3bdc02ef081ccb9a2ab97d309bbbc0e1bb810634
-final_head_sha: 3bdc02ef081ccb9a2ab97d309bbbc0e1bb810634
-remote_head_sha: 3bdc02ef081ccb9a2ab97d309bbbc0e1bb810634
+implementation_sha: c374da7f7957beb3f25df3dec764fe8af8772d83
+tests_commit_sha: c374da7f7957beb3f25df3dec764fe8af8772d83
+final_head_sha: c374da7f7957beb3f25df3dec764fe8af8772d83
+remote_head_sha: c374da7f7957beb3f25df3dec764fe8af8772d83
 git_status_clean: false
-validator_commit_sha: 3bdc02ef081ccb9a2ab97d309bbbc0e1bb810634
-test_count: 13
+validator_commit_sha: c374da7f7957beb3f25df3dec764fe8af8772d83
+test_count: 32
 test_exit_code: 0
 validator_exit_code: 0
 post_test_diff_policy: POST_TEST_ALLOWLIST_EXACT
-post_test_files: handoffs/T-PHASE3-9-6B-ACTIVITY-DETECTION-FIX__codex__to__claude.md
+post_test_files: runtime/unittest_last_run.txt, handoffs/T-PHASE3-9-6B-ACTIVITY-DETECTION-FIX__codex__to__claude.md, handoffs/T-PHASE3-9-6C-STREAM-VERDICT-SELECTION__codex__to__claude.md
 working_copy_path: C:/Users/gabot/agentic-os-worktrees/manual-9-6-fix
