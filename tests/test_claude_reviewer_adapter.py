@@ -95,6 +95,39 @@ class SchemaTests(unittest.TestCase):
         self.assertEqual(e, [])
         self.assertEqual(v.verdict, "accepted")
 
+    def test_remote_less_target_allows_missing_or_null_remote_sha(self) -> None:
+        missing = _valid_verdict()
+        missing["repository_integrity"].pop("remote_sha")
+        verdict, errors = validate_review_payload(missing)
+        self.assertEqual(errors, [])
+        self.assertEqual(verdict.verdict, "accepted")
+
+        null_remote = _valid_verdict(
+            repository_integrity={
+                "verified": True,
+                "branch": "agent/composer/demo",
+                "local_sha": "a" * 40,
+                "remote_sha": None,
+            }
+        )
+        verdict, errors = validate_review_payload(null_remote)
+        self.assertEqual(errors, [])
+        self.assertEqual(verdict.verdict, "accepted")
+
+    def test_non_empty_malformed_remote_sha_is_rejected(self) -> None:
+        verdict, errors = validate_review_payload(
+            _valid_verdict(
+                repository_integrity={
+                    "verified": True,
+                    "branch": "agent/composer/demo",
+                    "local_sha": "a" * 40,
+                    "remote_sha": "not-a-sha",
+                }
+            )
+        )
+        self.assertIsNone(verdict)
+        self.assertIn("repository_integrity.remote_sha must be 40-char hex", errors)
+
     def test_valid_request_changes(self) -> None:
         v, e = validate_review_payload(
             _valid_verdict(
@@ -419,6 +452,84 @@ class ReviewFlowFixture(unittest.TestCase):
         # Launch used stdin pipe for the prompt; argv has no multiline body.
         self.assertIsNotNone(seen.get("stdin"))
         self.assertFalse(any("\n" in str(a) for a in seen.get("argv") or []))
+
+    def test_stream_intermediate_events_only_terminal_result_is_recorded(self) -> None:
+        payload = _valid_verdict(summary="terminal stream result")
+        events = []
+        for index in range(25):
+            events.extend(
+                [
+                    {"type": "text", "text": f"working {index}"},
+                    {"type": "thinking", "text": "checking"},
+                    {"type": "tool_use", "name": "Read", "input": {}},
+                    {"type": "tool_result", "content": "ok"},
+                    {"type": "user", "message": {"content": "continue"}},
+                    {"type": "item.started", "item": {"kind": "review"}},
+                    {"type": "item.completed", "structured_output": {"verdict": ""}},
+                ]
+            )
+        events.append(
+            {
+                "type": "result",
+                "structured_output": payload,
+                "session_id": "sess-stream-terminal",
+            }
+        )
+        stream = "\n".join(json.dumps(event) for event in events)
+
+        def popen(argv, **kwargs):
+            del argv
+            stdout = kwargs.get("stdout")
+            if hasattr(stdout, "write"):
+                stdout.write(stream)
+                stdout.flush()
+            return FakeProcess(pid=9191, exit_code=0)
+
+        adapter = ClaudeReviewerAdapter(
+            self.root, claude_executable=sys.executable, popen=popen
+        )
+        report = process_one_review(
+            self.root,
+            assignment_id=self.assignment_id,
+            adapter=adapter,
+            timeout_seconds=30,
+            apply=True,
+        )
+        self.assertEqual(report["status"], "completed")
+        self.assertEqual(report["verdict"], "accepted")
+        self.assertNotEqual(report["status"], STATE_INVALID_OUTPUT)
+
+    def test_stream_without_terminal_result_is_invalid_with_bounded_blocker(self) -> None:
+        events = []
+        for index in range(60):
+            events.append({"type": "text", "text": f"working {index}"})
+            events.append({"type": "item.completed", "structured_output": _valid_verdict()})
+        stream = "\n".join(json.dumps(event) for event in events)
+
+        def popen(argv, **kwargs):
+            del argv
+            stdout = kwargs.get("stdout")
+            if hasattr(stdout, "write"):
+                stdout.write(stream)
+                stdout.flush()
+            return FakeProcess(pid=9292, exit_code=0)
+
+        adapter = ClaudeReviewerAdapter(
+            self.root, claude_executable=sys.executable, popen=popen
+        )
+        report = process_one_review(
+            self.root,
+            assignment_id=self.assignment_id,
+            adapter=adapter,
+            timeout_seconds=30,
+            apply=True,
+        )
+        self.assertEqual(report["status"], STATE_INVALID_OUTPUT)
+        blocker = report["blocked_reason"]
+        self.assertLess(len(blocker), 1200)
+        self.assertNotIn("invalid verdict: ''", blocker)
+        rec, _ = read_assignment(self.root, self.assignment_id)
+        self.assertEqual(rec.status, "awaiting_review")
 
     def test_builder_stays_awaiting_review_on_auth_failure(self) -> None:
         def popen(argv, **kwargs):

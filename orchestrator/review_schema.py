@@ -10,6 +10,7 @@ from typing import Any
 VALID_VERDICTS = frozenset({"accepted", "changes_requested", "rejected"})
 VALID_SEVERITIES = frozenset({"critical", "high", "medium", "low"})
 VALID_NEXT_AGENTS = frozenset({"composer", "codex", "grok"})
+MAX_PARSE_ERRORS = 8
 
 REVIEW_JSON_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -29,12 +30,12 @@ REVIEW_JSON_SCHEMA: dict[str, Any] = {
         "repository_integrity": {
             "type": "object",
             "additionalProperties": False,
-            "required": ["verified", "branch", "local_sha", "remote_sha"],
+            "required": ["verified", "branch", "local_sha"],
             "properties": {
                 "verified": {"type": "boolean"},
                 "branch": {"type": "string"},
                 "local_sha": {"type": "string"},
-                "remote_sha": {"type": "string"},
+                "remote_sha": {"type": ["string", "null"]},
             },
         },
         "tests": {
@@ -132,11 +133,14 @@ def validate_review_payload(data: Any) -> tuple[ReviewVerdict | None, list[str]]
     else:
         if not isinstance(integrity.get("verified"), bool):
             errors.append("repository_integrity.verified must be boolean")
-        for key in ("branch", "local_sha", "remote_sha"):
+        for key in ("branch", "local_sha"):
             if not isinstance(integrity.get(key), str) or not str(integrity.get(key)).strip():
                 errors.append(f"repository_integrity.{key} must be a non-empty string")
         local_sha = str(integrity.get("local_sha") or "")
-        remote_sha = str(integrity.get("remote_sha") or "")
+        remote_sha_value = integrity.get("remote_sha")
+        if remote_sha_value is not None and not isinstance(remote_sha_value, str):
+            errors.append("repository_integrity.remote_sha must be string or null")
+        remote_sha = remote_sha_value.strip() if isinstance(remote_sha_value, str) else ""
         if local_sha and not _is_sha40(local_sha):
             errors.append("repository_integrity.local_sha must be 40-char hex")
         if remote_sha and not _is_sha40(remote_sha):
@@ -236,6 +240,21 @@ def _stdout_capture_snippet(text: str, *, limit: int = 800) -> str:
     return compact
 
 
+def _bounded_unique_errors(errors: list[str]) -> list[str]:
+    """Keep diagnostics useful without repeating one error for every stream event."""
+    bounded: list[str] = []
+    seen: set[str] = set()
+    for error in errors:
+        message = str(error)
+        if not message or message in seen:
+            continue
+        seen.add(message)
+        bounded.append(message)
+        if len(bounded) >= MAX_PARSE_ERRORS:
+            break
+    return bounded
+
+
 def parse_review_stdout(stdout: str) -> tuple[ReviewVerdict | None, list[str]]:
     """Extract structured verdict from Claude CLI stdout (json result envelope or raw object).
 
@@ -249,17 +268,26 @@ def parse_review_stdout(stdout: str) -> tuple[ReviewVerdict | None, list[str]]:
     if not text:
         return None, ["empty stdout"]
 
-    # stream-json is JSON Lines. Scan final-to-initial so the result event wins
-    # over earlier assistant/token events while preserving raw/json compatibility.
+    # stream-json is JSON Lines. Only the terminal ``result`` event is a verdict
+    # candidate; assistant/tool/user/item events may contain arbitrary JSON and
+    # must never be schema-validated as review payloads.
     lines = [line.strip() for line in text.splitlines() if line.strip()]
     if len(lines) > 1:
-        line_errors: list[str] = []
-        for line in reversed(lines):
-            verdict, errors = parse_review_stdout(line)
-            if verdict is not None:
-                return verdict, []
-            line_errors.extend(errors[:1])
-        return None, line_errors or ["no structured verdict in stream-json output"]
+        terminal_event: dict[str, Any] | None = None
+        for line in lines:
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(event, dict) and event.get("type") == "result":
+                terminal_event = event
+        if terminal_event is None:
+            return None, _bounded_unique_errors([
+                "no terminal result event in stream-json output",
+                f"stdout_capture: {_stdout_capture_snippet(text)}",
+            ])
+        text = json.dumps(terminal_event, separators=(",", ":"))
+
     capture = f"stdout_capture: {_stdout_capture_snippet(text)}"
     candidates: list[str] = [text]
     # Claude --output-format json wraps in {"type":"result","result":"..."} or nested JSON.
@@ -268,15 +296,23 @@ def parse_review_stdout(stdout: str) -> tuple[ReviewVerdict | None, list[str]]:
     except json.JSONDecodeError:
         outer = None
     if isinstance(outer, dict):
+        if "type" in outer and outer.get("type") != "result":
+            return None, _bounded_unique_errors([
+                "no terminal result event in stream-json output",
+                capture,
+            ])
         if "verdict" in outer:
-            return validate_review_payload(outer)
+            verdict, errors = validate_review_payload(outer)
+            return verdict, _bounded_unique_errors(errors)
         # Prefer structured_output when Claude fills the schema field (most reliable).
         structured = outer.get("structured_output")
         if isinstance(structured, dict) and "verdict" in structured:
-            return validate_review_payload(structured)
+            verdict, errors = validate_review_payload(structured)
+            return verdict, _bounded_unique_errors(errors)
         result_field = outer.get("result")
         if isinstance(result_field, dict) and "verdict" in result_field:
-            return validate_review_payload(result_field)
+            verdict, errors = validate_review_payload(result_field)
+            return verdict, _bounded_unique_errors(errors)
         if isinstance(result_field, str):
             stripped = result_field.strip()
             if stripped:
@@ -293,10 +329,10 @@ def parse_review_stdout(stdout: str) -> tuple[ReviewVerdict | None, list[str]]:
                 isinstance(structured, dict) and "verdict" in structured
             ):
                 # Envelope present but result is plain prose (classic Windows argv mangling).
-                return None, [
+                return None, _bounded_unique_errors([
                     "claude result envelope contains non-JSON prose (no structured verdict)",
                     capture,
-                ]
+                ])
 
     last_errors = ["no JSON object found in stdout"]
     for cand in candidates:
@@ -312,4 +348,4 @@ def parse_review_stdout(stdout: str) -> tuple[ReviewVerdict | None, list[str]]:
         if verdict is not None:
             return verdict, []
         last_errors = errors
-    return None, last_errors + [capture]
+    return None, _bounded_unique_errors(last_errors + [capture])

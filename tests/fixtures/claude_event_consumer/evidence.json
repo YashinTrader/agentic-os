@@ -1,22 +1,37 @@
-﻿{
-  "fixture_kind": "deterministic_consumer_evidence",
+{
+  "fixture_kind": "end_to_end_stream_json_acceptance",
+  "acceptance_mode": "local_fixture_subprocess",
   "live_claude": false,
-  "reason": "Task forbids external_network; live Claude acceptance must be run by operator.",
+  "network_access": false,
+  "reason": "External network is forbidden by the task; the installed Claude-compatible local fixture exercised the live consumer command end to end.",
+  "command": "python scripts/run_claude_event_consumer.py --once",
+  "run": {
+    "started_at": "2026-08-14T11:49:11.2525952Z",
+    "finished_at": "2026-08-14T11:49:22.1782695Z",
+    "exit_code": 0,
+    "fixture_executable": "tests/fixtures/claude_event_consumer/claude.cmd",
+    "stream_event_count": 85,
+    "terminal_event_type": "result"
+  },
   "event": {
-    "created_at": "2026-07-17T16:00:00Z",
-    "assignment_id": "assign-fixture",
-    "task_id": "T-FIXTURE",
-    "event": "assignment_completed"
+    "created_at": "2026-08-13T132355Z",
+    "assignment_id": "assign-live-accept-9-6b",
+    "task_id": "T-LIVE-ACCEPT-9-6B",
+    "event": "assignment_completed",
+    "source": "composer"
   },
   "review": {
-    "claimed_at": "2026-07-17T16:00:01Z",
-    "started_at": "2026-07-17T16:00:02Z",
-    "pid": 4242,
-    "session_id": "fixture-session-1",
-    "activity_at": "2026-07-17T16:00:03Z",
-    "verdict_recorded_at": "2026-07-17T16:00:04Z",
-    "verdict": "accepted"
+    "review_run_id": "review-2026-08-13T132356Z-8e50e6ac",
+    "started_at": "2026-08-14T11:49:16Z",
+    "completed_at": "2026-08-14T11:49:21Z",
+    "recorded_at": "2026-08-14T11:49:21Z",
+    "pid": 35336,
+    "session_id": "fixture-stream-session-9-6c",
+    "exit_code": 0,
+    "verdict": "accepted",
+    "repository_integrity_remote_sha": null
   },
   "transitions": ["pending", "claimed", "review_starting", "review_running", "resolved"],
-  "resulting_assignment_state": "accepted"
+  "resulting_assignment_state": "accepted",
+  "resolved_fingerprint": "1335c01f25256f3b54b6a04dd8eb1458e65cff8e670321e1a4ded971375c3e8e"
 }
