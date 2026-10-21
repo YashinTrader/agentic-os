@@ -38,6 +38,7 @@ from orchestrator.leases import (
     release_lease,
     try_acquire_concurrency,
 )
+from orchestrator.process_ownership import ownership_metadata
 from orchestrator.process_monitor import mark_orphaned, monitor_process, pid_is_alive
 from orchestrator.runtime_store import (
     STATE_BLOCKED_CAPACITY,
@@ -431,6 +432,8 @@ def process_wake_signal(
 
     # Only after a real PID exists may state become running.
     state.pid = handle.pid
+    for key, value in ownership_metadata(handle.process).items():
+        setattr(state, key, value)
     state.session_id = handle.session_id
     state.process_state = STATE_RUNNING
     state.heartbeat_at = utc_now()
@@ -580,6 +583,8 @@ def process_wake_signal(
                             "run_id": fallback_run, "route": route, "route_errors": route_errors}
                 if fb_handle is not None:
                     fb_state.pid = fb_handle.pid
+                    for key, value in ownership_metadata(fb_handle.process).items():
+                        setattr(fb_state, key, value)
                     fb_state.process_state = STATE_RUNNING
                     fb_state.heartbeat_at = utc_now()
                     save_run_state(repo_root, fb_state)
@@ -680,7 +685,7 @@ def recover_orphans(repo_root: Path) -> list[dict[str, Any]]:
     for state in list_supervisor_runs(repo_root, limit=100):
         if state.process_state not in {STATE_RUNNING, STATE_LAUNCHING}:
             continue
-        alive = pid_is_alive(state.pid or -1) if state.pid else False
+        alive = pid_is_alive(state.pid or -1, state.process_start_time) if state.pid else False
         if alive is False:
             mark_orphaned(repo_root, state, detail=f"PID {state.pid} not alive")
             release_lease(repo_root, state.assignment_id)

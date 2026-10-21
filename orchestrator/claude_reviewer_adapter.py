@@ -11,6 +11,8 @@ import os
 import re
 import shutil
 import subprocess
+from orchestrator.process_ownership import terminate_owned, ownership_metadata
+
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Callable
@@ -107,6 +109,8 @@ class ReviewRunState:
     task_id: str
     process_state: str = STATE_QUEUED
     pid: int | None = None
+    process_start_time: str | None = None
+    process_identity: str = ""
     session_id: str | None = None
     auth_mode: str = AUTH_MODE_LOCAL
     executable: str = ""
@@ -446,6 +450,8 @@ class ClaudeReviewerAdapter:
 
         self._handles[run_id] = handle
         state.pid = handle.pid
+        for key, value in ownership_metadata(handle.process).items():
+            setattr(state, key, value)
         state.process_state = STATE_RUNNING
         state.heartbeat_at = utc_now()
         save_review_state(self.repo_root, state)
@@ -469,6 +475,7 @@ class ClaudeReviewerAdapter:
         code = handle.process.poll()
         state.heartbeat_at = utc_now()
         if code is not None:
+            terminate_owned(handle.process)
             state.exit_code = int(code)
             state.completed_at = utc_now()
             stdout = Path(self.repo_root / state.stdout_path).read_text(encoding="utf-8", errors="replace") if state.stdout_path else ""
@@ -507,7 +514,7 @@ class ClaudeReviewerAdapter:
         handle = self._handles.get(run_id)
         if handle is not None:
             try:
-                handle.process.kill()
+                terminate_owned(handle.process)
             except OSError:
                 pass
             self._handles.pop(run_id, None)

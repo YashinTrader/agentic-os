@@ -116,7 +116,7 @@ class LayerSupervisorTests(unittest.TestCase):
         child = self.supervisor.children["builder"]
         self.assertEqual(child.status["reason"], "hung")
         self.assertEqual(child.status["state"], "backoff")
-        self.assertTrue(old.signals)
+        self.assertTrue(old.killed)
         self.now = 63
         self.supervisor.step()
         self.assertIsNot(child.process, old)
@@ -165,17 +165,13 @@ class LayerSupervisorTests(unittest.TestCase):
         self.assertGreaterEqual(register.call_count, 4)
         self.assertEqual(register.call_args.args[1], "previous")
 
-    def test_shutdown_escalates_if_child_ignores_signal(self):
+    def test_shutdown_terminates_owned_tree(self):
         self.supervisor.step()
         child = self.supervisor.children["builder"]
-        child.process.send_signal = lambda _: None
-        original_wait = child.process.wait
-        child.process.wait = Mock(side_effect=[subprocess.TimeoutExpired("dummy", 10), 0])
         self.supervisor.shutdown()
         self.assertTrue(child.process.killed)
         self.assertEqual(child.status["state"], "stopped")
         self.assertEqual(child.status["exits"], [])
-        child.process.wait = original_wait
 
     def test_atomic_status_failure_preserves_previous_document(self):
         self.supervisor.step()

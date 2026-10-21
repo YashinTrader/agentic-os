@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Callable
 
 from dispatch.atomic_io import atomic_write_json
+from orchestrator.process_ownership import owned_popen, terminate_owned, ownership_metadata
 from orchestrator.layer_heartbeat import read_heartbeat, timestamp
 
 STDERR_LIMIT = 8192
@@ -119,11 +120,12 @@ class LayerSupervisor:
                "AGENTIC_LAYER_TOKEN": child.token}
         options = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == "nt" else {}
         try:
-            child.process = self.popen(child.command, cwd=self.root, shell=False,
-                                       stderr=subprocess.PIPE, env=env, **options)
+            child.process = owned_popen(child.command, cwd=self.root, shell=False,
+                                       stderr=subprocess.PIPE, env=env, popen=self.popen, **options)
         except OSError as exc:
             self.failed(child, now, None, "launch_failed", str(exc))
             return
+        child.status.update(ownership_metadata(child.process))
         child.tail = StderrTail(child.process.stderr) if child.process.stderr else None
         if child.exit_started is not None:
             child.status["restart_count"] += 1
@@ -139,17 +141,8 @@ class LayerSupervisor:
         process = child.process
         if process is None:
             return
-        if process.poll() is None:
-            try:
-                if os.name == "nt":
-                    process.send_signal(signal.CTRL_BREAK_EVENT)
-                else:
-                    process.send_signal(signal.SIGTERM)
-                process.wait(timeout=10)
-            except (OSError, subprocess.TimeoutExpired):
-                if process.poll() is None:
-                    process.kill()
-                    process.wait(timeout=5)
+        terminate_owned(process)
+        process.wait(timeout=5)
         if child.tail:
             child.tail.thread.join(timeout=1)
 

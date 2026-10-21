@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from orchestrator.layer_heartbeat import tick
+from orchestrator.process_ownership import terminate_owned, pid_is_alive
 from orchestrator.run_deadlines import (
     DeadlinePolicy, RunDeadlines, StreamActivity, adapter_deadlines, worktree_snapshot,
 )
@@ -110,6 +111,7 @@ def monitor_process(
             persist(repo_root, state)
             if code is not None and fired is None:
                 exit_code = int(code)
+                terminate_owned(process)
                 break
             if fired:
                 state.deadline_fired, deadline_state = fired
@@ -123,7 +125,7 @@ def monitor_process(
                     kill_fn(process)
                 else:
                     try:
-                        process.kill()
+                        terminate_owned(process)
                     except OSError:
                         pass
                     try:
@@ -134,7 +136,7 @@ def monitor_process(
             sleep(max(0.05, heartbeat_seconds))
     except BaseException:
         if process.poll() is None:
-            process.kill()
+            terminate_owned(process)
             process.wait(timeout=5)
         raise
 
@@ -167,28 +169,3 @@ def mark_orphaned(repo_root: Path, state: RunState, *, detail: str = "process mi
     state.retry_eligible = False
     save_run_state(repo_root, state)
     return state
-
-
-def pid_is_alive(pid: int) -> bool | None:
-    if pid <= 0:
-        return False
-    if sys.platform == "win32":
-        try:
-            import ctypes
-
-            process = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)
-            if process:
-                ctypes.windll.kernel32.CloseHandle(process)
-                return True
-            return True if ctypes.get_last_error() == 5 else False
-        except (AttributeError, OSError, SystemError):
-            return None
-    try:
-        os.kill(pid, 0)
-        return True
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    except (OSError, SystemError):
-        return None

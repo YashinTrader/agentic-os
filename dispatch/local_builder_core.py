@@ -457,6 +457,9 @@ def run_adapter_local_builder(
             save_run_state(repo_root, activity_state)
         else:
             activity_state.pid = handle.pid
+            from orchestrator.process_ownership import ownership_metadata
+            for key, value in ownership_metadata(handle.process).items():
+                setattr(activity_state, key, value)
             activity_state.process_state = "running"
             save_run_state(repo_root, activity_state)
             monitored = monitor_process(
