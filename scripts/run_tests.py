@@ -64,16 +64,21 @@ def _parse_test_count(output: str) -> int | None:
     return None
 
 
-def _write_result(exit_code: int, output: str | bytes, *, handoff: Path | None = None, command_line: list[str] | None = None) -> None:
+def _write_result(exit_code: int, output: str | bytes, *, handoff: Path | None = None, command_line: list[str] | None = None, skip_install_reason: str | None = None) -> None:
     RESULT_PATH.parent.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
     block_hash = evidence_block_hash(handoff.read_text(encoding="utf-8")) if handoff else ""
     raw_output = output.encode("utf-8") if isinstance(output, str) else output
+    install_metadata = "dependency_install: performed\n" if skip_install_reason is None else (
+        f"dependency_install: skipped\ndependency_install_reason: {skip_install_reason}\n"
+    )
+    raw_output = install_metadata.encode("utf-8") + raw_output
     output_text = raw_output.decode("utf-8", errors="replace")
     test_count = _parse_test_count(output_text)
     count_line = f"test_count: {test_count}\n" if test_count is not None else ""
     content = (
         f"timestamp: {stamp}\n"
+        f"{install_metadata}"
         f"repo_identity: {repository_identity(REPO_ROOT)}\n"
         f"artifact_origin_path: {_git_toplevel()}\n"
         f"hostname: {platform.node()}\n"
@@ -95,10 +100,20 @@ def _write_result(exit_code: int, output: str | bytes, *, handoff: Path | None =
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--handoff", type=Path, required=True, help="Handoff whose evidence block is sealed")
+    parser.add_argument("--skip-install", action="store_true", help="Use existing dependencies")
+    parser.add_argument("--skip-install-reason", help="Required explanation when skipping dependency installation")
     args = parser.parse_args()
+    if args.skip_install:
+        if not args.skip_install_reason or not args.skip_install_reason.strip():
+            parser.error("--skip-install requires a nonempty --skip-install-reason")
+        if any(c in args.skip_install_reason for c in "\r\n"):
+            parser.error("--skip-install-reason must be a single line")
+        args.skip_install_reason = args.skip_install_reason.strip()
+    elif args.skip_install_reason is not None:
+        parser.error("--skip-install-reason requires --skip-install")
     commit = _git_head()
     print(f"run_tests: repo={REPO_ROOT} commit={commit}")
-    if REQUIREMENTS.exists():
+    if not args.skip_install and REQUIREMENTS.exists():
         install = subprocess.run(
             [sys.executable, "-m", "pip", "install", "-r", str(REQUIREMENTS), "-q"],
             cwd=REPO_ROOT,
@@ -133,7 +148,7 @@ def main() -> int:
         print(tests.stdout.decode("utf-8", errors="replace"), end="")
     if tests.stderr:
         print(tests.stderr.decode("utf-8", errors="replace"), end="", file=sys.stderr)
-    _write_result(tests.returncode, combined, handoff=args.handoff, command_line=tests.args)
+    _write_result(tests.returncode, combined, handoff=args.handoff, command_line=tests.args, skip_install_reason=args.skip_install_reason)
     print(f"run_tests: wrote {RESULT_PATH.relative_to(REPO_ROOT)} exit={tests.returncode}")
     return tests.returncode
 

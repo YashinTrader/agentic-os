@@ -39,7 +39,9 @@ def _git_rev_parse(ref: str = "HEAD") -> str | None:
     return None
 
 
-def _print_result(result) -> None:
+def _print_result(result, artifact=None) -> None:
+    if artifact and artifact.get("dependency_install") == "skipped":
+        print(f"Dependency install: skipped ({artifact.get('dependency_install_reason', '')})")
     if result.artifact_status:
         label = "verified" if result.artifact_status == "verified" else "failed"
         print(f"Artifact: {label}")
@@ -163,7 +165,7 @@ def main() -> int:
     if result.post_test_violations:
         print("Post-test violations:", ", ".join(result.post_test_violations), file=sys.stderr)
 
-    _print_result(result)
+    _print_result(result, artifact)
     if result.status == "verified":
         return 0
     if result.status == "structurally_valid":

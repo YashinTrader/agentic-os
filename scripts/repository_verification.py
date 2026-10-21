@@ -284,6 +284,9 @@ def load_unittest_artifact(repo_root: Path | str) -> tuple[dict[str, str] | None
         raw_output = raw.partition(b"--- raw output ---\n")[2]
         output = raw_output.decode("utf-8", errors="replace")
         fields["computed_output_sha256"] = hashlib.sha256(raw_output).hexdigest()
+        for key in ("dependency_install", "dependency_install_reason"):
+            match_metadata = re.search(rf"^{key}: ([^\n]*)$", output, re.MULTILINE)
+            fields[f"computed_{key}"] = match_metadata.group(1) if match_metadata else ""
         ids = failure_ids(output)
         fields["computed_failures"] = json.dumps(ids)
         failed = re.search(r"^FAILED \(([^\n]+)\)", output, re.MULTILINE)
@@ -353,6 +356,10 @@ def validate_test_artifact(
     except (ValueError, TypeError):
         errors.append(f"{rel}: invalid exit code or known_exempt_failures")
 
+    for key in ("dependency_install", "dependency_install_reason"):
+        if key in artifact or artifact.get(f"computed_{key}"):
+            if artifact.get(key, "") != artifact.get(f"computed_{key}", ""):
+                errors.append(f"{rel}: artifact {key} mismatch with hashed output")
     expected_result = "passed" if artifact_exit == "0" else "failed"
     if artifact.get("computed_result") != expected_result:
         errors.append(f"{rel}: raw test summary conflicts with exit code or failures")

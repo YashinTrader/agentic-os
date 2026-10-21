@@ -71,3 +71,9 @@ validator_exit_code: 0
 post_test_diff_policy: POST_TEST_ALLOWLIST_EXACT; working changes uncommitted, committed-tip verification pending
 post_test_files: handoffs/T-M1-05-PROVENANCE-DEPLOY-ROOT__codex__to__claude.md
 working_copy_path: C:/Users/gabot/agentic-os-worktrees/m1-05-provenance
+
+## T-M1-12 bounded follow-up
+
+Added --skip-install with a required nonempty, single-line --skip-install-reason. Default installation remains unchanged. Artifacts include dependency install metadata in both the header and SHA-256-hashed raw output; verification checks their agreement and reports skipped installation informationally without relaxing existing checks. Regression coverage includes argument validation, mocked default/skip execution, artifact metadata, header-only and raw-output reason tampering, and report output.
+
+Validation: all 16 tests in tests.test_provenance_deploy_root passed using an in-process test harness that replaces tempfile.mkdtemp with clone-local mode-0777 directories (the host denies access to Python mode-0700 temporary directories). Direct unittest invocation encountered those host permission errors. python scripts/validate.py exited 0; git diff --check passed. No installs, full-suite run, network, push, or merge performed. Existing historical verification fields above were not regenerated.
