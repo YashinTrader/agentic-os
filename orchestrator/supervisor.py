@@ -39,6 +39,7 @@ from orchestrator.leases import (
     try_acquire_concurrency,
 )
 from orchestrator.process_ownership import ownership_metadata
+from orchestrator.quota_probe import paid_probe_status
 from orchestrator.process_monitor import mark_orphaned, monitor_process, pid_is_alive
 from orchestrator.runtime_store import (
     STATE_BLOCKED_CAPACITY,
@@ -741,6 +742,11 @@ def run_forever(
         if report_status != "idle" and state_key != status.get("last_state") and state_logger:
             state_logger(report)
         status.update({"last_tick_at": utc_now(), "last_state": state_key})
+        status["quota_probes"] = paid_probe_status(repo_root, now=clock_from(cfg))
+        status["quota_probe_alerts"] = {
+            provider: {"classification": "probe_misconfigured", "reason": details["alert_reason"]}
+            for provider, details in status["quota_probes"].items() if "alert_reason" in details
+        }
         status_path.parent.mkdir(parents=True, exist_ok=True)
         atomic_write_json(status_path, status)
         if report.get("status") == "idle":

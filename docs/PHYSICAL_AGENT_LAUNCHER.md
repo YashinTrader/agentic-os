@@ -82,8 +82,8 @@ Builder runs blocked on quota or authentication record `blocked_on`
 and `attempts` on the run record. The supervisor tick re-evaluates them without
 a new wake. A run becomes eligible when its parsed `retry_after` elapses, when
 the exponential backoff elapses (15 minutes, doubling, capped at 6 hours), or
-when a quota-free probe succeeds. Probes run at most once per provider per 10
-minutes. Each eligibility window relaunches once. A `retry_after` that is no
+when an authentication or quota probe succeeds. Free authentication probes run
+at most once per provider per 10 minutes. Each eligibility window relaunches once. A `retry_after` that is no
 longer in the future does not open another immediate window; the next wait is
 the backoff. The relaunch reuses the preserved
 worktree, branch, and work lock, and still uses the M1-04B deadlines. The
@@ -95,13 +95,39 @@ becomes `blocked_external` and an alert is written to
 still replaces the held work lock, and a changed fingerprint can still relaunch
 through the existing wake path.
 
-Probes, from the installed CLIs (no model invocation):
+Free authentication probes (no model invocation):
 
 | Provider | Probe | Notes |
 |---|---|---|
-| grok / composer | none | `grok status` opens the TUI. There is no non-mutating status command, so Grok waits on backoff or `retry_after` only. |
+| grok / composer | none | `grok status` opens the TUI. Authentication waits on backoff or `retry_after`. |
 | codex | `codex login status` | Resolved executable, `shell=False`, success is exit code 0. This sees login, not quota, so it clears `auth:codex` only. |
 | claude | `claude auth status` | Same M1-02 probe; only `auth:claude` with `loggedIn: true`. |
+
+Paid quota recovery is configured in `agents/quota_probe.yaml` (`enabled`,
+`codex_model`, `min_interval_seconds`). The minimum is 3600 seconds unless
+`owner_override: true` explicitly allows a shorter interval. An absent config
+disables paid probes. Only providers with blocked quota runs below the retry cap
+are probed; one provider probe serves all those runs. Success persists their
+eligibility before the supervisor dispatches one retry per tick. A fresh quota
+failure consumes a new backoff window and cannot reuse the earlier success.
+
+Each probe uses a resolved executable, `shell=False`, closed stdin, an empty
+temporary cwd, and a 120-second timeout with owned process-tree termination:
+
+| Provider | Paid quota command |
+|---|---|
+| codex | `codex exec -m <codex_model> -c model_reasoning_effort=low -c mcp_servers={} -s read-only --skip-git-repo-check --json "Reply with exactly: ok"` |
+| grok | `grok --cwd <temp> --max-turns 1 --output-format json --single "Reply with exactly: ok"` |
+| claude | `claude -p "Reply with exactly: ok" --model haiku` |
+
+`runtime/dispatch/paid_quota_probes.json` reserves `last_paid_probe_at` before
+launch, under an OS guard. Crashes consume the interval; unreadable state fails
+closed. `paid_quota_probes.jsonl` is append-only, with a durable start record and
+a terminal record containing provider, started_at, duration (seconds), outcome,
+exit_code, and classification. Raw model output is not retained. Supervisor
+status exposes `quota_probes.<provider>.last_paid_probe_at` and
+`quota_probes.<provider>.paid_probes_24h` (counting starts, including interrupted
+probes).
 
 `recovered_at` and `recovery_seconds` record the interval from `blocked_since`
 to the first genuine activity of a successful condition relaunch.

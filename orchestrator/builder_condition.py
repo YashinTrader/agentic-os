@@ -7,16 +7,16 @@ it without a new wake and relaunches at most once per eligibility window when:
 - the exponential backoff has elapsed (15 minutes, doubling, capped at 6 hours), or
 - a cheap local probe reports the condition cleared.
 
-Probes are rate-limited to one attempt per provider per 10 minutes and must not
-spend model quota.
+Free authentication probes are limited to once per provider per 10 minutes.
+Quota recovery uses separately persisted, owner-configured hourly paid probes.
 
 Discovery (do not call ``grok status``; it opens the TUI):
 
 - grok / composer: no non-mutating status or auth command. Probe is none.
-  Eligibility is backoff or ``retry_after`` only.
+  Auth eligibility is backoff or ``retry_after`` only.
 - codex: ``codex login status`` (resolved executable, ``shell=False``, exit code).
   That command observes login, not remaining quota, so it can clear ``auth:codex``
-  only. ``quota:codex`` stays on backoff / ``retry_after``.
+  only. Quota uses the separately rate-limited paid probe.
 - claude: the M1-02 ``claude auth status`` probe (``auth:claude`` only).
 """
 
@@ -32,6 +32,7 @@ from dispatch.assignment_channel import read_assignment, set_assignment_status
 from dispatch.atomic_io import atomic_write_json
 from dispatch.work_lock import WorkLockError, status as lock_status
 from orchestrator.agent_launcher import resolve_executable
+from orchestrator.quota_probe import probe_blocked_providers
 from orchestrator.runtime_store import (
     STATE_BLOCKED_AUTHENTICATION,
     STATE_BLOCKED_EXTERNAL,
@@ -66,13 +67,13 @@ def parse_time(value: str) -> datetime:
 def clock_from(config: object) -> datetime:
     fn = getattr(config, "now", None)
     if fn is None:
-        return datetime.now(timezone.utc).replace(microsecond=0)
+        return datetime.now(timezone.utc)
     value = fn()
     if not isinstance(value, datetime):
         raise TypeError("supervisor clock must return datetime")
     if value.tzinfo is None:
         value = value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc).replace(microsecond=0)
+    return value.astimezone(timezone.utc)
 
 
 def provider_for_agent(agent: str) -> str:
@@ -391,7 +392,18 @@ def reevaluate_blocked_builders(
     max_attempts = int(getattr(config, "max_condition_retries", None) or MAX_CONDITION_RETRIES)
     escalated: list[str] = []
     eligible: list[RunState] = []
-    for state in latest_condition_runs(repo_root):
+    states = latest_condition_runs(repo_root)
+    cleared = probe_blocked_providers(
+        repo_root, [s for s in states if s.attempts < max_attempts], now=now
+    )
+    for state in states:
+        if (state.blocked_on == f"quota:{provider_of(state.blocked_on)}"
+                and provider_of(state.blocked_on) in cleared
+                and not state.condition_retry_dispatched_at and state.attempts < max_attempts):
+            # Persist all beneficiaries before dispatching one. Later ticks (and
+            # restarts) can dispatch the others without buying another probe.
+            state.next_eligible_at = format_time(now)
+            save_run_state(repo_root, state)
         decision = evaluate_run(repo_root, state, now=now, probe=probe, max_attempts=max_attempts)
         if decision == "escalate":
             escalate_condition_block(repo_root, state, now=now)
