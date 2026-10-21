@@ -20,6 +20,8 @@ def _sha(ch: str = "a") -> str:
 
 def _verification(**overrides) -> dict:
     base = {
+        "expected_repo_identity": "identity",
+        "evidence_block_sha256": "seal",
         "implementation_sha": _sha("e"),
         "tests_commit_sha": _sha("e"),
         "final_head_sha": _sha("f"),
@@ -46,6 +48,16 @@ def _current_closeout_handoff() -> str:
 
 def _artifact(**overrides) -> dict:
     base = {
+        "repo_identity": "identity",
+        "artifact_origin_path": "C:/Users/gabot/agentic-os",
+        "hostname": "host",
+        "python_version": "3.12",
+        "command_line": "python -m unittest",
+        "raw_output_sha256": "hash",
+        "computed_output_sha256": "hash",
+        "computed_test_count": "350",
+        "computed_result": "passed",
+        "evidence_block_sha256": "seal",
         "commit_full": _sha("e"),
         "test_count": "350",
         "exit_code": "0",
@@ -254,7 +266,7 @@ class ArtifactCrossCheckTests(unittest.TestCase):
             rel="test",
             is_ancestor=lambda a, d: True,
         )
-        self.assertTrue(any("canonical clone" in e for e in errors))
+        self.assertTrue(any("origin path mismatch" in e for e in errors))
 
     def test_not_ancestor_fails(self) -> None:
         errors, status = rv.validate_test_artifact(

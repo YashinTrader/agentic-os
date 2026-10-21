@@ -7,6 +7,8 @@ validator-at-HEAD) run via CLI or when callers supply git context.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 import subprocess
 import sys
@@ -21,6 +23,7 @@ UNITTEST_ARTIFACT_REL = "runtime/unittest_last_run.txt"
 # Explicit post-test allowlist — no broad directory prefixes.
 POST_TEST_ALLOWLIST_EXACT = frozenset(
     {
+        "handoffs/T-M1-05-PROVENANCE-DEPLOY-ROOT__codex__to__claude.md",
         "handoffs/T-M1-04B-THREE-DEADLINES__codex__to__claude.md",
         "handoffs/T-M1-08-WORK-LOCK__codex__to__claude.md",
         "handoffs/T-M1-04-CHILD-SUPERVISION__codex__to__claude.md",
@@ -84,15 +87,6 @@ POST_TEST_FORBIDDEN_PREFIXES = (
     "integrations/",
 )
 
-DEPRECATED_CLONE_MARKERS = (
-    "documents/codex/agentic-os",
-)
-
-CANONICAL_CLONE_MARKERS = (
-    "c:/users/gabot/agentic-os",
-    "c:\\users\\gabot\\agentic-os",
-)
-
 REQUIRED_VERIFICATION_FIELDS_V2 = (
     "repo_root:",
     "branch:",
@@ -144,6 +138,45 @@ class ValidatorRunResult:
     error: str = ""
 
 
+def repository_identity(root: Path | str) -> str:
+    """Identity requires both complete root history and an exact configured origin."""
+    root = Path(root).resolve()
+    seen = set()
+    expected_roots = None
+    while root not in seen:
+        seen.add(root)
+        def git(*args):
+            return subprocess.run(["git", *args], cwd=root, capture_output=True,
+                                  text=True, check=True).stdout.strip()
+        roots = sorted(git("rev-list", "--max-parents=0", "HEAD").splitlines())
+        if expected_roots is not None and roots != expected_roots:
+            raise ValueError("Local origin history identity mismatch")
+        expected_roots = roots
+        remotes = git("remote").splitlines()
+        name = "canonical" if "canonical" in remotes else "origin"
+        remote = git("config", "--get", f"remote.{name}.url")
+        if not roots or not remote:
+            raise ValueError("Repository identity requires root history and origin URL")
+        local = Path(remote)
+        if not local.is_absolute():
+            local = root / local
+        if local.is_dir():
+            root = local.resolve()
+            continue
+        return json.dumps({"roots": roots, "origin": remote}, sort_keys=True)
+    raise ValueError("Cyclic local repository origins")
+
+
+def evidence_block_hash(text: str) -> str:
+    section = text.split("## Repository Verification", 1)[1]
+    section = section.split("\n## ", 1)[0]
+    return hashlib.sha256(section.encode("utf-8")).hexdigest()
+
+
+def failure_ids(output: str) -> list[str]:
+    return [value.rstrip("\r") for value in re.findall(r"^(?:FAIL|ERROR): (.+)$", output, re.MULTILINE)]
+
+
 def verification_field_value(text: str, field_name: str) -> str | None:
     prefix = field_name if field_name.endswith(":") else f"{field_name}:"
     for line in text.splitlines():
@@ -181,12 +214,14 @@ def parse_verification_block(text: str) -> dict[str, str]:
         "post_test_files",
         "working_copy_path",
         "final_head_ref",
+        "known_exempt_failures",
         "artifact_parent_sha",
         "artifact_commit_sha",
     ):
         val = verification_field_value(block, f"{key}:")
         if val is not None:
             out[key] = val
+    out["evidence_block_sha256"] = evidence_block_hash(text)
     return out
 
 
@@ -239,25 +274,28 @@ def load_unittest_artifact(repo_root: Path | str) -> tuple[dict[str, str] | None
     if not path.exists():
         return None, False
     try:
-        text = path.read_text(encoding="utf-8")
+        raw = path.read_bytes()
+        text = raw.decode("utf-8", errors="replace")
     except OSError:
         return None, True
-    return parse_unittest_last_run(text), True
-
-
-def _normalize_path_for_compare(path: str) -> str:
-    return path.replace("\\", "/").rstrip("/").lower()
-
-
-def _repo_path_matches_canonical(repo_root: str, declared_repo_root: str | None) -> bool:
-    norm = _normalize_path_for_compare(repo_root)
-    if any(marker in norm for marker in DEPRECATED_CLONE_MARKERS):
-        return False
-    if declared_repo_root:
-        declared = _normalize_path_for_compare(declared_repo_root)
-        if declared and norm != declared:
-            return False
-    return any(marker in norm for marker in CANONICAL_CLONE_MARKERS) or bool(declared_repo_root)
+    fields = parse_unittest_last_run(text)
+    if fields is not None:
+        raw_output = raw.partition(b"--- raw output ---\n")[2]
+        output = raw_output.decode("utf-8", errors="replace")
+        fields["computed_output_sha256"] = hashlib.sha256(raw_output).hexdigest()
+        ids = failure_ids(output)
+        fields["computed_failures"] = json.dumps(ids)
+        failed = re.search(r"^FAILED \(([^\n]+)\)", output, re.MULTILINE)
+        counts = re.findall(r"(?:failures|errors)=(\d+)", failed.group(1)) if failed else []
+        if failed and counts and sum(map(int, counts)) == len(ids):
+            fields["computed_result"] = "failed"
+        elif re.search(r"^OK(?: \([^\n]*\))?\s*$", output, re.MULTILINE) and not ids and not failed:
+            fields["computed_result"] = "passed"
+        else:
+            fields["computed_result"] = "invalid"
+        match = re.search(r"^Ran (\d+) tests? in ", output, re.MULTILINE)
+        fields["computed_test_count"] = match.group(1) if match else ""
+    return fields, True
 
 
 def validate_test_artifact(
@@ -283,7 +321,6 @@ def validate_test_artifact(
     tests = str(verification.get("tests_commit_sha", "")).strip()
     handoff_count = str(verification.get("test_count", "")).strip()
     handoff_exit = str(verification.get("test_exit_code", "")).strip()
-    declared_repo = str(verification.get("repo_root", "")).strip()
 
     commit_full = artifact.get("commit_full", "")
     if not _SHA40_RE.match(commit_full):
@@ -302,15 +339,41 @@ def validate_test_artifact(
     artifact_exit = artifact.get("exit_code", "")
     if handoff_exit and artifact_exit != handoff_exit:
         errors.append(f"{rel}: artifact exit code mismatch")
-    if artifact_exit != "0":
-        errors.append(f"{rel}: artifact exit code mismatch")
+    try:
+        exemptions = json.loads(str(verification.get("known_exempt_failures", "[]")))
+        failures = json.loads(artifact.get("computed_failures", "[]"))
+        if not isinstance(exemptions, list) or not all(isinstance(x, str) for x in exemptions):
+            raise ValueError("exemptions must be a list of test ids")
+        if artifact_exit != "0" and (not failures or any(x not in exemptions for x in failures)):
+            errors.append(f"{rel}: unlisted test failure or non-test error")
+        if artifact_exit == "0" and failures:
+            errors.append(f"{rel}: failures conflict with zero exit code")
+        int(artifact_exit)
+    except (ValueError, TypeError):
+        errors.append(f"{rel}: invalid exit code or known_exempt_failures")
 
-    repo_root = artifact.get("repo_root", "")
-    if any(marker in _normalize_path_for_compare(repo_root) for marker in DEPRECATED_CLONE_MARKERS):
-        errors.append(f"{rel}: artifact repository path is not the canonical clone")
-    elif declared_repo and _normalize_path_for_compare(repo_root) != _normalize_path_for_compare(declared_repo):
-        errors.append(f"{rel}: artifact repository path is not the canonical clone")
+    expected_result = "passed" if artifact_exit == "0" else "failed"
+    if artifact.get("computed_result") != expected_result:
+        errors.append(f"{rel}: raw test summary conflicts with exit code or failures")
+    expected_identity = verification.get("expected_repo_identity")
+    if not expected_identity or artifact.get("repo_identity") != expected_identity:
+        errors.append(f"{rel}: artifact repository identity mismatch")
+    for key in ("artifact_origin_path", "hostname", "python_version", "command_line"):
+        if not artifact.get(key):
+            errors.append(f"{rel}: artifact missing {key}")
+    if artifact.get("artifact_origin_path") != artifact.get("repo_root"):
+        errors.append(f"{rel}: artifact origin path mismatch")
+    for recorded, computed in (("raw_output_sha256", "computed_output_sha256"),
+                               ("test_count", "computed_test_count")):
+        if not artifact.get(computed) or artifact.get(recorded) != artifact.get(computed):
+            errors.append(f"{rel}: artifact {recorded} mismatch")
+    if not verification.get("evidence_block_sha256") or artifact.get("evidence_block_sha256") != verification.get("evidence_block_sha256"):
+        errors.append(f"{rel}: handoff evidence block hash mismatch")
 
+    if not tests or not _SHA40_RE.fullmatch(tests):
+        errors.append(f"{rel}: invalid tests_commit_sha")
+    if not actual_head_sha or is_ancestor is None:
+        errors.append(f"{rel}: artifact reachability was not verified")
     if actual_head_sha and is_ancestor is not None:
         ancestor = is_ancestor(commit_full, actual_head_sha)
         if ancestor is False:
@@ -442,7 +505,13 @@ def validate_repository_verification(
 
     test_exit = str(verification.get("test_exit_code", "")).strip()
     if test_exit and test_exit != "0":
-        errors.append(f"{rel}: test_exit_code must be 0 (got {test_exit!r})")
+        try:
+            int(test_exit)
+            exemptions = json.loads(str(verification.get("known_exempt_failures", "[]")))
+            if not isinstance(exemptions, list) or not exemptions or not all(isinstance(x, str) and x for x in exemptions):
+                raise ValueError("missing failure exemptions")
+        except (ValueError, TypeError):
+            errors.append(f"{rel}: non-zero test_exit_code requires known_exempt_failures test ids")
     validator_exit_declared = str(verification.get("validator_exit_code", "")).strip()
     if validator_exit_declared and validator_exit_declared != "0":
         errors.append(f"{rel}: validator_exit_code must be 0 (got {validator_exit_declared!r})")
