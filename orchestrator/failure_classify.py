@@ -7,8 +7,10 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from dispatch.mcp_isolation import classify_required_mcp_failure
 from orchestrator.runtime_store import (
     STATE_BLOCKED_AUTHENTICATION,
+    STATE_BLOCKED_EXTERNAL,
     STATE_BLOCKED_QUOTA,
     STATE_FAILED,
     STATE_FAILED_LAUNCH,
@@ -89,6 +91,7 @@ def classify_process_output(
     timed_out: bool = False,
     launch_error: str | None = None,
     deadline_state: str | None = None,
+    required_mcp_servers: list[str] | None = None,
 ) -> Classification:
     if deadline_state in {"failed_launch", "stalled", "timed_out"}:
         return Classification(
@@ -119,6 +122,22 @@ def classify_process_output(
             category="max_turns",
             detail="agent reached the bounded turn limit",
             retry_eligible=True,
+        )
+
+    # Required MCP failures are external blockers (truthful; not silent).
+    mcp_hit = classify_required_mcp_failure(
+        required_mcp_servers=list(required_mcp_servers or []),
+        stdout=stdout,
+        stderr=stderr,
+        exit_code=exit_code,
+    )
+    if mcp_hit is not None:
+        return Classification(
+            process_state=STATE_BLOCKED_EXTERNAL,
+            category="blocked_external",
+            detail=str(mcp_hit.get("detail") or "required MCP failure")[:500],
+            retry_after=retry_after,
+            retry_eligible=False,
         )
 
     for pattern in _AUTH_PATTERNS:

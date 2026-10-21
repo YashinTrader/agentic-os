@@ -79,7 +79,13 @@ CODEX_RUN_CONFIG = LocalBuilderRunConfig(
 
 def _codex_command_plan(**kwargs: Any) -> CommandPlan:
     plan = build_codex_command(**kwargs)
-    return CommandPlan(argv=plan.argv, cwd=plan.cwd, blocked_reasons=plan.blocked_reasons)
+    return CommandPlan(
+        argv=plan.argv,
+        cwd=plan.cwd,
+        blocked_reasons=plan.blocked_reasons,
+        required_mcp_servers=list(plan.required_mcp_servers),
+        mcp_isolation=dict(plan.mcp_isolation or {}),
+    )
 
 
 def _codex_prepare_environment(adapter: dict[str, Any]) -> tuple[dict[str, str], list[str], str | None]:

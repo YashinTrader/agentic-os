@@ -8,7 +8,7 @@ executable: codex
 agent_id: codex
 status: active
 promotion_state: restricted_execution
-command_template: "codex exec -C {worktree_path} -s workspace-write --json -o {agent_output_path}"
+command_template: "codex exec --ignore-user-config -c mcp_servers={} -C {worktree_path} -s workspace-write --json -o {agent_output_path}"
 allowed_commands:
   - codex
 required_clis:
@@ -44,6 +44,9 @@ allowed_flags:
   - "--json"
   - "-o"
   - "--output-last-message"
+  - "-c"
+  - "--config"
+  - "--ignore-user-config"
 forbidden_flags:
   - "--dangerously-bypass-approvals-and-sandbox"
   - "--dangerously-bypass-hook-trust"
@@ -81,3 +84,7 @@ notes: >
   Autonomous local builder adapter. Standing execution policy auto_local_worktree
   authorizes bounded Codex development in isolated worktrees without per-run approval.
   Generic dispatch remains blocked. Merge, push, and deploy are manual operator steps.
+  MCP isolation (Phase 3.9.5): launches inject `--ignore-user-config` and
+  `-c mcp_servers={}` so user-level optional MCP servers cannot abort unrelated
+  tasks. Optional task/assignment field required_mcp_servers (default []) may
+  rehydrate only named servers from a read-only operator config snapshot.

@@ -16,6 +16,11 @@ from typing import Any, Literal
 
 from dispatch.atomic_io import atomic_create_json, atomic_write_json
 from dispatch import work_lock
+from dispatch.mcp_isolation import (
+    extract_required_mcp_servers,
+    normalize_required_mcp_servers,
+    validate_required_mcp_servers,
+)
 
 ASSIGNMENT_SCHEMA_VERSION = "1.0"
 INBOX_DIRNAME = "inbox"
@@ -295,6 +300,7 @@ class AssignmentRecord:
     woken_at: str | None = None
     wake_state: str = "not_requested"
     wake_detail: str | None = None
+    required_mcp_servers: list[str] = field(default_factory=list)
     parse_errors: list[str] = field(default_factory=list)
     source_path: str = ""
 
@@ -366,6 +372,15 @@ def _as_int(value: Any, default: int = DEFAULT_TIMEOUT_SECONDS) -> int:
         return default
 
 
+def _safe_required_mcp_servers(value: Any) -> list[str]:
+    if value is None:
+        return []
+    try:
+        return normalize_required_mcp_servers(value)
+    except TypeError:
+        return []
+
+
 def validate_assignment_payload(data: dict[str, Any]) -> list[str]:
     """Schema-validate a full assignment contract. Non-fatal for readers."""
     errors: list[str] = []
@@ -405,6 +420,8 @@ def validate_assignment_payload(data: dict[str, Any]) -> list[str]:
         if list_field in data and data[list_field] is not None:
             if not isinstance(data[list_field], list):
                 errors.append(f"{list_field} must be a list")
+    if "required_mcp_servers" in data and data["required_mcp_servers"] is not None:
+        errors.extend(validate_required_mcp_servers(data["required_mcp_servers"]))
     if "timeout" in data and data["timeout"] is not None:
         try:
             timeout = int(data["timeout"])
@@ -525,6 +542,7 @@ def parse_assignment_record(data: dict[str, Any], *, source_path: str = "") -> A
         woken_at=str(data.get("woken_at") or "") or None,
         wake_state=str(data.get("wake_state") or "not_requested"),
         wake_detail=str(data.get("wake_detail") or "") or None,
+        required_mcp_servers=_safe_required_mcp_servers(data.get("required_mcp_servers")),
         parse_errors=errors,
         source_path=source_path,
     )
@@ -597,6 +615,7 @@ def assignment_to_payload(record: AssignmentRecord) -> dict[str, Any]:
         "woken_at": record.woken_at,
         "wake_state": record.wake_state,
         "wake_detail": record.wake_detail,
+        "required_mcp_servers": list(record.required_mcp_servers or []),
         # Legacy alias for older readers
         "handoff_rel": record.handoff_path,
     }
@@ -632,6 +651,7 @@ def write_assignment(
     parent_assignment_id: str | None = None,
     reassigned_from: str | None = None,
     reassignment_reason: str | None = None,
+    required_mcp_servers: list[str] | None = None,
 ) -> tuple[Path | None, list[str]]:
     """Write a pending assignment to inbox. Schema-validates before write."""
     assigner = assigned_by.strip().lower()
@@ -710,6 +730,9 @@ def write_assignment(
         "woken_at": None,
         "wake_state": "pending_wake" if wake else "not_requested",
         "wake_detail": None,
+        "required_mcp_servers": normalize_required_mcp_servers(
+            required_mcp_servers if required_mcp_servers is not None else []
+        ),
     }
     errors = validate_assignment_payload(payload)
     if errors:
@@ -1822,6 +1845,7 @@ def create_assignment_from_task_yaml(
         task_path=rel_task,
         instructions=str(task.get("notes") or "") or None,
         wake=wake,
+        required_mcp_servers=extract_required_mcp_servers(task),
     )
 
 

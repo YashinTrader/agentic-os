@@ -246,6 +246,19 @@ repo, MCP side effects, merge to protected branches, dashboard write controls.
 
 ---
 
+## MCP isolation (Phase 3.9.5)
+
+Assignments/tasks may declare optional `required_mcp_servers` (default `[]`).
+
+- **Codex** launches inject `--ignore-user-config` and `-c mcp_servers={}` so
+  stale tokens for unused MCP servers cannot abort the run. See
+  `docs/MCP_ISOLATION_POLICY.md` for exact flags and rehydration rules.
+- **Grok Build** has no per-invocation MCP allowlist flag today; the launcher
+  records the gap on `LaunchPlan.mcp_isolation` rather than inventing flags.
+- Required MCP failures classify as `blocked_external`.
+
+---
+
 ## Gabriel-gated blockers (not this loop)
 
 - Adding `composer-restricted` to `enabled_adapters`

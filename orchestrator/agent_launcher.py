@@ -12,6 +12,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Sequence
 
+from dispatch.mcp_isolation import (
+    build_grok_mcp_isolation_note,
+    extract_required_mcp_servers,
+    load_user_mcp_servers,
+    normalize_required_mcp_servers,
+)
 from orchestrator.runtime_store import STATE_BLOCKED_NO_ADAPTER, STATE_FAILED_LAUNCH, STATE_LAUNCHING
 from orchestrator.run_deadlines import worktree_snapshot
 
@@ -44,6 +50,8 @@ class LaunchPlan:
     command_redacted: list[str] = field(default_factory=list)
     stdin_text: str | None = None
     inherit_environment: bool = True
+    required_mcp_servers: list[str] = field(default_factory=list)
+    mcp_isolation: dict[str, Any] = field(default_factory=dict)
 
     @property
     def ok(self) -> bool:
@@ -126,8 +134,11 @@ def build_grok_launch_plan(
     grok_executable: str | None = None,
     output_format: str = "json",
     version_runner: Callable[..., subprocess.CompletedProcess[str]] | None = None,
+    required_mcp_servers: list[str] | None = None,
 ) -> LaunchPlan:
     del timeout_hint_seconds  # bounded by process monitor, not argv
+    required = normalize_required_mcp_servers(list(required_mcp_servers or []))
+    mcp_note = build_grok_mcp_isolation_note(required)
     executable = resolve_executable("grok", grok_executable)
     if not executable:
         return LaunchPlan(
@@ -137,6 +148,8 @@ def build_grok_launch_plan(
             cwd=str(worktree),
             executable="",
             blocked_reasons=[STATE_BLOCKED_NO_ADAPTER + ": grok executable not found on PATH"],
+            required_mcp_servers=required,
+            mcp_isolation=mcp_note,
         )
 
     if max_turns < 1 or max_turns > 200:
@@ -147,10 +160,13 @@ def build_grok_launch_plan(
             cwd=str(worktree),
             executable=executable,
             blocked_reasons=["max_turns out of safe bounds (1..200)"],
+            required_mcp_servers=required,
+            mcp_isolation=mcp_note,
         )
 
     # Prefer non-interactive single-task form supported by Grok Build 0.2.x:
     #   grok --cwd <dir> --max-turns N --output-format json --single "<prompt>"
+    # MCP isolation gap: no equivalent of Codex `-c mcp_servers={}` is available.
     argv = [
         executable,
         "--cwd",
@@ -171,6 +187,8 @@ def build_grok_launch_plan(
                 cwd=str(worktree),
                 executable=executable,
                 blocked_reasons=[f"refusing unsafe grok flag: {flag}"],
+                required_mcp_servers=required,
+                mcp_isolation=mcp_note,
             )
 
     version = probe_version(executable, runner=version_runner)
@@ -183,6 +201,8 @@ def build_grok_launch_plan(
         executable_version=version,
         env={},
         command_redacted=redact_argv(argv),
+        required_mcp_servers=required,
+        mcp_isolation=mcp_note,
     )
 
 
@@ -193,8 +213,14 @@ def build_codex_fallback_plan(
     task_path: Path,
     agent_output_path: Path,
     codex_executable: str | None = None,
+    required_mcp_servers: list[str] | None = None,
+    task_payload: dict[str, Any] | None = None,
 ) -> LaunchPlan:
     """Expose existing Codex local-builder command construction behind launcher interface."""
+    if required_mcp_servers is None and task_payload is not None:
+        required = extract_required_mcp_servers(task_payload)
+    else:
+        required = normalize_required_mcp_servers(list(required_mcp_servers or []))
     try:
         from dispatch.codex_adapter import (
             build_codex_command,
@@ -209,6 +235,7 @@ def build_codex_fallback_plan(
             cwd=str(worktree),
             executable="",
             blocked_reasons=[f"{STATE_BLOCKED_NO_ADAPTER}: codex adapter unavailable: {exc}"],
+            required_mcp_servers=required,
         )
 
     adapter = load_codex_restricted_adapter(repo_root)
@@ -221,10 +248,12 @@ def build_codex_fallback_plan(
             cwd=str(worktree),
             executable="",
             blocked_reasons=[STATE_BLOCKED_NO_ADAPTER + ": codex executable not found"],
+            required_mcp_servers=required,
         )
     run_id = f"codex-fallback-{worktree.name}"
     stdout_path = str(agent_output_path.with_name("codex_stdout.log"))
     stderr_path = str(agent_output_path.with_name("codex_stderr.log"))
+    user_mcp = load_user_mcp_servers() if required else {}
     plan = build_codex_command(
         adapter,
         repo_root=repo_root,
@@ -235,6 +264,8 @@ def build_codex_fallback_plan(
         agent_output_path=str(agent_output_path),
         timeout_seconds=int(adapter.get("timeout_seconds") or 1800),
         prompt=f"Execute assignment task from {task_path.as_posix()} in this isolated worktree.",
+        required_mcp_servers=required,
+        user_mcp_servers=user_mcp,
     )
     if plan.blocked_reasons:
         return LaunchPlan(
@@ -244,6 +275,8 @@ def build_codex_fallback_plan(
             cwd=str(worktree),
             executable=executable,
             blocked_reasons=list(plan.blocked_reasons),
+            required_mcp_servers=required,
+            mcp_isolation=dict(plan.mcp_isolation or {}),
         )
     return LaunchPlan(
         agent="codex",
@@ -253,6 +286,8 @@ def build_codex_fallback_plan(
         executable=executable,
         executable_version=probe_version(executable),
         command_redacted=redact_argv(plan.argv),
+        required_mcp_servers=required,
+        mcp_isolation=dict(plan.mcp_isolation or {}),
     )
 
 
