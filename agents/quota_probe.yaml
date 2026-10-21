@@ -1,0 +1,6 @@
+# Owner-authorized recovery only; one paid call per provider per hour.
+enabled: true
+min_interval_seconds: 3600
+owner_override: false
+# Verified 2026-10-21 on the ChatGPT-account plan; gpt-5.4-mini rejected.
+codex_model: gpt-6.1-sol
