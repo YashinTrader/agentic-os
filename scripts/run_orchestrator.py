@@ -22,8 +22,12 @@ from orchestrator.supervisor import SupervisorConfig, process_once, run_forever 
 from orchestrator.rotating_log import RotatingLogWriter  # noqa: E402
 
 
+from scripts.state_root import resolve_state_root
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Physical agent supervisor (Grok primary, Codex fallback)")
+    parser.add_argument("--state-root", default=None)
     parser.add_argument("--root", default=str(REPO_ROOT), help="Repository root")
     parser.add_argument("--agent", default="composer", help="Wake queue agent id")
     parser.add_argument("--once", action="store_true", help="Process at most one wake and exit")
@@ -35,10 +39,13 @@ def main() -> int:
     parser.add_argument("--codex-executable", default=None)
     parser.add_argument("--no-codex-fallback", action="store_true")
     parser.add_argument("--json", action="store_true", help="Always print JSON (default for --once)")
-    parser.add_argument("--log-path", default=str(REPO_ROOT / "logs" / "supervisor.jsonl"))
+    parser.add_argument("--log-path", default=None)
     args = parser.parse_args()
 
-    root = Path(args.root).resolve()
+    try:
+        root = resolve_state_root(args.root, args.state_root)
+    except ValueError as exc:
+        parser.error(str(exc))
     config = SupervisorConfig(
         agent=args.agent,
         poll_seconds=max(1, args.poll_seconds),
@@ -56,7 +63,7 @@ def main() -> int:
         status = report.get("status")
         return 0 if status in {"idle", "completed", "skipped", "deferred", "blocked"} else 1
 
-    log = RotatingLogWriter(Path(args.log_path), max_bytes=10 * 1024 * 1024, backups=5)
+    log = RotatingLogWriter(Path(args.log_path) if args.log_path else root / "logs/supervisor.jsonl", max_bytes=10 * 1024 * 1024, backups=5)
     return run_forever(root, config=config, state_logger=log.log_json)
 
 

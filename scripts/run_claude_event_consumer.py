@@ -13,15 +13,23 @@ from orchestrator.layer_heartbeat import install_stop_handlers
 from orchestrator.rotating_log import RotatingLogWriter
 
 
+from scripts.state_root import resolve_state_root
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Persistent headless Claude event consumer")
+    parser.add_argument("--state-root", default=None)
     parser.add_argument("--root", default=str(REPO_ROOT))
     parser.add_argument("--once", action="store_true")
     parser.add_argument("--poll-seconds", type=float, default=5.0)
-    parser.add_argument("--log-path", default=str(REPO_ROOT / "logs" / "claude-event-consumer.jsonl"))
+    parser.add_argument("--log-path", default=None)
     args = parser.parse_args()
-    log = RotatingLogWriter(Path(args.log_path), max_bytes=10 * 1024 * 1024, backups=5)
-    consumer = ClaudeEventConsumer(Path(args.root).resolve(), state_logger=log.log_json)
+    try:
+        root = resolve_state_root(args.root, args.state_root)
+    except ValueError as exc:
+        parser.error(str(exc))
+    log = RotatingLogWriter(Path(args.log_path) if args.log_path else root / "logs/claude-event-consumer.jsonl", max_bytes=10 * 1024 * 1024, backups=5)
+    consumer = ClaudeEventConsumer(root, state_logger=log.log_json)
     if args.once:
         report = consumer.process_once()
         print(json.dumps(report, indent=2, sort_keys=True))

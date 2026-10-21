@@ -2,6 +2,7 @@
 """Run independently supervised builder and Claude-reviewer layers."""
 from __future__ import annotations
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -11,10 +12,20 @@ sys.path.insert(0, str(REPO_ROOT))
 from orchestrator.layer_supervisor import LayerSupervisor
 
 
+from scripts.state_root import resolve_state_root
+
+
 def main() -> int:
-    return LayerSupervisor(REPO_ROOT, {
-        "builder": [sys.executable, str(REPO_ROOT / "scripts/run_orchestrator.py"), "--root", str(REPO_ROOT)],
-        "claude": [sys.executable, str(REPO_ROOT / "scripts/run_claude_event_consumer.py"), "--root", str(REPO_ROOT)],
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--state-root", default=None)
+    args = parser.parse_args()
+    try:
+        root = resolve_state_root(REPO_ROOT, args.state_root)
+    except ValueError as exc:
+        parser.error(str(exc))
+    return LayerSupervisor(root, {
+        "builder": [sys.executable, str(REPO_ROOT / "scripts/run_orchestrator.py"), "--state-root", str(root)],
+        "claude": [sys.executable, str(REPO_ROOT / "scripts/run_claude_event_consumer.py"), "--state-root", str(root)],
     }).run()
 
 

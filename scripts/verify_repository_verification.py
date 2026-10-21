@@ -12,6 +12,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
 from scripts.repository_verification import (  # noqa: E402
+    repository_identity,
     git_changed_files_since,
     git_is_ancestor,
     load_unittest_artifact,
@@ -68,6 +69,7 @@ def main() -> int:
         action="store_true",
         help="Skip validator-at-HEAD subprocess (for tests only)",
     )
+    parser.add_argument("--canonical-repo", type=Path, default=Path("C:/Users/gabot/agentic-os"))
     args = parser.parse_args()
 
     handoff_arg = args.handoff_opt or args.handoff
@@ -116,7 +118,23 @@ def main() -> int:
 
     head_for_check = resolve_head_for_verification(actual_head, final_head, str(REPO_ROOT))
 
+    try:
+        verification["expected_repo_identity"] = repository_identity(args.canonical_repo)
+        if repository_identity(REPO_ROOT) != verification["expected_repo_identity"]:
+            raise ValueError("Verifying repository differs from canonical identity")
+    except (OSError, ValueError, subprocess.CalledProcessError) as exc:
+        print(f"Repository identity unavailable: {exc}", file=sys.stderr)
+        return 2
+
     artifact, artifact_exists = load_unittest_artifact(REPO_ROOT)
+    if artifact and Path(artifact.get("artifact_origin_path", "")).is_dir():
+        try:
+            if repository_identity(artifact["artifact_origin_path"]) != verification["expected_repo_identity"]:
+                print("Artifact origin repository identity mismatch", file=sys.stderr)
+                return 1
+        except (KeyError, ValueError, OSError, subprocess.CalledProcessError):
+            print("Artifact origin repository identity unavailable", file=sys.stderr)
+            return 1
     validator_result = None if args.skip_validator else run_validator_at_head(REPO_ROOT)
 
     result = validate_repository_verification(
@@ -126,7 +144,7 @@ def main() -> int:
         rel=rel,
         test_artifact=artifact,
         artifact_exists=artifact_exists,
-        artifact_is_ancestor=git_is_ancestor,
+        artifact_is_ancestor=lambda a, b: git_is_ancestor(a, b, str(REPO_ROOT)),
         validator_result=validator_result,
         run_artifact_checks=True,
         run_validator_checks=not args.skip_validator,
