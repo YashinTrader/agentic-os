@@ -9,6 +9,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 from orchestrator.claude_event_consumer import ClaudeEventConsumer
+from orchestrator.rotating_log import RotatingLogWriter
 
 
 def main() -> int:
@@ -16,8 +17,10 @@ def main() -> int:
     parser.add_argument("--root", default=str(REPO_ROOT))
     parser.add_argument("--once", action="store_true")
     parser.add_argument("--poll-seconds", type=float, default=5.0)
+    parser.add_argument("--log-path", default=str(REPO_ROOT / "logs" / "claude-event-consumer.jsonl"))
     args = parser.parse_args()
-    consumer = ClaudeEventConsumer(Path(args.root).resolve())
+    log = RotatingLogWriter(Path(args.log_path), max_bytes=10 * 1024 * 1024, backups=5)
+    consumer = ClaudeEventConsumer(Path(args.root).resolve(), state_logger=log.log_json)
     if args.once:
         report = consumer.process_once()
         print(json.dumps(report, indent=2, sort_keys=True))

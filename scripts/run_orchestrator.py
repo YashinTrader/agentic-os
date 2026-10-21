@@ -19,6 +19,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
 from orchestrator.supervisor import SupervisorConfig, process_once, run_forever  # noqa: E402
+from orchestrator.rotating_log import RotatingLogWriter  # noqa: E402
 
 
 def main() -> int:
@@ -34,6 +35,7 @@ def main() -> int:
     parser.add_argument("--codex-executable", default=None)
     parser.add_argument("--no-codex-fallback", action="store_true")
     parser.add_argument("--json", action="store_true", help="Always print JSON (default for --once)")
+    parser.add_argument("--log-path", default=str(REPO_ROOT / "logs" / "supervisor.jsonl"))
     args = parser.parse_args()
 
     root = Path(args.root).resolve()
@@ -54,7 +56,8 @@ def main() -> int:
         status = report.get("status")
         return 0 if status in {"idle", "completed", "skipped", "deferred", "blocked"} else 1
 
-    return run_forever(root, config=config)
+    log = RotatingLogWriter(Path(args.log_path), max_bytes=10 * 1024 * 1024, backups=5)
+    return run_forever(root, config=config, state_logger=log.log_json)
 
 
 if __name__ == "__main__":

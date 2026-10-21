@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
+from dispatch.atomic_io import atomic_write_json
 from dispatch.agent_wake import read_wake_signal
 from dispatch.assignment_channel import claim_assignment, read_assignment, set_assignment_status
 from dispatch.runtime_capture import run_directory
@@ -566,7 +567,10 @@ def process_once(repo_root: Path, *, config: SupervisorConfig | None = None, **k
     return process_wake_signal(repo_root, signals[0], config=cfg, **kwargs)
 
 
-def run_forever(repo_root: Path, *, config: SupervisorConfig | None = None, **kwargs: Any) -> int:
+def run_forever(
+    repo_root: Path, *, config: SupervisorConfig | None = None,
+    state_logger: Callable[[dict[str, Any]], None] | None = None, **kwargs: Any,
+) -> int:
     cfg = config or SupervisorConfig()
     global STOP_REQUESTED
     STOP_REQUESTED = False
@@ -574,9 +578,27 @@ def run_forever(repo_root: Path, *, config: SupervisorConfig | None = None, **kw
     if hasattr(signal, "SIGTERM"):
         signal.signal(signal.SIGTERM, _handle_stop)
 
+    status_path = repo_root / "runtime" / "dispatch" / "supervisor_status.json"
+    status: dict[str, Any] = {"idle_ticks": 0, "last_state": None}
+    if status_path.is_file():
+        try:
+            loaded = json.loads(status_path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                status.update(loaded)
+        except (OSError, json.JSONDecodeError):
+            pass
+
     while not STOP_REQUESTED:
         report = process_once(repo_root, config=cfg, **kwargs)
-        print(json.dumps(report, sort_keys=True, default=str), flush=True)
+        report_status = str(report.get("status"))
+        if report_status == "idle":
+            status["idle_ticks"] = int(status.get("idle_ticks", 0)) + 1
+        state_key = json.dumps(report, sort_keys=True, default=str)
+        if report_status != "idle" and state_key != status.get("last_state") and state_logger:
+            state_logger(report)
+        status.update({"last_tick_at": utc_now(), "last_state": state_key})
+        status_path.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_json(status_path, status)
         if report.get("status") == "idle":
             time.sleep(max(1, cfg.poll_seconds))
         else:
