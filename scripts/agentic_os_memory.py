@@ -535,4 +535,10 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
+    if __package__:
+        from ._console import configure_console
+    else:
+        from _console import configure_console
+
+    configure_console()
     raise SystemExit(main())

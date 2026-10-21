@@ -375,4 +375,10 @@ def _human_approval_markdown(request: dict, manifest: dict, commands: dict) -> s
 
 
 if __name__ == "__main__":
+    if __package__:
+        from ._console import configure_console
+    else:
+        from _console import configure_console
+
+    configure_console()
     raise SystemExit(main())

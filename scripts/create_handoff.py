@@ -134,4 +134,10 @@ working_copy_path: REPLACE_WITH_CANONICAL_CLONE_PATH
 
 
 if __name__ == "__main__":
+    if __package__:
+        from ._console import configure_console
+    else:
+        from _console import configure_console
+
+    configure_console()
     raise SystemExit(main())
