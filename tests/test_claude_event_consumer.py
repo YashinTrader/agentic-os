@@ -5,12 +5,56 @@ import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest.mock import patch
 
 from dispatch.orchestrator_pokes import write_orchestrator_poke
 from orchestrator.claude_event_consumer import (
-    MAX_BACKOFF_SECONDS, ClaudeEventConsumer, backoff_seconds, load_watcher_status,
+    MAX_BACKOFF_SECONDS, ClaudeEventConsumer, backoff_seconds,
+    default_condition_probe, load_watcher_status,
 )
 from orchestrator.rotating_log import RotatingLogWriter
+
+
+class DefaultConditionProbeTests(unittest.TestCase):
+    @patch("orchestrator.claude_event_consumer.subprocess.run", side_effect=OSError)
+    @patch("orchestrator.claude_event_consumer.resolve_executable", return_value="claude")
+    def test_default_condition_probe_returns_false_when_bare_name_cannot_launch(
+        self, _resolve, run
+    ):
+        self.assertFalse(default_condition_probe("auth:claude"))
+        self.assertEqual(run.call_args.args[0], ["claude", "auth", "status"])
+        self.assertFalse(run.call_args.kwargs["shell"])
+
+    @patch("orchestrator.claude_event_consumer.subprocess.run")
+    @patch(
+        "orchestrator.claude_event_consumer.resolve_executable",
+        return_value=r"C:\\Tools\\claude.CMD",
+    )
+    def test_default_condition_probe_accepts_resolved_logged_in_status(self, _resolve, run):
+        run.return_value.returncode = 0
+        run.return_value.stdout = '{"loggedIn": true}'
+
+        self.assertTrue(default_condition_probe("auth:claude"))
+        self.assertEqual(
+            run.call_args.args[0], [r"C:\\Tools\\claude.CMD", "auth", "status"]
+        )
+        self.assertFalse(run.call_args.kwargs["shell"])
+
+    @patch("orchestrator.claude_event_consumer.subprocess.run")
+    @patch("orchestrator.claude_event_consumer.resolve_executable", return_value="claude.CMD")
+    def test_default_condition_probe_rejects_logged_out_status(self, _resolve, run):
+        run.return_value.returncode = 0
+        run.return_value.stdout = '{"loggedIn": false}'
+
+        self.assertFalse(default_condition_probe("auth:claude"))
+
+    @patch("orchestrator.claude_event_consumer.subprocess.run")
+    @patch("orchestrator.claude_event_consumer.resolve_executable", return_value="claude.CMD")
+    def test_default_condition_probe_rejects_malformed_status(self, _resolve, run):
+        run.return_value.returncode = 0
+        run.return_value.stdout = "not json"
+
+        self.assertFalse(default_condition_probe("auth:claude"))
 
 
 class ClaudeEventConsumerTests(unittest.TestCase):

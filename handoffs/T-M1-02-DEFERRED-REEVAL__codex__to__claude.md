@@ -14,6 +14,8 @@
 - Replaced unchanged idle/deferred output with `status.json` counters and state-change-only JSONL logging.
 - Added a dependency-free 10 MiB rotating writer with five backups and wired both persistent supervisor entry points to it.
 - Added required regression coverage for probe recovery, deterministic-failure suppression, bounded backoff, escalation, quiet idle ticks, and rotation.
+- Corrected the Windows authentication probe to resolve the Claude executable (including `.CMD` shims), retain `shell=False`, and require a successful status response with JSON `loggedIn: true`.
+- Added mocked probe regressions for bare-name launch failure, resolved-path login success, logged-out status, and malformed output; no real CLI calls are made.
 - Registered this handoff in `POST_TEST_ALLOWLIST_EXACT`.
 
 ## What Remains
@@ -50,6 +52,8 @@ python scripts/handoff_closeout_gate.py handoffs/T-M1-02-DEFERRED-REEVAL__codex_
 - The structured `test_count`/`test_exit_code` below records those seven successful compile checks only; it does not represent the full unittest suite.
 - `git diff --check`: exit 0.
 - `python scripts/validate.py`: exit 0 (pre-existing deprecated event-field warnings only).
+- Authentication probe regression tests: 4/4 passed, exit 0.
+- Focused consumer module rerun after the correction: interrupted during the first ACL-sensitive temporary-directory fixture after it hung; it did not produce a test count or clean exit.
 - Focused unittest: non-zero because the sandbox denied access below Python-created temporary directories before test assertions ran.
 - Full discovery: exit 1 after repeated environment-level temporary-directory errors; interrupted rather than claiming a clean run. The expected separately tracked `T-PHASE3-9-2` cp1252 exemption could not be reached/isolated in this environment.
 - Commit attempt: failed because `.git/index.lock` creation was denied.

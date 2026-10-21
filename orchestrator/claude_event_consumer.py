@@ -12,6 +12,7 @@ from typing import Any, Callable
 
 from dispatch.atomic_io import atomic_create_json, atomic_write_json
 from dispatch.orchestrator_pokes import list_orchestrator_pokes
+from orchestrator.agent_launcher import resolve_executable
 from orchestrator.review_schema import VALID_VERDICTS
 
 Processor = Callable[..., dict[str, Any]]
@@ -85,13 +86,19 @@ def default_condition_probe(blocked_on: str) -> bool:
     if blocked_on != "auth:claude":
         return False
     try:
+        executable = resolve_executable("claude")
+        if not executable:
+            return False
         completed = subprocess.run(
-            ["claude", "auth", "status"], capture_output=True, text=True,
+            [executable, "auth", "status"], capture_output=True, text=True,
             timeout=15, check=False, shell=False,
         )
-    except (OSError, subprocess.SubprocessError):
+        if completed.returncode != 0:
+            return False
+        status = json.loads(completed.stdout)
+    except (OSError, subprocess.SubprocessError, json.JSONDecodeError, TypeError):
         return False
-    return completed.returncode == 0
+    return isinstance(status, dict) and status.get("loggedIn") is True
 
 
 def _default_processor(repo_root: Path, **kwargs: Any) -> dict[str, Any]:
