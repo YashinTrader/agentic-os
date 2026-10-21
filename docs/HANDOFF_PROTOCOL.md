@@ -72,13 +72,19 @@ repo_root: <git rev-parse --show-toplevel>
 branch: <exact branch name>
 base_sha: <40-char canonical milestone base>
 implementation_sha: <40-char commit containing code/test/validator changes>
-tests_commit_sha: <must equal implementation_sha>
+
+### Test Evidence
+
+Paste the complete subsection emitted by scripts/run_tests.py here, unchanged.
+It contains tests_commit_sha, test_count, test_exit_code, known_exempt_failures,
+raw_output_sha256, repo_identity, dependency_install, dependency_install_reason,
+artifact_origin_path, hostname, python_version, command_line, timestamp, and python.
+
+### Closeout
 final_head_sha: <40-char branch tip at handoff time — do not self-embed in same commit>
 remote_head_sha: <must equal final_head_sha after push>
 git_status_clean: <true|false — list tracked exceptions if false>
 validator_commit_sha: <commit where validator last passed with suite>
-test_count: <discovered unittest count>
-test_exit_code: <0 required for closeout>
 validator_exit_code: <0 required for closeout>
 post_test_diff_policy: docs-only-allowlist-v2
 post_test_files: <comma-separated paths changed after tests_commit_sha, or none>
@@ -99,12 +105,12 @@ working_copy_path: <absolute canonical clone path>
 
 ### Builder / reviewer definition of done (mandatory)
 
-Before reporting a v2 handoff task **complete** or pushing a closeout branch:
+Before reporting a v2 handoff task **complete**:
 
-1. Regenerate `runtime/unittest_last_run.txt` with `python scripts/run_tests.py` at `tests_commit_sha` (single-threaded full suite, exit 0).
-2. Rewrite `## Repository Verification` using `python scripts/handoff_verification_block.py` (full 40-character hex SHAs only).
-3. Register the handoff path in `POST_TEST_ALLOWLIST_EXACT` (`scripts/repository_verification.py`) **before** post-test handoff edits.
-4. Run the closeout gate — **both must pass** (do not push otherwise):
+1. Register the handoff path in `POST_TEST_ALLOWLIST_EXACT` **before** committing the implementation. Commit all code, tests, validator, and protocol changes. Record that commit as `implementation_sha` / `tests_commit_sha`.
+2. Run `python scripts/run_tests.py` at that commit (single-threaded full suite). No prewritten handoff is required. The runner writes `runtime/unittest_last_run.txt` and emits `### Test Evidence` from its measured results. When dependencies are already available, `--skip-install --skip-install-reason "<single-line explanation>"` records that choice. Explicitly authorized exemptions use repeatable `--known-exempt-failure "<exact test id>"`; the true nonzero exit code is always retained and every observed failure must be listed.
+3. Paste the complete emitted Test Evidence subsection into `## Repository Verification`, then commit the handoff and artifact using only allowlisted paths. Record this commit as the closeout tip. After any separately authorized push, record its actual SHA as `final_head_sha` and `remote_head_sha`. Run the validator at this tip and record its SHA as `validator_commit_sha`. Use `python scripts/handoff_verification_block.py` with these SHAs to render the complete block: it copies the sealed fields from the artifact. Fill the remaining `### Closeout` fields honestly. The final SHA annotation may be an additional commit touching only explicit allowlisted files; the existing verifier permits that annotation above the recorded closeout tip. Never claim remote equality before the authorized push has occurred.
+4. Run the closeout gate — **both must pass** before declaring closeout. Run local validation before any separately authorized push, then repeat the gate after recording the authoritative remote SHA:
 
 ```bash
 python scripts/handoff_closeout_gate.py handoffs/<task>__<from>__to__<to>.md
@@ -119,7 +125,7 @@ python scripts/validate.py
 
 A handoff is **not complete** when `Status: failed` or `validate.py` exits non-zero.
 
-When self-reference prevents embedding `final_head_sha` literally inside the commit that creates the handoff, use `final_head_ref: branch HEAD` in prose and record `artifact_parent_sha` as the tested implementation commit; run `git rev-parse HEAD` after push for authoritative SHAs.
+The seal is SHA-256 of UTF-8 JSON with sorted keys, compact separators, ASCII escaping, and exactly the fixed Test Evidence keys listed above. Values are strings with surrounding whitespace stripped; missing values serialize as empty strings for hashing but missing fields and duplicate evidence fields are rejected during artifact verification. The runner computes it without reading the handoff. The verifier recomputes it from both the handoff fields and artifact metadata. Editing a sealed value invalidates verification. Closeout fields do not participate in the seal; full SHA format, identity, reachability, raw-output digest, failure/exit checks, HEAD equality, validator execution, and the explicit post-test allowlist remain enforced. Historical artifacts using the whole-section seal must be regenerated.
 
 **Future:** Git notes or CI attestations can attach test results to a final commit without changing that commit's tree hash. Not implemented in Phase 3.3.2.
 
@@ -127,7 +133,7 @@ Historical v1 handoffs (without `**Handoff Protocol:** v2`) remain valid and are
 
 ## Rules
 1. **The outgoing agent writes the handoff.** Never the incoming one.
-2. A handoff is **immutable** once committed. Corrections go in a new handoff.
+2. A handoff is **immutable** once committed, except for the allowlisted closeout SHA annotation described above. Sealed Test Evidence must remain unchanged; other corrections go in a new handoff.
 3. Every handoff must be referenced by a `handoff` event in
    `logs/agent-events.jsonl`.
 4. If the receiver is `human`, the handoff must also be linked from the PR

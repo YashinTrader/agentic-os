@@ -20,8 +20,8 @@ def _sha(ch: str = "a") -> str:
 
 def _verification(**overrides) -> dict:
     base = {
+        **rv.test_evidence_from_artifact(_artifact()),
         "expected_repo_identity": "identity",
-        "evidence_block_sha256": "seal",
         "implementation_sha": _sha("e"),
         "tests_commit_sha": _sha("e"),
         "final_head_sha": _sha("f"),
@@ -53,17 +53,25 @@ def _artifact(**overrides) -> dict:
         "hostname": "host",
         "python_version": "3.12",
         "command_line": "python -m unittest",
+        "known_exempt_failures": "[]",
+        "dependency_install": "performed",
+        "dependency_install_reason": "",
+        "computed_dependency_install": "performed",
+        "computed_dependency_install_reason": "",
+        "timestamp": "2026-10-21T00:00:00Z",
+        "python": "/usr/bin/python",
         "raw_output_sha256": "hash",
         "computed_output_sha256": "hash",
         "computed_test_count": "350",
         "computed_result": "passed",
-        "evidence_block_sha256": "seal",
         "commit_full": _sha("e"),
         "test_count": "350",
         "exit_code": "0",
         "repo_root": "C:/Users/gabot/agentic-os",
     }
     base.update(overrides)
+    if "evidence_block_sha256" not in overrides:
+        base["evidence_block_sha256"] = rv.evidence_block_hash(rv.test_evidence_from_artifact(base))
     return base
 
 

@@ -26,7 +26,7 @@ class ProvenanceTests(unittest.TestCase):
             is_ancestor=lambda a, b: ancestor)[1]
 
     def test_clone_path_with_same_identity_passes(self):
-        self.assertEqual(self.check_artifact(_artifact(repo_root="/clone", artifact_origin_path="/clone")), "verified")
+        self.assertEqual(self.check_artifact(_artifact(repo_root="/clone", artifact_origin_path="/clone"), _verification(artifact_origin_path="/clone")), "verified")
 
     def test_foreign_identity_fails(self):
         self.assertEqual(self.check_artifact(_artifact(repo_identity="foreign")), "failed")
@@ -44,16 +44,18 @@ class ProvenanceTests(unittest.TestCase):
 
     def test_listed_failure_with_true_exit_passes(self):
         failure = "test_cp1252 (suite.Case)"
-        artifact = _artifact(exit_code="1", computed_result="failed", computed_failures=json.dumps([failure]))
+        artifact = _artifact(exit_code="1", computed_result="failed", computed_failures=json.dumps([failure]), known_exempt_failures=json.dumps([failure]))
         verification = _verification(test_exit_code="1", known_exempt_failures=json.dumps([failure]))
         self.assertEqual(self.check_artifact(artifact, verification), "verified")
         self.assertEqual(self.check_artifact(artifact, dict(verification, test_exit_code="0")), "failed")
 
     def test_edited_evidence_fails(self):
-        original = "## Repository Verification\ntests_commit_sha: " + _sha("e") + "\n"
-        changed = original + "test_count: 2\n"
-        artifact = _artifact(evidence_block_sha256=rv.evidence_block_hash(original))
-        self.assertEqual(self.check_artifact(artifact, _verification(evidence_block_sha256=rv.evidence_block_hash(changed))), "failed")
+        artifact = _artifact()
+        original = "## Repository Verification\n" + rv.render_test_evidence(rv.test_evidence_from_artifact(artifact))
+        parsed = rv.parse_verification_block(original)
+        self.assertEqual(self.check_artifact(artifact, _verification(**parsed)), "verified")
+        changed = original.replace("test_count: 350", "test_count: 2")
+        self.assertEqual(self.check_artifact(artifact, _verification(**rv.parse_verification_block(changed))), "failed")
 
     def test_writer_loader_round_trip_and_raw_hash(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -69,7 +71,7 @@ class ProvenanceTests(unittest.TestCase):
             self.assertEqual(artifact["dependency_install"], "performed")
             self.assertEqual(artifact["computed_test_count"], "1")
             self.assertEqual(artifact["computed_result"], "passed")
-            self.assertEqual(artifact["evidence_block_sha256"], rv.evidence_block_hash(handoff.read_text()))
+            self.assertEqual(artifact["evidence_block_sha256"], rv.evidence_block_hash(rv.test_evidence_from_artifact(artifact)))
             path = root / rv.UNITTEST_ARTIFACT_REL
             path.write_bytes(path.read_bytes() + b"tampered")
             tampered, _ = rv.load_unittest_artifact(root)
@@ -131,13 +133,12 @@ class ProvenanceTests(unittest.TestCase):
             handoff = root / "handoff.md"
             handoff.write_text("## Repository Verification\nknown_exempt_failures: []\n", encoding="utf-8")
             output = b"FAIL: test_cp1252 (suite.Case)\r\nRan 1 test in 0.01s\r\nFAILED (failures=1)\r\n"
-            with patch.object(run_tests, "RESULT_PATH", root / rv.UNITTEST_ARTIFACT_REL), patch.object(run_tests, "repository_identity", return_value="identity"):
-                run_tests._write_result(1, output, handoff=handoff)
+            with patch.object(run_tests, "RESULT_PATH", root / rv.UNITTEST_ARTIFACT_REL), patch.object(run_tests, "repository_identity", return_value="identity"), patch.object(run_tests, "_git_head", return_value=_sha("e")):
+                run_tests._write_result(1, output, handoff=handoff, known_exempt_failures=["test_cp1252 (suite.Case)"])
             artifact, _ = rv.load_unittest_artifact(root)
             self.assertEqual(artifact["computed_result"], "failed")
             self.assertEqual(json.loads(artifact["computed_failures"]), ["test_cp1252 (suite.Case)"])
-            verification = _verification(test_count="1", test_exit_code="1", known_exempt_failures='["test_cp1252 (suite.Case)"]', evidence_block_sha256=rv.evidence_block_hash(handoff.read_text()))
-            artifact["commit_full"] = _sha("e")
+            verification = _verification(**rv.test_evidence_from_artifact(artifact))
             self.assertEqual(self.check_artifact(artifact, verification), "verified")
             self.assertEqual(self.check_artifact(artifact, dict(verification, known_exempt_failures="[]")), "failed")
 

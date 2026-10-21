@@ -9,6 +9,8 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT))
+from scripts.repository_verification import render_test_evidence, test_evidence_from_artifact
 
 REQUIRED_FIELDS = (
     "repo_root",
@@ -96,6 +98,7 @@ def render_repository_verification_block(
     post_test_diff_policy: str = "POST_TEST_ALLOWLIST_EXACT",
     post_test_files: list[str] | str | None = None,
     working_copy_path: str | None = None,
+    test_evidence: dict[str, str] | None = None,
 ) -> str:
     if post_test_files is None:
         post_test_files_text = "none"
@@ -125,6 +128,11 @@ def render_repository_verification_block(
         f"working_copy_path: {wc.replace(chr(92), '/')}",
         "",
     ]
+    if test_evidence is not None:
+        # Use the artifact verbatim for all sealed fields, including results.
+        evidence_keys = set(test_evidence)
+        lines = [line for line in lines if line.partition(":")[0] not in evidence_keys]
+        lines[2:2] = [render_test_evidence(test_evidence), "### Closeout", ""]
     return "\n".join(lines)
 
 
@@ -187,6 +195,7 @@ def main() -> int:
         validator_exit_code=0,
         post_test_files=args.post_test_files,
         working_copy_path=args.working_copy_path or repo_root,
+        test_evidence=test_evidence_from_artifact(artifact),
     )
     print(block)
     return 0

@@ -169,10 +169,39 @@ def repository_identity(root: Path | str) -> str:
     raise ValueError("Cyclic local repository origins")
 
 
-def evidence_block_hash(text: str) -> str:
-    section = text.split("## Repository Verification", 1)[1]
-    section = section.split("\n## ", 1)[0]
-    return hashlib.sha256(section.encode("utf-8")).hexdigest()
+TEST_EVIDENCE_FIELDS = (
+    "tests_commit_sha", "test_count", "test_exit_code", "known_exempt_failures",
+    "raw_output_sha256", "repo_identity", "dependency_install",
+    "dependency_install_reason", "artifact_origin_path", "hostname",
+    "python_version", "command_line", "timestamp", "python",
+)
+
+
+def test_evidence_from_artifact(artifact: dict[str, str]) -> dict[str, str]:
+    evidence = {key: artifact.get(key, "") for key in TEST_EVIDENCE_FIELDS}
+    evidence["tests_commit_sha"] = artifact.get("commit_full", "")
+    evidence["test_exit_code"] = artifact.get("exit_code", "")
+    return evidence
+
+
+def evidence_block_hash(evidence: dict[str, Any] | str) -> str:
+    """SHA-256 of UTF-8 compact, sorted JSON with fixed string-valued keys.
+
+    Missing fields serialize as empty strings; whitespace around field values is
+    insignificant. Commit-time closeout fields never participate in this seal.
+    """
+    if isinstance(evidence, str):
+        section = evidence.split("## Repository Verification", 1)[1].split("\n## ", 1)[0]
+        evidence = {key: verification_field_value(section, key) or "" for key in TEST_EVIDENCE_FIELDS}
+    canonical = {key: str(evidence.get(key, "")).strip() for key in TEST_EVIDENCE_FIELDS}
+    payload = json.dumps(canonical, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def render_test_evidence(evidence: dict[str, str]) -> str:
+    return "### Test Evidence\n\n" + "\n".join(
+        f"{key}: {evidence.get(key, '')}" for key in TEST_EVIDENCE_FIELDS
+    ) + "\n"
 
 
 def failure_ids(output: str) -> list[str]:
@@ -200,30 +229,30 @@ def parse_verification_block(text: str) -> dict[str, str]:
     block = "\n".join(lines)
     out: dict[str, str] = {}
     for key in (
+        *TEST_EVIDENCE_FIELDS,
         "repo_root",
         "branch",
         "base_sha",
         "implementation_sha",
-        "tests_commit_sha",
         "final_head_sha",
         "remote_head_sha",
         "git_status_clean",
         "validator_commit_sha",
-        "test_count",
-        "test_exit_code",
         "validator_exit_code",
         "post_test_diff_policy",
         "post_test_files",
         "working_copy_path",
         "final_head_ref",
-        "known_exempt_failures",
         "artifact_parent_sha",
         "artifact_commit_sha",
     ):
         val = verification_field_value(block, f"{key}:")
         if val is not None:
             out[key] = val
-    out["evidence_block_sha256"] = evidence_block_hash(text)
+    out["evidence_block_sha256"] = evidence_block_hash(out)
+    if any(sum(line.strip().startswith(f"{key}:") for line in lines) > 1
+           for key in TEST_EVIDENCE_FIELDS):
+        out["duplicate_test_evidence"] = "true"
     return out
 
 
@@ -322,6 +351,13 @@ def validate_test_artifact(
         errors.append(f"{rel}: test artifact malformed")
         return errors, "malformed"
 
+    if verification.get("duplicate_test_evidence"):
+        errors.append(f"{rel}: duplicate test evidence field")
+    for key in TEST_EVIDENCE_FIELDS:
+        artifact_key = {"tests_commit_sha": "commit_full", "test_exit_code": "exit_code"}.get(key, key)
+        if key not in verification or artifact_key not in artifact:
+            errors.append(f"{rel}: missing test evidence field {key}")
+
     impl = str(verification.get("implementation_sha", "")).strip()
     tests = str(verification.get("tests_commit_sha", "")).strip()
     handoff_count = str(verification.get("test_count", "")).strip()
@@ -376,8 +412,10 @@ def validate_test_artifact(
                                ("test_count", "computed_test_count")):
         if not artifact.get(computed) or artifact.get(recorded) != artifact.get(computed):
             errors.append(f"{rel}: artifact {recorded} mismatch")
-    if not verification.get("evidence_block_sha256") or artifact.get("evidence_block_sha256") != verification.get("evidence_block_sha256"):
+    if artifact.get("evidence_block_sha256") != evidence_block_hash(verification):
         errors.append(f"{rel}: handoff evidence block hash mismatch")
+    if artifact.get("evidence_block_sha256") != evidence_block_hash(test_evidence_from_artifact(artifact)):
+        errors.append(f"{rel}: artifact evidence block hash mismatch")
 
     if not tests or not _SHA40_RE.fullmatch(tests):
         errors.append(f"{rel}: invalid tests_commit_sha")
@@ -576,6 +614,9 @@ def validate_repository_verification(
         post_test_diff_status = "verified"
 
     if run_artifact_checks:
+        if validator_sha and actual_head_sha and artifact_is_ancestor is not None:
+            if artifact_is_ancestor(validator_sha, actual_head_sha) is not True:
+                errors.append(f"{rel}: validator_commit_sha not reachable from HEAD")
         exists = bool(artifact_exists)
         artifact_errors, artifact_status = validate_test_artifact(
             test_artifact,
