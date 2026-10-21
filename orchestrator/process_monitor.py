@@ -10,6 +10,9 @@ from pathlib import Path
 from typing import Any, Callable
 
 from orchestrator.layer_heartbeat import tick
+from orchestrator.run_deadlines import (
+    DeadlinePolicy, RunDeadlines, StreamActivity, adapter_deadlines, worktree_snapshot,
+)
 from orchestrator.runtime_store import (
     STATE_ORPHANED,
     STATE_RUNNING,
@@ -29,6 +32,7 @@ class MonitorResult:
     stdout: str
     stderr: str
     orphaned: bool = False
+    deadline_state: str | None = None
 
 
 def _default_poll(process: Any) -> int | None:
@@ -60,6 +64,12 @@ def monitor_process(
     poll_fn: PollFn | None = None,
     sleep_fn: Callable[[float], None] | None = None,
     kill_fn: Callable[[Any], None] | None = None,
+    clock_fn: Callable[[], float] | None = None,
+    deadline_policy: DeadlinePolicy | None = None,
+    persist_fn: Callable[..., Any] | None = None,
+    worktree: Path | None = None,
+    initial_snapshot: dict | None = None,
+    started_monotonic: float | None = None,
 ) -> MonitorResult:
     """Block until process exits or times out; keep heartbeat fresh.
 
@@ -70,23 +80,45 @@ def monitor_process(
 
     poll = poll_fn or _default_poll
     sleep = sleep_fn or time.sleep
-    started = time.monotonic()
+    clock = clock_fn or time.monotonic
+    started = clock() if started_monotonic is None else started_monotonic
+    policy = deadline_policy or adapter_deadlines(repo_root, state.adapter, timeout_seconds)
+    deadlines = RunDeadlines(policy, started)
+    persist = persist_fn or save_run_state
+    activity = StreamActivity(stdout_path)
+    if worktree is None and getattr(state, "worktree", ""):
+        worktree = Path(state.worktree)
+    excluded = (stdout_path, stderr_path)
+    snapshot = initial_snapshot if initial_snapshot is not None else worktree_snapshot(worktree, excluded)
     exit_code: int | None = None
     timed_out = False
+    deadline_state = None
 
     try:
         while True:
             tick()
             code = poll(process)
+            now = clock()
+            fired = deadlines.expired(now)
+            events = activity.poll()
+            current = worktree_snapshot(worktree, excluded)
+            events += sum(snapshot.get(path) != value for path, value in current.items())
+            snapshot = current
+            if events and fired is None:
+                deadlines.activity(now, state, utc_now(), events)
             state.heartbeat_at = utc_now()
-            save_run_state(repo_root, state)
-            if code is not None:
+            persist(repo_root, state)
+            if code is not None and fired is None:
                 exit_code = int(code)
                 break
-            elapsed = time.monotonic() - started
-            # timeout_seconds == 0 means immediate timeout (tests / hard stop).
-            if timeout_seconds >= 0 and elapsed >= timeout_seconds:
-                timed_out = True
+            if fired:
+                state.deadline_fired, deadline_state = fired
+                state.deadline_fired_at = utc_now()
+                state.completed_at = state.deadline_fired_at
+                state.process_state = deadline_state
+                state.blocked_reason = f"{state.deadline_fired} deadline expired"
+                persist(repo_root, state)
+                timed_out = deadline_state == "timed_out"
                 if kill_fn is not None:
                     kill_fn(process)
                 else:
@@ -112,6 +144,7 @@ def monitor_process(
         stdout=read_text(stdout_path),
         stderr=read_text(stderr_path),
         orphaned=False,
+        deadline_state=deadline_state,
     )
 
 

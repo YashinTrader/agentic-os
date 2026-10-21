@@ -88,7 +88,13 @@ def classify_process_output(
     stderr: str = "",
     timed_out: bool = False,
     launch_error: str | None = None,
+    deadline_state: str | None = None,
 ) -> Classification:
+    if deadline_state in {"failed_launch", "stalled", "timed_out"}:
+        return Classification(
+            process_state=deadline_state, category=deadline_state,
+            detail=f"agent run deadline expired: {deadline_state}", retry_eligible=False,
+        )
     if launch_error:
         return Classification(
             process_state=STATE_FAILED_LAUNCH,

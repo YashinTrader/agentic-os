@@ -114,6 +114,11 @@ class ReviewRunState:
     command_redacted: list[str] = field(default_factory=list)
     started_at: str | None = None
     heartbeat_at: str | None = None
+    startup_activity_at: str | None = None
+    last_activity_at: str | None = None
+    activity_events: int = 0
+    deadline_fired: str | None = None
+    deadline_fired_at: str | None = None
     completed_at: str | None = None
     exit_code: int | None = None
     stdout_path: str = ""

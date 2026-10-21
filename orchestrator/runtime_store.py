@@ -22,6 +22,7 @@ STATE_BLOCKED_NO_ADAPTER = "blocked_no_adapter"
 STATE_BLOCKED_CAPACITY = "blocked_capacity"
 STATE_FAILED_LAUNCH = "failed_launch"
 STATE_FAILED = "failed"
+STATE_STALLED = "stalled"
 STATE_TIMED_OUT = "timed_out"
 STATE_ORPHANED = "orphaned"
 STATE_MAX_TURNS = "max_turns"
@@ -38,6 +39,7 @@ TERMINAL_STATES = frozenset(
         STATE_FAILED_LAUNCH,
         STATE_FAILED,
         STATE_TIMED_OUT,
+        STATE_STALLED,
         STATE_ORPHANED,
         STATE_MAX_TURNS,
         STATE_BLOCKED_EXTERNAL,
@@ -102,6 +104,11 @@ class RunState:
     command_redacted: list[str] = field(default_factory=list)
     started_at: str | None = None
     heartbeat_at: str | None = None
+    startup_activity_at: str | None = None
+    last_activity_at: str | None = None
+    activity_events: int = 0
+    deadline_fired: str | None = None
+    deadline_fired_at: str | None = None
     completed_at: str | None = None
     exit_code: int | None = None
     stdout_path: str = ""
@@ -157,6 +164,11 @@ def save_run_state(repo_root: Path, state: RunState) -> Path:
             "base_sha": state.base_sha,
             "started_at": state.started_at,
             "heartbeat_at": state.heartbeat_at,
+            "startup_activity_at": state.startup_activity_at,
+            "last_activity_at": state.last_activity_at,
+            "activity_events": state.activity_events,
+            "deadline_fired": state.deadline_fired,
+            "deadline_fired_at": state.deadline_fired_at,
             "finished_at": state.completed_at,
             "exit_code": state.exit_code,
             "stdout_path": state.stdout_path,

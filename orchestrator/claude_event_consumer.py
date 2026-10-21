@@ -283,7 +283,7 @@ class ClaudeEventConsumer:
                 session_id = last.get("session_id")
                 valid_verdict = verdict in VALID_VERDICTS
                 # A schema-valid result is conclusive activity even when stdout was buffered.
-                genuine_activity = bool(session_id) or valid_verdict
+                genuine_activity = bool(session_id) or valid_verdict or bool(last.get("activity_events"))
                 launch_ok = bool(pid) and genuine_activity
                 if launch_ok:
                     tick(progress=True)
@@ -292,7 +292,7 @@ class ClaudeEventConsumer:
                         lifecycle_state="review_running", pid=pid,
                         claude_session_id=session_id, attempt_count=attempt,
                     )
-                elif last.get("status") == "completed" or not pid or not genuine_activity:
+                elif last.get("status") not in {"failed_launch", "stalled", "timed_out"} and (last.get("status") == "completed" or not pid or not genuine_activity):
                     reason = str(last.get("blocked_reason") or (
                         "PID startup watchdog expired" if not pid else "genuine activity watchdog expired"
                     ))
@@ -326,7 +326,7 @@ class ClaudeEventConsumer:
             blocked_on = classify_blocked_on(last)
             deferred = self._record_deferral(fingerprint, blocked_on)
             self._status(
-                lifecycle_state="failed_launch", active_review_assignment=None,
+                lifecycle_state=last.get("status") if last.get("status") in {"stalled", "timed_out"} else "failed_launch", active_review_assignment=None,
                 attempt_count=MAX_ATTEMPTS, last_blocker=blocker,
                 pid=last.get("pid"), claude_session_id=last.get("session_id"), blocked_on=blocked_on,
             )

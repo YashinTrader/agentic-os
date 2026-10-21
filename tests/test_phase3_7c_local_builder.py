@@ -46,7 +46,7 @@ from dispatch.local_builder_runs import list_run_summaries  # noqa: E402
 
 
 def _copy_repo_ignore(dirpath: str, names: list[str]) -> set[str]:
-    ignored = set(shutil.ignore_patterns(".git", "__pycache__", "*.pyc")(dirpath, names))
+    ignored = set(shutil.ignore_patterns(".git", "runtime", "__pycache__", "*.pyc")(dirpath, names))
     # Never import live active tasks into the fixture. Real ready/queued
     # auto_local_worktree tasks (e.g. new Phase 3.9 milestones) would make
     # WorkerTests process work when they expect idle.

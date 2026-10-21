@@ -13,6 +13,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
+from dispatch.atomic_io import atomic_write_json
+from orchestrator.agent_launcher import LaunchPlan, launch_process
+from orchestrator.process_monitor import monitor_process
+from orchestrator.runtime_store import RunState, save_run_state
 from dispatch.agent_context_bundle import build_context_bundle
 from dispatch.agent_environment import build_minimal_environment, merge_allowlists
 from dispatch.execution_policy import load_execution_policy
@@ -265,7 +269,7 @@ def run_adapter_local_builder(
         guard_error = work_lock.concurrency_error(repo_root, int(policy.get("maximum_concurrent_runs", 1)))
         if guard_error:
             raise work_lock.WorkLockError(guard_error)
-        work_lock.acquire(repo_root, logical_id, holder_agent=config.agent_slug,
+        ownership = work_lock.acquire(repo_root, logical_id, holder_agent=config.agent_slug,
                           route=config.execution_route, run_id=run_id, base_sha=base,
                           branch=str(task.get("new_branch") or ""), resume=bool(work_lock_run_id))
     except (work_lock.WorkLockError, OSError) as exc:
@@ -408,12 +412,51 @@ def run_adapter_local_builder(
     exit_code: int | None = None
     timed_out = False
     agent_invoked = False
+    deadline_state = None
+    activity_state = RunState(
+        run_id=run_id, assignment_id=ownership.get("assignment_id", ""), task_id=task_id,
+        assigned_agent=config.agent_slug, adapter=config.adapter_id,
+        logical_task_id=logical_id, worktree=str(worktree), started_at=started_at,
+        branch=alloc.branch_name, base_sha=base,
+        stdout_path=stdout_path.relative_to(repo_root).as_posix(),
+        stderr_path=stderr_path.relative_to(repo_root).as_posix(),
+    )
 
     if skip_agent_subprocess:
         exit_code = fake_agent_exit
         stdout_path.write_text("agent subprocess skipped (test mode)\n", encoding="utf-8")
         stderr_path.write_text("", encoding="utf-8")
+    elif subprocess_runner is None:
+        agent_invoked = True
+        argv = list(plan.argv)
+        argv[0] = resolve_executable(agent_executable or argv[0])
+        launch_plan = LaunchPlan(
+            agent=config.agent_slug, adapter=config.adapter_id, argv=argv,
+            cwd=plan.cwd, executable=argv[0], env=env, inherit_environment=False,
+        )
+        handle, reason = launch_process(launch_plan, stdout_path=stdout_path, stderr_path=stderr_path)
+        if handle is None:
+            deadline_state = "failed_launch"
+            activity_state.process_state = deadline_state
+            activity_state.blocked_reason = reason
+            activity_state.completed_at = utc_now()
+            save_run_state(repo_root, activity_state)
+        else:
+            activity_state.pid = handle.pid
+            activity_state.process_state = "running"
+            save_run_state(repo_root, activity_state)
+            monitored = monitor_process(
+                handle.process, state=activity_state, repo_root=repo_root,
+                stdout_path=stdout_path, stderr_path=stderr_path,
+                timeout_seconds=timeout_seconds,
+                started_monotonic=handle.started_monotonic,
+                initial_snapshot=handle.initial_snapshot,
+            )
+            exit_code = monitored.exit_code
+            timed_out = monitored.timed_out
+            deadline_state = monitored.deadline_state
     else:
+        # Compatibility seam for synchronous test runners; production streams to files.
         agent_invoked = True
         argv = list(plan.argv)
         argv[0] = resolve_executable(agent_executable or argv[0])
@@ -455,7 +498,7 @@ def run_adapter_local_builder(
     scope_ok, scope_errors = evaluate_changed_paths_scope(worktree, changed_files, allowed_paths)
     verification_results: dict[str, Any] = {"commands": []}
     with work_lock.keepalive(repo_root, logical_id, run_id):
-        for cmd in verification_commands:
+        for cmd in ([] if deadline_state else verification_commands):
             verification_results["commands"].append(
                 _run_shell_command(cmd, cwd=worktree, timeout=min(timeout_seconds, 600), runner=subprocess_runner)
             )
@@ -473,7 +516,10 @@ def run_adapter_local_builder(
         (run_dir / "handoff.md").write_text(handoff_path.read_text(encoding="utf-8"), encoding="utf-8")
 
     agent_label = config.agent_slug
-    if not scope_ok:
+    if deadline_state:
+        status = deadline_state
+        blocked = [activity_state.blocked_reason or deadline_state]
+    elif not scope_ok:
         status = RESULT_SCOPE_VIOLATION
         blocked = scope_errors
     elif timed_out:
@@ -494,6 +540,11 @@ def run_adapter_local_builder(
 
     work_lock.heartbeat(repo_root, logical_id, run_id=run_id, state=status)
     finished_at = utc_now()
+    activity_state.process_state = status
+    activity_state.completed_at = finished_at
+    activity_state.exit_code = exit_code
+    activity_state.blocked_reason = "; ".join(blocked)
+    save_run_state(repo_root, activity_state)
     result_payload = {
         "run_id": run_id,
         "task_id": task_id,
@@ -503,6 +554,12 @@ def run_adapter_local_builder(
         "status": status,
         "exit_code": exit_code,
         "timed_out": timed_out,
+        "startup_activity_at": activity_state.startup_activity_at,
+        "last_activity_at": activity_state.last_activity_at,
+        "activity_events": activity_state.activity_events,
+        "pid": activity_state.pid,
+        "deadline_fired": activity_state.deadline_fired,
+        "deadline_fired_at": activity_state.deadline_fired_at,
         "started_at": started_at,
         "finished_at": finished_at,
         "worktree_path": worktree_path,
@@ -519,7 +576,13 @@ def run_adapter_local_builder(
     if config.adapter_id == "codex-restricted":
         result_payload["codex_subprocess_invoked"] = agent_invoked
 
-    (run_dir / "result.json").write_text(json.dumps(result_payload, indent=2), encoding="utf-8")
+    atomic_write_json(run_dir / "result.json", result_payload)
+    if deadline_state and not activity_state.assignment_id:
+        from dispatch.orchestrator_pokes import write_orchestrator_poke
+        write_orchestrator_poke(
+            repo_root, source=config.agent_slug, assignment_id="", task_id=task_id,
+            event="assignment_failed",
+        )
 
     return LocalBuilderResult(
         run_id=run_id,

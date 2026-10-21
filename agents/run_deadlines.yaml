@@ -1,0 +1,10 @@
+# Overall limits come from each launch's adapter timeout.
+composer-restricted:
+  startup_seconds: 180
+  inactivity_seconds: 600
+codex-restricted:
+  startup_seconds: 180
+  inactivity_seconds: 600
+claude-reviewer:
+  startup_seconds: 90
+  inactivity_seconds: 300

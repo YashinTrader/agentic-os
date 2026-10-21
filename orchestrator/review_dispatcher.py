@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
-from orchestrator.layer_heartbeat import tick, wait_with_heartbeat
+from orchestrator.run_deadlines import DeadlinePolicy, adapter_deadlines
 from dispatch.assignment_channel import (
     list_inbox_assignments,
     read_assignment,
@@ -46,7 +46,6 @@ from orchestrator.claude_reviewer_adapter import (
 from orchestrator.leases import leases_dir, utc_now
 from orchestrator.process_monitor import monitor_process
 from orchestrator.review_schema import ReviewVerdict, validate_review_payload
-from orchestrator.runtime_store import RunState
 
 DEFAULT_REVIEW_CONCURRENCY = 1
 
@@ -350,7 +349,8 @@ def process_one_review(
     adapter: ClaudeReviewerAdapter | None = None,
     review_concurrency: int = DEFAULT_REVIEW_CONCURRENCY,
     timeout_seconds: int = 1800,
-    activity_timeout_seconds: int = 90,
+    activity_timeout_seconds: int | None = None,
+    inactivity_timeout_seconds: int | None = None,
     monitor: Callable[..., Any] | None = None,
     apply: bool = True,
 ) -> dict[str, Any]:
@@ -415,6 +415,11 @@ def process_one_review(
             request_payload["status"] = state.process_state
             request_payload["blocked_reason"] = state.blocked_reason
             atomic_write_json(review_request_path(repo_root, aid), request_payload)
+            if state.process_state == "failed_launch":
+                write_orchestrator_poke(
+                    repo_root, source="claude", assignment_id=aid, task_id=record.task_id,
+                    event="review_failed_launch", target="orchestrator",
+                )
             # Leave assignment in awaiting_review on reviewer failure.
             return {
                 "status": state.process_state,
@@ -426,81 +431,36 @@ def process_one_review(
             }
 
         handle = reviewer._handles.get(review_run_id)
-        if handle is not None and monitor is not None:
-            # Custom monitor path (tests)
-            mon = monitor(
-                handle.process,
-                state=RunState(
-                    run_id=review_run_id,
-                    assignment_id=aid,
-                    task_id=record.task_id,
-                    assigned_agent="claude",
-                    adapter="claude-reviewer",
-                    process_state="running",
-                    pid=handle.pid,
-                ),
-                repo_root=repo_root,
+        if handle is not None:
+            policy = adapter_deadlines(repo_root, "claude-reviewer", timeout_seconds)
+            mon = (monitor or monitor_process)(
+                handle.process, state=state, repo_root=repo_root,
                 stdout_path=repo_root / state.stdout_path,
                 stderr_path=repo_root / state.stderr_path,
                 timeout_seconds=timeout_seconds,
+                deadline_policy=DeadlinePolicy(
+                    activity_timeout_seconds if activity_timeout_seconds is not None else policy.startup_seconds,
+                    inactivity_timeout_seconds if inactivity_timeout_seconds is not None else policy.inactivity_seconds,
+                    policy.overall_seconds,
+                ),
+                persist_fn=save_review_state,
+                started_monotonic=handle.started_monotonic,
             )
-            # Force poll after monitor
-            if mon.timed_out:
-                reviewer.cancel_review(review_run_id)
-                state = load_review_state(repo_root, review_run_id) or state
-                state.process_state = STATE_TIMED_OUT
-                state.blocked_reason = "timed out"
+            deadline_state = getattr(mon, "deadline_state", None) or ("timed_out" if mon.timed_out else None)
+            if deadline_state:
+                if handle.process.poll() is None:
+                    handle.process.kill()
+                    handle.process.wait(timeout=5)
+                reviewer._handles.pop(review_run_id, None)
+                state.process_state = deadline_state
+                state.completed_at = state.completed_at or utc_now()
                 save_review_state(repo_root, state)
+                write_orchestrator_poke(
+                    repo_root, source="claude", assignment_id=aid, task_id=record.task_id,
+                    event=f"review_{deadline_state}", target="orchestrator",
+                )
             else:
-                # Write mon stdout/stderr already captured; re-poll
                 state = reviewer.poll_review(review_run_id)
-        elif handle is not None:
-            # Observe stream-json incrementally; process exit also permits parsing a
-            # buffered final result before classifying launch activity.
-            activity_started = time.monotonic()
-            while handle.process.poll() is None:
-                tick()
-                try:
-                    if (repo_root / state.stdout_path).stat().st_size > 0:
-                        break
-                except OSError:
-                    pass
-                if time.monotonic() - activity_started >= activity_timeout_seconds:
-                    reviewer.cancel_review(review_run_id)
-                    state = load_review_state(repo_root, review_run_id) or state
-                    state.process_state = "failed_launch"
-                    state.blocked_reason = "genuine activity watchdog expired"
-                    save_review_state(repo_root, state)
-                    request_payload["status"] = "failed_launch"
-                    request_payload["blocked_reason"] = state.blocked_reason
-                    atomic_write_json(review_request_path(repo_root, aid), request_payload)
-                    return {
-                        "status": "failed_launch", "assignment_id": aid,
-                        "review_run_id": review_run_id, "pid": state.pid,
-                        "blocked_reason": state.blocked_reason,
-                        "assignment_status": "awaiting_review",
-                    }
-                time.sleep(0.1)
-            elapsed = time.monotonic() - activity_started
-            try:
-                code = wait_with_heartbeat(handle.process, max(0.1, timeout_seconds - elapsed))
-            except Exception:
-                reviewer.cancel_review(review_run_id)
-                state = load_review_state(repo_root, review_run_id) or state
-                state.process_state = STATE_TIMED_OUT
-                state.blocked_reason = "timed out"
-                save_review_state(repo_root, state)
-                request_payload["status"] = STATE_TIMED_OUT
-                atomic_write_json(review_request_path(repo_root, aid), request_payload)
-                return {
-                    "status": STATE_TIMED_OUT,
-                    "assignment_id": aid,
-                    "review_run_id": review_run_id,
-                    "pid": state.pid,
-                    "assignment_status": "awaiting_review",
-                }
-            del code
-            state = reviewer.poll_review(review_run_id)
         else:
             state = reviewer.poll_review(review_run_id)
 
@@ -514,6 +474,8 @@ def process_one_review(
                 "review_run_id": review_run_id,
                 "pid": state.pid,
                 "session_id": state.session_id,
+                "activity_events": state.activity_events,
+                "deadline_fired": state.deadline_fired,
                 "blocked_reason": state.blocked_reason,
                 "assignment_status": "awaiting_review",
             }

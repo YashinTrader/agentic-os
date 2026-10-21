@@ -6,11 +6,14 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Sequence
 
 from orchestrator.runtime_store import STATE_BLOCKED_NO_ADAPTER, STATE_FAILED_LAUNCH, STATE_LAUNCHING
+from orchestrator.run_deadlines import worktree_snapshot
 
 SubprocessPopen = Callable[..., Any]
 
@@ -40,6 +43,7 @@ class LaunchPlan:
     blocked_reasons: list[str] = field(default_factory=list)
     command_redacted: list[str] = field(default_factory=list)
     stdin_text: str | None = None
+    inherit_environment: bool = True
 
     @property
     def ok(self) -> bool:
@@ -58,6 +62,8 @@ class LaunchHandle:
     executable: str
     executable_version: str
     cwd: str
+    started_monotonic: float | None = None
+    initial_snapshot: dict | None = None
 
 
 def redact_argv(argv: Sequence[str]) -> list[str]:
@@ -267,6 +273,14 @@ def launch_process(
     stdout_f = stdout_path.open("w", encoding="utf-8")
     stderr_f = stderr_path.open("w", encoding="utf-8")
     runner = popen or subprocess.Popen
+    # A file-backed stdin cannot block the launcher on a child that never reads.
+    stdin_file = None
+    if plan.stdin_text is not None:
+        stdin_file = tempfile.TemporaryFile(mode="w+", encoding="utf-8", dir=stdout_path.parent)
+        stdin_file.write(plan.stdin_text)
+        stdin_file.seek(0)
+    snapshot = worktree_snapshot(Path(plan.cwd), (stdout_path, stderr_path)) if plan.agent != "claude" else None
+    started = time.monotonic()
     try:
         proc = runner(
             plan.argv,
@@ -274,21 +288,18 @@ def launch_process(
             stdout=stdout_f,
             stderr=stderr_f,
             shell=False,
-            env={**os.environ, **plan.env} if plan.env else None,
+            env=({**os.environ, **plan.env} if plan.env else None)
+            if plan.inherit_environment else dict(plan.env),
             text=True,
-            stdin=subprocess.PIPE if plan.stdin_text is not None else None,
+            stdin=stdin_file,
         )
     except OSError as exc:
         stdout_f.close()
         stderr_f.close()
         return None, f"{STATE_FAILED_LAUNCH}: {exc}"
-
-    if plan.stdin_text is not None and getattr(proc, "stdin", None) is not None:
-        try:
-            proc.stdin.write(plan.stdin_text)
-            proc.stdin.close()
-        except (OSError, BrokenPipeError):
-            pass
+    finally:
+        if stdin_file is not None:
+            stdin_file.close()
 
     # File handles owned by process; close our copies after handoff on platforms that dup.
     try:
@@ -313,6 +324,8 @@ def launch_process(
             executable=plan.executable,
             executable_version=plan.executable_version,
             cwd=plan.cwd,
+            started_monotonic=started,
+            initial_snapshot=snapshot,
         ),
         STATE_LAUNCHING,
     )

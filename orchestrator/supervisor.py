@@ -393,6 +393,8 @@ def process_wake_signal(
         stdout_path=stdout_path,
         stderr_path=stderr_path,
         timeout_seconds=config.timeout_seconds,
+        **({"started_monotonic": handle.started_monotonic,
+            "initial_snapshot": handle.initial_snapshot} if monitor is None else {}),
     )
 
     # Reload state after monitor heartbeats.
@@ -408,9 +410,10 @@ def process_wake_signal(
         stdout=mon.stdout,
         stderr=mon.stderr,
         timed_out=mon.timed_out,
+        deadline_state=getattr(mon, "deadline_state", None),
     )
-    state.process_state = classification.process_state if classification.process_state != "completed" else STATE_COMPLETED
-    state.blocked_reason = classification.detail if state.process_state != STATE_COMPLETED else ""
+    state.process_state = getattr(mon, "deadline_state", None) or (classification.process_state if classification.process_state != "completed" else STATE_COMPLETED)
+    state.blocked_reason = (f"{state.deadline_fired} deadline expired" if state.deadline_fired else classification.detail) if state.process_state != STATE_COMPLETED else ""
     state.retry_eligible = classification.retry_eligible
     fp = build_fingerprint(
         agent=state.assigned_agent,
@@ -436,6 +439,7 @@ def process_wake_signal(
     # Codex fallback after Grok quota/auth/unavailable — one time max, no loops.
     if (
         state.process_state in {"blocked_quota", "blocked_authentication", STATE_BLOCKED_NO_ADAPTER, STATE_FAILED_LAUNCH}
+        and not state.deadline_fired
         and config.allow_codex_fallback
         and not used_fallback
         and state.assigned_agent in {"composer", "grok"}
@@ -523,6 +527,8 @@ def process_wake_signal(
                         stdout_path=fb_stdout,
                         stderr_path=fb_stderr,
                         timeout_seconds=config.timeout_seconds,
+                        **({"started_monotonic": fb_handle.started_monotonic,
+                            "initial_snapshot": fb_handle.initial_snapshot} if monitor is None else {}),
                     )
                     fb_state.exit_code = fb_mon.exit_code
                     fb_state.completed_at = utc_now()
@@ -533,8 +539,9 @@ def process_wake_signal(
                         stdout=fb_mon.stdout,
                         stderr=fb_mon.stderr,
                         timed_out=fb_mon.timed_out,
+                        deadline_state=getattr(fb_mon, "deadline_state", None),
                     )
-                    fb_state.process_state = (
+                    fb_state.process_state = getattr(fb_mon, "deadline_state", None) or (
                         STATE_COMPLETED if fb_class.process_state == "completed" else fb_class.process_state
                     )
                     fb_state.blocked_reason = fb_class.detail if fb_state.process_state != STATE_COMPLETED else ""

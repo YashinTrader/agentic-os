@@ -129,11 +129,20 @@ def process_one(repo_root: Path, *, task_path: Path | None = None) -> dict:
             return {"status": "skipped", "reason": str(exc)}
         result = run_local_builder(repo_root, task_path=task_path, work_lock_run_id=run_id)
         work_lock.heartbeat(repo_root, logical_id, run_id=run_id, state=result.status)
-        if assignment_id:
+        if assignment_id and result.status in {"failed_launch", "stalled", "timed_out"}:
+            from orchestrator.event_router import route_completion
+            from orchestrator.runtime_store import RunState
+            route_completion(repo_root, RunState(
+                run_id=result.run_id, assignment_id=assignment_id, task_id=task_id,
+                assigned_agent="codex", adapter="codex-restricted", logical_task_id=logical_id,
+                process_state=result.status, worktree=result.worktree_path,
+                handoff_path=result.handoff_path, blocked_reason="; ".join(result.blocked_reasons),
+            ), source="codex")
+        elif assignment_id:
             from dispatch.assignment_channel import complete_assignment
             complete_assignment(repo_root, assignment_id, run_id=result.run_id,
                                 handoff_path=result.handoff_path or None,
-                                outbox_status='failed' if result.status in {'failed', 'timed_out', 'blocked'} else 'awaiting_review')
+                                outbox_status='failed' if result.status in {'failed', 'failed_launch', 'stalled', 'timed_out', 'blocked'} else 'awaiting_review')
         return {
             "status": "processed",
             "run_id": result.run_id,
