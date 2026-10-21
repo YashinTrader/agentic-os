@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -35,6 +36,7 @@ _QUOTA_PATTERNS = (
 _AUTH_PATTERNS = (
     re.compile(r"unauthori[sz]ed", re.I),
     re.compile(r"authentication", re.I),
+    re.compile(r"failed to authenticate", re.I),
     re.compile(r"not logged in", re.I),
     re.compile(r"login required", re.I),
     re.compile(r"invalid api key", re.I),
@@ -84,6 +86,84 @@ def _parse_retry_after(text: str) -> str | None:
     return None
 
 
+_MAX_TURN_REASONS = {"max_turns", "maximum_turns", "max_turns_reached", "turn_limit", "error_max_turns"}
+_MAX_TURN_CLI_PATTERN = re.compile(r"max(?:imum)?[\s_-]*turns?|turn limit", re.I)
+
+
+def _diagnostic_text(value: Any) -> str:
+    if isinstance(value, dict):
+        return "\n".join(
+            f"retry-after: {item}" if key == "retry_after" else _diagnostic_text(item)
+            for key, item in value.items()
+        )
+    if isinstance(value, list):
+        return "\n".join(_diagnostic_text(item) for item in value)
+    return str(value)
+
+
+def _error_signals(stdout: str, stderr: str, *, failed_exit: bool) -> tuple[str, bool, bool]:
+    """Extract terminal provider diagnostics, never tool or assistant content.
+
+    CLIs emit JSONL or a single (possibly pretty-printed) JSON result. Plain
+    stdout and stderr are CLI error channels only on a failed exit. Structured
+    error messages retain nested/escaped JSON text for diagnostic matching.
+    """
+    diagnostics: list[str] = []
+    failed = False
+    max_turns = False
+    for stream in (stdout, stderr):
+        try:
+            records = [json.loads(stream)]
+        except ValueError:
+            records = []
+            for line in stream.splitlines():
+                try:
+                    records.append(json.loads(line))
+                except ValueError:
+                    if failed_exit:
+                        diagnostics.append(line)
+                        failed = True
+                        if _MAX_TURN_CLI_PATTERN.search(line):
+                            max_turns = True
+        for event in records:
+            if not isinstance(event, dict):
+                continue
+            kind = event.get("type")
+            # Grok's single JSON result may omit the event type entirely.
+            if kind is None and "result" in event and ("is_error" in event or "error" in event):
+                kind = "result"
+            # Do not recurse: nested events/errors can be quoted tool output.
+            if not isinstance(kind, str) or kind not in {"error", "turn.failed", "result", "turn.completed"}:
+                continue
+            reasons = [event.get("stop_reason"), event.get("subtype"), event.get("code")]
+            bounded = any(isinstance(reason, str) and reason.lower().replace("-", "_").replace(" ", "_")
+                          in _MAX_TURN_REASONS for reason in reasons)
+            turns, maximum = event.get("num_turns"), event.get("max_turns")
+            bounded = bounded or (type(turns) is int and type(maximum) is int
+                                  and maximum > 0 and turns == maximum)
+            max_turns = max_turns or bounded
+            subtype = event.get("subtype")
+            is_error = (kind in {"error", "turn.failed"} or event.get("is_error") is True
+                        or bool(event.get("error")) or event.get("status") == "error"
+                        or (isinstance(subtype, str) and subtype.startswith("error")))
+            if not is_error:
+                continue
+            failed = True
+            # These fields belong to the provider error envelope. Exclude paths,
+            # tool payloads, usage counters, and successful result narration.
+            for key in ("error", "message", "code", "status", "subtype", "stop_reason", "retry_after"):
+                value = event.get(key)
+                if value is not None:
+                    diagnostics.append(f"retry-after: {value}" if key == "retry_after" else
+                                       _diagnostic_text(value))
+            if kind == "result":
+                for key in ("result", "errors"):
+                    value = event.get(key)
+                    if value is not None:
+                        diagnostics.append(_diagnostic_text(value))
+    return "\n".join(diagnostics), failed, max_turns
+
+
 def classify_process_output(
     *,
     agent: str,
@@ -116,10 +196,17 @@ def classify_process_output(
             retry_eligible=False,
         )
 
-    blob = f"{stdout}\n{stderr}"
+    blob, provider_failed, max_turns = _error_signals(
+        stdout, stderr, failed_exit=exit_code not in (0, None),
+    )
+    if exit_code in (0, None) and not provider_failed and not max_turns:
+        return Classification(
+            process_state="completed", category="completed",
+            detail="process completed successfully", retry_eligible=False,
+        )
     retry_after = _parse_retry_after(blob)
 
-    if re.search(r"max(?:imum)?[\s_-]*turns?|turn limit", blob, re.I):
+    if max_turns:
         return Classification(
             process_state=STATE_MAX_TURNS,
             category="max_turns",
@@ -130,8 +217,8 @@ def classify_process_output(
     # Required MCP failures are external blockers (truthful; not silent).
     mcp_hit = classify_required_mcp_failure(
         required_mcp_servers=list(required_mcp_servers or []),
-        stdout=stdout,
-        stderr=stderr,
+        stdout="",
+        stderr=blob,
         exit_code=exit_code,
     )
     if mcp_hit is not None:
@@ -163,11 +250,11 @@ def classify_process_output(
                 retry_eligible=bool(retry_after),
             )
 
-    if exit_code not in (0, None):
+    if exit_code not in (0, None) or provider_failed:
         return Classification(
             process_state=STATE_FAILED,
             category="failed",
-            detail=f"nonzero exit code {exit_code}",
+            detail=f"nonzero exit code {exit_code}" if exit_code not in (0, None) else "structured provider error",
             retry_eligible=False,
         )
 

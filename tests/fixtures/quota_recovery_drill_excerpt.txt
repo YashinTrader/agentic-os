@@ -1,0 +1,5 @@
+{"type":"turn.started"}
+{"type":"tool_use",...,"path":"...\t-drill-quota\...\
+DRILL_QUOTA_RECOVERY.md"}
+{"type":"result",...,"is_error":false}
+max turns, rate limit

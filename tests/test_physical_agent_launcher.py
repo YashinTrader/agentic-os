@@ -245,7 +245,7 @@ class FailureClassifyTests(unittest.TestCase):
             agent="codex",
             adapter="codex-restricted",
             exit_code=1,
-            stdout="usage limit exceeded; retry-after: 60",
+            stdout='{"type":"turn.failed","error":{"message":"usage limit exceeded; retry-after: 60"}}',
         )
         self.assertEqual(quota.process_state, "blocked_quota")
         self.assertIsNotNone(quota.retry_after)
