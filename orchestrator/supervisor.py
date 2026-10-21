@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from orchestrator import layer_heartbeat
+from dispatch import work_lock
 from dispatch.atomic_io import atomic_write_json
 from dispatch.agent_wake import read_wake_signal
 from dispatch.assignment_channel import claim_assignment, read_assignment, set_assignment_status
@@ -230,6 +231,13 @@ def process_wake_signal(
                 "assignment_id": assignment_id,
             }
 
+    try:
+        work_lock.acquire(repo_root, record.logical_task_id or record.task_id,
+                          holder_agent=agent_id, route="supervisor", assignment_id=assignment_id,
+                          run_id=run_id, base_sha=record.base_sha, branch=record.new_branch, resume=True)
+    except (work_lock.WorkLockError, OSError) as exc:
+        release_lease(repo_root, assignment_id)
+        return {"status": "error", "reason": str(exc), "assignment_id": assignment_id}
     set_assignment_status(repo_root, assignment_id, "building")
 
     is_continuation = bool(existing and existing.process_state == STATE_MAX_TURNS)
@@ -260,6 +268,7 @@ def process_wake_signal(
         task_id=task_id or record.task_id,
         assigned_agent=agent_id,
         adapter=adapter_id or record.adapter_id,
+        logical_task_id=record.logical_task_id or record.task_id,
         process_state=STATE_QUEUED,
         worktree=str(worktree),
         branch=branch_name,
@@ -272,6 +281,7 @@ def process_wake_signal(
         continuation_from_run_id=existing.run_id if is_continuation else None,
         auto_resume_count=(existing.auto_resume_count + 1) if is_continuation else 0,
     )
+    work_lock.heartbeat(repo_root, state.logical_task_id, run_id=run_id, branch=branch_name)
     save_run_state(repo_root, state)
     layer_heartbeat.tick(progress=True)
 
@@ -302,6 +312,12 @@ def process_wake_signal(
             agent_output_path=out_path,
             codex_executable=config.codex_executable,
         )
+        if plan.ok:
+            work_lock.supersede(repo_root, state.logical_task_id, actor="supervisor",
+                                reason="configured Codex fallback: primary adapter unavailable before launch",
+                                holder_agent="codex", route="supervisor", assignment_id=assignment_id,
+                                run_id=run_id, base_sha=record.base_sha, branch=state.branch,
+                                expected_assignment_id=assignment_id, expected_run_id=run_id)
         used_fallback = True
         state.fallback_to_agent = "codex"
         state.assigned_agent = "codex"
@@ -451,11 +467,17 @@ def process_wake_signal(
                 codex_executable=config.codex_executable,
             )
             if cplan.ok:
+                work_lock.supersede(repo_root, state.logical_task_id, actor="supervisor",
+                                    reason=f"configured Codex fallback after primary exited: {state.process_state}",
+                                    holder_agent="codex", route="supervisor", assignment_id=assignment_id,
+                                    run_id=fallback_run, base_sha=record.base_sha, branch=state.branch,
+                                    expected_assignment_id=assignment_id, expected_run_id=state.run_id)
                 # Preserve lineage on a new run state.
                 fb_state = RunState(
                     run_id=fallback_run,
                     assignment_id=assignment_id,
                     task_id=state.task_id,
+                    logical_task_id=state.logical_task_id,
                     assigned_agent="codex",
                     adapter="codex-restricted",
                     process_state=STATE_LAUNCHING,
@@ -478,6 +500,16 @@ def process_wake_signal(
                 fb_handle, fb_msg = launch_process(
                     cplan, stdout_path=fb_stdout, stderr_path=fb_stderr, popen=popen
                 )
+                if fb_handle is None:
+                    fb_state.process_state = STATE_FAILED_LAUNCH
+                    fb_state.blocked_reason = fb_msg
+                    fb_state.completed_at = utc_now()
+                    save_run_state(repo_root, fb_state)
+                    route, route_errors = route_completion(repo_root, fb_state, branch=state.branch, source="codex")
+                    release_lease(repo_root, assignment_id)
+                    _consume_wake(repo_root, signal_path)
+                    return {"status": "failed_launch", "reason": fb_msg, "assignment_id": assignment_id,
+                            "run_id": fallback_run, "route": route, "route_errors": route_errors}
                 if fb_handle is not None:
                     fb_state.pid = fb_handle.pid
                     fb_state.process_state = STATE_RUNNING

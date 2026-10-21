@@ -54,4 +54,6 @@ def validate_execution_policy(policy: dict[str, Any]) -> list[str]:
         errors.append("automatic_retry_count must be 0")
     if int(policy.get("maximum_concurrent_runs", 0) or 0) < 1:
         errors.append("maximum_concurrent_runs must be >= 1")
+    if int(policy.get("maximum_concurrent_runs", 1) or 1) > 1 and policy.get("work_lock_enabled") is not True:
+        errors.append("builder concurrency above 1 requires work_lock_enabled: true")
     return errors

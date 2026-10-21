@@ -69,10 +69,13 @@ def request_agent_wake(
     if not config.get("enabled", False):
         return WakeOutcome("pending_wake", False, mechanism, "wake mechanism is disabled")
 
+    from dispatch.assignment_channel import read_assignment
+    assignment, _ = read_assignment(repo_root, assignment_id)
     payload = {
         "schema_version": "1.0",
         "assignment_id": assignment_id,
         "task_id": task_id,
+        "logical_task_id": (assignment.logical_task_id or assignment.task_id) if assignment else task_id,
         "agent_id": agent_id,
         "adapter_id": adapter_id,
         "task_path": task_path,

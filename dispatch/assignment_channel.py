@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from dispatch.atomic_io import atomic_create_json, atomic_write_json
+from dispatch import work_lock
 
 ASSIGNMENT_SCHEMA_VERSION = "1.0"
 INBOX_DIRNAME = "inbox"
@@ -272,6 +273,9 @@ class AssignmentRecord:
     assigned_to: str
     created_at: str
     status: str
+    logical_task_id: str = ""
+    parent_assignment_id: str | None = None
+    work_lock_status: dict | None = None
     adapter_id: str = DEFAULT_ADAPTER_ID
     execution_route: str = DEFAULT_EXECUTION_ROUTE
     task_path: str = ""
@@ -307,6 +311,7 @@ class OutboxRecord:
     adapter_id: str
     status: str
     finished_at: str
+    logical_task_id: str = ""
     run_id: str | None = None
     handoff_path: str | None = None
     branch_tip_sha: str | None = None
@@ -481,6 +486,8 @@ def parse_assignment_record(data: dict[str, Any], *, source_path: str = "") -> A
     return AssignmentRecord(
         assignment_id=str(data.get("assignment_id") or ""),
         task_id=str(data.get("task_id") or ""),
+        logical_task_id=str(data.get("logical_task_id") or data.get("task_id") or ""),
+        parent_assignment_id=data.get("parent_assignment_id"),
         title=str(data.get("title") or ""),
         goal=str(data.get("goal") or data.get("instructions") or ""),
         base_branch=str(data.get("base_branch") or ""),
@@ -532,6 +539,7 @@ def parse_outbox_record(data: dict[str, Any], *, source_path: str = "") -> Outbo
         adapter_id=str(data.get("adapter_id") or ""),
         status=str(data.get("status") or "unknown"),
         finished_at=str(data.get("finished_at") or ""),
+        logical_task_id=str(data.get("logical_task_id") or data.get("task_id") or ""),
         run_id=str(data.get("run_id") or "") or None,
         handoff_path=str(data.get("handoff_path") or "") or None,
         branch_tip_sha=str(data.get("branch_tip_sha") or "") or None,
@@ -552,6 +560,9 @@ def assignment_to_payload(record: AssignmentRecord) -> dict[str, Any]:
         "schema_version": ASSIGNMENT_SCHEMA_VERSION,
         "assignment_id": record.assignment_id,
         "task_id": record.task_id,
+        "logical_task_id": record.logical_task_id or record.task_id,
+        "parent_assignment_id": record.parent_assignment_id,
+        "work_lock_status": record.work_lock_status,
         "title": record.title,
         "goal": record.goal,
         "base_branch": record.base_branch,
@@ -616,6 +627,9 @@ def write_assignment(
     status: str = "pending",
     adapter_id: str | None = None,
     execution_route: str | None = None,
+    _reserved: bool = False,
+    logical_task_id: str | None = None,
+    parent_assignment_id: str | None = None,
     reassigned_from: str | None = None,
     reassignment_reason: str | None = None,
 ) -> tuple[Path | None, list[str]]:
@@ -629,6 +643,20 @@ def write_assignment(
             f"builder identity {assigner_profile.agent_id!r} may not create assignments; "
             "use an orchestrator identity"
         ]
+    parent_id = parent_assignment_id or reassigned_from
+    if parent_id:
+        parent, parent_errors = read_assignment(repo_root, parent_id)
+        if parent is None:
+            return None, parent_errors
+        logical_task_id = logical_task_id or parent.logical_task_id or parent.task_id
+    if not logical_task_id:
+        try:
+            import yaml
+            task_file = repo_root / (task_path or f"tasks/active/{task_id}.yaml")
+            task_data = yaml.safe_load(task_file.read_text(encoding="utf-8")) if task_file.is_file() else {"id": task_id}
+            logical_task_id = work_lock.logical_id_for_task(repo_root, task_data)
+        except (work_lock.WorkLockError, OSError, ValueError, yaml.YAMLError) as exc:
+            return None, [str(exc)]
     aid = assignment_id or generate_assignment_id(task_id)
     now = utc_now()
     profile, profile_errors = resolve_builder_profile(repo_root, assigned_to)
@@ -649,6 +677,8 @@ def write_assignment(
         "schema_version": ASSIGNMENT_SCHEMA_VERSION,
         "assignment_id": aid,
         "task_id": task_id,
+        "logical_task_id": logical_task_id,
+        "parent_assignment_id": parent_id,
         "title": resolved_title,
         "goal": resolved_goal,
         "base_branch": base_branch,
@@ -687,7 +717,13 @@ def write_assignment(
 
     target = inbox_dir(repo_root) / f"{aid}.json"
     target.parent.mkdir(parents=True, exist_ok=True)
-    atomic_write_json(target, payload)
+    try:
+        work_lock.acquire(repo_root, logical_task_id, holder_agent=canonical_assigned_to,
+                          route=resolved_route, assignment_id=aid,
+                          base_sha=base_sha or "", branch=resolved_branch, resume=_reserved)
+        atomic_create_json(target, payload)
+    except (work_lock.WorkLockError, OSError) as exc:
+        return None, [str(exc)]
     if wake:
         from dispatch.agent_wake import request_agent_wake
 
@@ -713,6 +749,10 @@ def _write_inbox_record(repo_root: Path, record: AssignmentRecord) -> Path:
         # Still write when updating known records, but surface via exception for safety
         raise ValueError(f"assignment schema invalid: {'; '.join(errors)}")
     atomic_write_json(target, payload)
+    if record.status in TERMINAL_STATUSES and not record.reassigned_to_assignment_id:
+        work_lock.release(repo_root, record.logical_task_id or record.task_id,
+                          assignment_id=record.assignment_id, actor=record.reviewed_by or record.assigned_by,
+                          reason=record.status)
     return target
 
 
@@ -723,6 +763,10 @@ def read_assignment(repo_root: Path, assignment_id: str) -> tuple[AssignmentReco
         return None, errors
     record = parse_assignment_record(data, source_path=str(path.relative_to(repo_root)).replace("\\", "/"))
     errors.extend(record.parse_errors)
+    locks = work_lock.status(repo_root, record.logical_task_id or record.task_id)
+    record.work_lock_status = locks[0] if locks else None
+    if locks and locks[0]["stale"]:
+        record.parse_errors.append(f"work_lock_status: stale; holder {locks[0]['holder_agent']} via {locks[0]['route']}")
     return record, errors
 
 
@@ -766,6 +810,10 @@ def list_inbox_assignments(repo_root: Path) -> tuple[list[AssignmentRecord], lis
             continue
         record = parse_assignment_record(data, source_path=rel)
         errors.extend(record.parse_errors)
+        locks = work_lock.status(repo_root, record.logical_task_id or record.task_id)
+        record.work_lock_status = locks[0] if locks else None
+        if locks and locks[0]["stale"]:
+            record.parse_errors.append(f"work_lock_status: stale; holder {locks[0]['holder_agent']} via {locks[0]['route']}")
         records.append(record)
     return records, errors
 
@@ -859,8 +907,17 @@ def claim_assignment(
 
     ok, reason = evaluate_assignment_pickability(repo_root, record)
     if not ok:
-        errors.append(reason)
-        return None, errors
+        locks = work_lock.status(repo_root, record.logical_task_id or record.task_id)
+        if locks:
+            reason += f"; holder {locks[0]['holder_agent']} via {locks[0]['route']} ({locks[0]['assignment_id']})"
+        return None, errors + [reason]
+    try:
+        work_lock.acquire(repo_root, record.logical_task_id or record.task_id,
+                          holder_agent=canonical_claimant, route=record.execution_route,
+                          assignment_id=record.assignment_id, base_sha=record.base_sha,
+                          branch=record.new_branch, resume=True)
+    except (work_lock.WorkLockError, OSError) as exc:
+        return None, [str(exc)]
 
     # Correction-cycle re-claim: drop prior resolution outbox so complete can rewrite it.
     if record.status == "changes_requested":
@@ -873,6 +930,7 @@ def claim_assignment(
         "schema_version": ASSIGNMENT_SCHEMA_VERSION,
         "assignment_id": assignment_id,
         "task_id": record.task_id,
+        "logical_task_id": record.logical_task_id or record.task_id,
         "claimed_by": canonical_claimant,
         "claimed_at": now,
         "status": "claimed",
@@ -1069,6 +1127,16 @@ def reassign_assignment(
         return None, [f"failed to acquire reassignment lock: {exc}"]
 
     replacement_id = generate_assignment_id(record.task_id)
+    logical_id = record.logical_task_id or record.task_id
+    try:
+        work_lock.supersede(repo_root, logical_id, actor=reassigned_by, reason=reason,
+                            holder_agent=profile.agent_id, route=profile.execution_route,
+                            assignment_id=replacement_id, base_sha=record.base_sha,
+                            branch=f"agent/{profile.agent_id}/{record.task_id}",
+                            expected_assignment_id=record.assignment_id)
+    except (work_lock.WorkLockError, OSError) as exc:
+        lock_path.unlink(missing_ok=True)
+        return None, [str(exc)]
     replacement_path, create_errors = write_assignment(
         repo_root,
         task_id=record.task_id,
@@ -1088,6 +1156,8 @@ def reassign_assignment(
         assignment_id=replacement_id,
         adapter_id=profile.adapter_id,
         execution_route=profile.execution_route,
+        _reserved=True,
+        logical_task_id=logical_id,
         reassigned_from=record.assignment_id,
         reassignment_reason=reason,
     )
@@ -1157,10 +1227,12 @@ def write_outbox_result(
     adapter_id: str = DEFAULT_ADAPTER_ID,
 ) -> tuple[Path | None, list[str]]:
     """Write result to outbox. Schema-validates on write."""
+    assignment, _ = read_assignment(repo_root, assignment_id)
     payload = {
         "schema_version": ASSIGNMENT_SCHEMA_VERSION,
         "assignment_id": assignment_id,
         "task_id": task_id,
+        "logical_task_id": (assignment.logical_task_id or assignment.task_id) if assignment else task_id,
         "adapter_id": adapter_id,
         "status": status,
         "finished_at": utc_now(),
@@ -1186,6 +1258,7 @@ def complete_assignment(
     repo_root: Path,
     assignment_id: str,
     *,
+    run_id: str | None = None,
     handoff_path: str | None = None,
     branch_tip_sha: str | None = None,
     branch_name: str | None = None,
@@ -1211,6 +1284,7 @@ def complete_assignment(
         repo_root,
         assignment_id=assignment_id,
         task_id=record.task_id,
+        run_id=run_id,
         status=outbox_status,
         handoff_path=handoff,
         branch_tip_sha=branch_tip_sha,
@@ -1676,6 +1750,8 @@ def create_assignment_from_task_yaml(
     assigned_by: str = "claude",
     assigned_to: str = DEFAULT_ASSIGNED_TO,
     wake: bool = False,
+    logical_task_id: str | None = None,
+    parent_assignment_id: str | None = None,
 ) -> tuple[Path | None, list[str]]:
     """Create a full-contract assignment from tasks/active/*.yaml."""
     import yaml
@@ -1716,9 +1792,17 @@ def create_assignment_from_task_yaml(
         rel_task = str(path.resolve().relative_to(repo_root.resolve())).replace("\\", "/")
     except ValueError:
         rel_task = str(path)
+    parent_assignment_id = parent_assignment_id or task.get("parent_assignment_id")
+    if not logical_task_id and not parent_assignment_id:
+        try:
+            logical_task_id = work_lock.logical_id_for_task(repo_root, task)
+        except work_lock.WorkLockError as exc:
+            return None, [str(exc)]
     return write_assignment(
         repo_root,
         task_id=task_id,
+        logical_task_id=logical_task_id or task.get("logical_task_id"),
+        parent_assignment_id=parent_assignment_id,
         title=title,
         goal=goal,
         base_branch=base_branch or "main",

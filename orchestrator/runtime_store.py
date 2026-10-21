@@ -90,6 +90,7 @@ class RunState:
     task_id: str
     assigned_agent: str
     adapter: str
+    logical_task_id: str = ""
     process_state: str = STATE_QUEUED
     pid: int | None = None
     session_id: str | None = None
@@ -131,6 +132,9 @@ def result_path(run_dir: Path) -> Path:
 
 
 def save_run_state(repo_root: Path, state: RunState) -> Path:
+    if state.logical_task_id:
+        from dispatch.work_lock import heartbeat
+        heartbeat(repo_root, state.logical_task_id, run_id=state.run_id, state=state.process_state)
     run_dir = run_directory(repo_root, state.run_id)
     path = run_state_path(run_dir)
     atomic_write_json(path, state.to_dict())
@@ -141,6 +145,7 @@ def save_run_state(repo_root: Path, state: RunState) -> Path:
             "run_id": state.run_id,
             "assignment_id": state.assignment_id,
             "task_id": state.task_id,
+            "logical_task_id": state.logical_task_id or state.task_id,
             "status": state.process_state,
             "process_state": state.process_state,
             "assigned_agent": state.assigned_agent,

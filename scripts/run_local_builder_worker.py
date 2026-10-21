@@ -15,6 +15,7 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
+from dispatch import work_lock
 from dispatch.atomic_io import atomic_create_json  # noqa: E402
 from dispatch.codex_local_builder import run_local_builder  # noqa: E402
 from dispatch.codex_local_builder_gate import evaluate_worker_task_eligibility  # noqa: E402
@@ -85,6 +86,9 @@ def _handle_stop(signum: int, frame: object) -> None:
 def process_one(repo_root: Path, *, task_path: Path | None = None) -> dict:
     policy = load_execution_policy(repo_root)
     max_concurrent = int(policy.get("maximum_concurrent_runs", 1) or 1)
+    guard_error = work_lock.concurrency_error(repo_root, max_concurrent)
+    if guard_error:
+        return {"status": "skipped", "reason": guard_error}
     if _count_active_runs(repo_root) >= max_concurrent:
         return {"status": "skipped", "reason": "maximum concurrent runs reached"}
 
@@ -103,8 +107,33 @@ def process_one(repo_root: Path, *, task_path: Path | None = None) -> dict:
     if not try_claim_task(repo_root, task_id, run_id):
         return {"status": "skipped", "reason": f"task {task_id} already claimed"}
 
+    assignment_id = ""
     try:
-        result = run_local_builder(repo_root, task_path=task_path)
+        logical_id = work_lock.logical_id_for_task(repo_root, task)
+        try:
+            existing = work_lock.status(repo_root, logical_id)
+            if existing and existing[0]['holder_agent'] == 'codex' and existing[0]['state'] == 'reserved' and existing[0]['assignment_id']:
+                from dispatch.assignment_channel import claim_assignment, read_assignment
+                assignment_id = existing[0]['assignment_id']
+                record, errors = read_assignment(repo_root, assignment_id)
+                if record is None or record.task_id != task_id:
+                    raise work_lock.WorkLockError('; '.join(errors) or f'assignment task mismatch; holder {existing[0]["holder_agent"]} ({assignment_id})')
+                record, errors = claim_assignment(repo_root, assignment_id, claimed_by='codex')
+                if record is None:
+                    raise work_lock.WorkLockError('; '.join(errors))
+            work_lock.acquire(repo_root, logical_id, holder_agent="codex", route="codex_local_builder",
+                              assignment_id=assignment_id, resume=bool(assignment_id),
+                              run_id=run_id, base_sha=str(task.get("base_sha") or ""),
+                              branch=str(task.get("new_branch") or ""))
+        except (work_lock.WorkLockError, OSError) as exc:
+            return {"status": "skipped", "reason": str(exc)}
+        result = run_local_builder(repo_root, task_path=task_path, work_lock_run_id=run_id)
+        work_lock.heartbeat(repo_root, logical_id, run_id=run_id, state=result.status)
+        if assignment_id:
+            from dispatch.assignment_channel import complete_assignment
+            complete_assignment(repo_root, assignment_id, run_id=result.run_id,
+                                handoff_path=result.handoff_path or None,
+                                outbox_status='failed' if result.status in {'failed', 'timed_out', 'blocked'} else 'awaiting_review')
         return {
             "status": "processed",
             "run_id": result.run_id,

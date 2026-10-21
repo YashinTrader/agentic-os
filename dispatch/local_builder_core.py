@@ -226,6 +226,7 @@ def run_adapter_local_builder(
     build_command_plan: Callable[..., CommandPlan],
     prepare_environment: Callable[[dict[str, Any]], tuple[dict[str, str], list[str], str | None]],
     resolve_executable: Callable[[str | None], str],
+    work_lock_run_id: str | None = None,
     base_sha: str | None = None,
     agent_executable: str | None = None,
     subprocess_runner: SubprocessRunner | None = None,
@@ -249,7 +250,7 @@ def run_adapter_local_builder(
     if run_full_tests:
         verification_commands.append("python scripts/run_tests.py")
 
-    run_id = generate_run_id(task_id)
+    run_id = work_lock_run_id or generate_run_id(task_id)
     run_dir = run_directory(repo_root, run_id)
     started_at = utc_now()
 
@@ -257,6 +258,19 @@ def run_adapter_local_builder(
     if not base:
         code, out, _ = run_git(repo_root, ["rev-parse", "HEAD"])
         base = out.strip() if code == 0 else ""
+
+    from dispatch import work_lock
+    logical_id = work_lock.logical_id_for_task(repo_root, task)
+    try:
+        guard_error = work_lock.concurrency_error(repo_root, int(policy.get("maximum_concurrent_runs", 1)))
+        if guard_error:
+            raise work_lock.WorkLockError(guard_error)
+        work_lock.acquire(repo_root, logical_id, holder_agent=config.agent_slug,
+                          route=config.execution_route, run_id=run_id, base_sha=base,
+                          branch=str(task.get("new_branch") or ""), resume=bool(work_lock_run_id))
+    except (work_lock.WorkLockError, OSError) as exc:
+        return LocalBuilderResult(run_id=run_id, task_id=task_id, status=RESULT_BLOCKED,
+                                  blocked_reasons=[str(exc)], run_dir=str(run_dir))
 
     alloc = allocate_worktree(
         repo_root,
@@ -267,6 +281,7 @@ def run_adapter_local_builder(
         cleanup_policy="manual",
     )
     if not alloc.success or alloc.record is None:
+        work_lock.heartbeat(repo_root, logical_id, run_id=run_id, state=RESULT_BLOCKED)
         return LocalBuilderResult(
             run_id=run_id,
             task_id=task_id,
@@ -275,6 +290,7 @@ def run_adapter_local_builder(
             run_dir=str(run_dir),
         )
 
+    work_lock.heartbeat(repo_root, logical_id, run_id=run_id, branch=alloc.branch_name)
     allocation_record = allocation_record_to_dict(alloc.record)
     worktree_path = str(allocation_record.get("worktree_path", alloc.worktree_path))
     worktree = Path(worktree_path).resolve()
@@ -296,6 +312,7 @@ def run_adapter_local_builder(
             gate=gate,
             started_at=started_at,
         )
+        work_lock.heartbeat(repo_root, logical_id, run_id=run_id, state=RESULT_BLOCKED)
         return LocalBuilderResult(
             run_id=run_id,
             task_id=task_id,
@@ -317,6 +334,7 @@ def run_adapter_local_builder(
     preview = {
         "adapter_id": config.adapter_id,
         "task_id": task_id,
+        "logical_task_id": logical_id,
         "run_id": run_id,
         "execution_route": config.execution_route,
         "working_directory": worktree_path,
@@ -367,6 +385,7 @@ def run_adapter_local_builder(
         prompt=_build_prompt(instructions_path, handoff_rel),
     )
     if plan.blocked_reasons:
+        work_lock.heartbeat(repo_root, logical_id, run_id=run_id, state=RESULT_BLOCKED)
         return LocalBuilderResult(
             run_id=run_id,
             task_id=task_id,
@@ -400,15 +419,16 @@ def run_adapter_local_builder(
         argv[0] = resolve_executable(agent_executable or argv[0])
         runner = subprocess_runner or subprocess.run
         try:
-            completed = runner(
-                argv,
-                cwd=plan.cwd,
-                capture_output=True,
-                text=True,
-                timeout=timeout_seconds,
-                env=env,
-                shell=False,
-            )
+            with work_lock.keepalive(repo_root, logical_id, run_id):
+                completed = runner(
+                    argv,
+                    cwd=plan.cwd,
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout_seconds,
+                    env=env,
+                    shell=False,
+                )
             exit_code = completed.returncode
             stdout_path.write_text(completed.stdout or "", encoding="utf-8")
             stderr_path.write_text(completed.stderr or "", encoding="utf-8")
@@ -434,10 +454,11 @@ def run_adapter_local_builder(
 
     scope_ok, scope_errors = evaluate_changed_paths_scope(worktree, changed_files, allowed_paths)
     verification_results: dict[str, Any] = {"commands": []}
-    for cmd in verification_commands:
-        verification_results["commands"].append(
-            _run_shell_command(cmd, cwd=worktree, timeout=min(timeout_seconds, 600), runner=subprocess_runner)
-        )
+    with work_lock.keepalive(repo_root, logical_id, run_id):
+        for cmd in verification_commands:
+            verification_results["commands"].append(
+                _run_shell_command(cmd, cwd=worktree, timeout=min(timeout_seconds, 600), runner=subprocess_runner)
+            )
     validator_ok = all(
         c.get("exit_code") == 0 and not c.get("timed_out")
         for c in verification_results["commands"]
@@ -471,10 +492,12 @@ def run_adapter_local_builder(
         status = RESULT_COMPLETED_VERIFIED
         blocked = []
 
+    work_lock.heartbeat(repo_root, logical_id, run_id=run_id, state=status)
     finished_at = utc_now()
     result_payload = {
         "run_id": run_id,
         "task_id": task_id,
+        "logical_task_id": logical_id,
         "adapter_id": config.adapter_id,
         "route": config.execution_route,
         "status": status,

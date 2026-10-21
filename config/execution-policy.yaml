@@ -4,6 +4,7 @@ enabled: true
 enabled_adapters:
   - codex-restricted
 maximum_concurrent_runs: 1
+work_lock_enabled: true
 automatic_worktree_allocation: true
 automatic_execution: true
 automatic_test_execution: true

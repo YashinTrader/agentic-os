@@ -58,6 +58,8 @@ def cmd_list(args: argparse.Namespace) -> int:
                     {
                         "assignment_id": r.assignment_id,
                         "task_id": r.task_id,
+                        "logical_task_id": r.logical_task_id or r.task_id,
+                        "work_lock_status": r.work_lock_status,
                         "title": r.title,
                         "status": r.status,
                         "assigned_by": r.assigned_by,
@@ -323,6 +325,8 @@ def cmd_create(args: argparse.Namespace) -> int:
             base_branch=args.base_branch,
             base_sha=args.base_sha,
             new_branch=args.new_branch,
+            logical_task_id=args.logical_task_id,
+            parent_assignment_id=args.parent_assignment_id,
             assigned_by=args.assigned_by,
             assigned_to=args.assigned_to,
             wake=args.wake,
@@ -347,6 +351,8 @@ def cmd_create(args: argparse.Namespace) -> int:
             ],
             timeout=args.timeout,
             handoff_path=args.handoff,
+            logical_task_id=args.logical_task_id,
+            parent_assignment_id=args.parent_assignment_id,
             assigned_by=args.assigned_by,
             assigned_to=args.assigned_to,
             task_path=args.task_path or "",
@@ -589,6 +595,8 @@ def build_parser() -> argparse.ArgumentParser:
     create_p = sub.add_parser("create", help="Reviewer: post a new assignment")
     create_p.add_argument("--from-task", help="Path to tasks/active/*.yaml")
     create_p.add_argument("--task-id")
+    create_p.add_argument("--logical-task-id")
+    create_p.add_argument("--parent-assignment-id")
     create_p.add_argument("--title")
     create_p.add_argument("--goal")
     create_p.add_argument("--base-branch", default="main")

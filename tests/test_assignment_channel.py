@@ -318,9 +318,10 @@ class AssignmentClaimLifecycleTests(unittest.TestCase):
             f"tasks/active/{self.task_id}.yaml",
             base_sha="d" * 40,
         )
-        # Already have one assignment; this creates another
-        self.assertEqual(errors, [])
-        self.assertIsNotNone(path)
+        # The existing reservation blocks duplicate work even before claim.
+        self.assertIsNone(path)
+        self.assertIn("composer", " ".join(errors))
+        self.assertIn(self.assignment_id, " ".join(errors))
 
 
 class AssignmentFallbackRoutingTests(unittest.TestCase):

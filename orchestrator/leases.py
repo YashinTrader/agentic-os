@@ -59,6 +59,10 @@ def try_acquire_concurrency(
     max_concurrency: int = DEFAULT_MAX_CONCURRENCY,
 ) -> tuple[Lease | None, str]:
     """Atomically acquire a concurrency slot and per-assignment lease."""
+    from dispatch.work_lock import concurrency_error
+    guard_error = concurrency_error(repo_root, max_concurrency)
+    if guard_error:
+        return None, guard_error
     if max_concurrency < 1:
         return None, "max_concurrency must be >= 1"
     if count_active_leases(repo_root) >= max_concurrency:
