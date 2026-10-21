@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
+from orchestrator import layer_heartbeat
 from dispatch.atomic_io import atomic_write_json
 from dispatch.agent_wake import read_wake_signal
 from dispatch.assignment_channel import claim_assignment, read_assignment, set_assignment_status
@@ -55,6 +56,7 @@ def _handle_stop(signum: int, frame: object) -> None:
     del signum, frame
     global STOP_REQUESTED
     STOP_REQUESTED = True
+    layer_heartbeat.request_stop()
 
 
 def generate_run_id(task_id: str) -> str:
@@ -206,10 +208,13 @@ def process_wake_signal(
             wake_signal_path=str(signal_path),
         )
         save_run_state(repo_root, state)
+        layer_heartbeat.tick(progress=True)
         return {"status": "deferred", "reason": lease_reason, "assignment_id": assignment_id, "run_id": run_id}
 
     # Atomic claim of the assignment for the assigned builder.
     record, claim_errors = claim_assignment(repo_root, assignment_id, claimed_by=agent_id)
+    if record is not None:
+        layer_heartbeat.tick(progress=True)
     if record is None:
         # Already claimed by this agent in this session is OK if status is claimed/building.
         record, _ = read_assignment(repo_root, assignment_id)
@@ -268,6 +273,7 @@ def process_wake_signal(
         auto_resume_count=(existing.auto_resume_count + 1) if is_continuation else 0,
     )
     save_run_state(repo_root, state)
+    layer_heartbeat.tick(progress=True)
 
     prompt = (
         _continuation_prompt(existing, task_path or record.task_path)
@@ -307,6 +313,7 @@ def process_wake_signal(
         state.completed_at = utc_now()
         state.retry_eligible = False
         save_run_state(repo_root, state)
+        layer_heartbeat.tick(progress=True)
         route, route_errors = route_completion(repo_root, state, branch=state.branch, source="composer")
         release_lease(repo_root, assignment_id)
         _consume_wake(repo_root, signal_path)
@@ -332,6 +339,7 @@ def process_wake_signal(
     state.stdout_path = stdout_path.relative_to(repo_root).as_posix() if stdout_path.is_relative_to(repo_root) else str(stdout_path)
     state.stderr_path = stderr_path.relative_to(repo_root).as_posix() if stderr_path.is_relative_to(repo_root) else str(stderr_path)
     save_run_state(repo_root, state)
+    layer_heartbeat.tick(progress=True)
 
     handle, launch_msg = launch_process(plan, stdout_path=stdout_path, stderr_path=stderr_path, popen=popen)
     if handle is None:
@@ -339,6 +347,7 @@ def process_wake_signal(
         state.blocked_reason = launch_msg
         state.completed_at = utc_now()
         save_run_state(repo_root, state)
+        layer_heartbeat.tick(progress=True)
         route, route_errors = route_completion(repo_root, state, branch=state.branch, source=state.assigned_agent)
         release_lease(repo_root, assignment_id)
         _consume_wake(repo_root, signal_path)
@@ -357,6 +366,7 @@ def process_wake_signal(
     state.process_state = STATE_RUNNING
     state.heartbeat_at = utc_now()
     save_run_state(repo_root, state)
+    layer_heartbeat.tick(progress=True)
     heartbeat_lease(repo_root, assignment_id, pid=handle.pid)
 
     monitor_fn = monitor or monitor_process
@@ -396,6 +406,7 @@ def process_wake_signal(
 
     if state.process_state == STATE_MAX_TURNS:
         save_run_state(repo_root, state)
+        layer_heartbeat.tick(progress=True)
         release_lease(repo_root, assignment_id)
         if state.auto_resume_count < 1:
             return {
@@ -428,6 +439,7 @@ def process_wake_signal(
         }:
             # Record primary failure then launch codex once as fallback lineage.
             save_run_state(repo_root, state)
+            layer_heartbeat.tick(progress=True)
             fallback_run = generate_run_id(state.task_id)
             task_file = (repo_root / (task_path or record.task_path)).resolve()
             out_path = run_directory(repo_root, fallback_run) / "codex_agent_output.json"
@@ -462,6 +474,7 @@ def process_wake_signal(
                 fb_state.stdout_path = fb_stdout.relative_to(repo_root).as_posix()
                 fb_state.stderr_path = fb_stderr.relative_to(repo_root).as_posix()
                 save_run_state(repo_root, fb_state)
+                layer_heartbeat.tick(progress=True)
                 fb_handle, fb_msg = launch_process(
                     cplan, stdout_path=fb_stdout, stderr_path=fb_stderr, popen=popen
                 )
@@ -470,6 +483,7 @@ def process_wake_signal(
                     fb_state.process_state = STATE_RUNNING
                     fb_state.heartbeat_at = utc_now()
                     save_run_state(repo_root, fb_state)
+                    layer_heartbeat.tick(progress=True)
                     fb_mon = monitor_fn(
                         fb_handle.process,
                         state=fb_state,
@@ -502,6 +516,7 @@ def process_wake_signal(
                         fb_fp.to_dict() if fb_class.category != "completed" else None
                     )
                     save_run_state(repo_root, fb_state)
+                    layer_heartbeat.tick(progress=True)
                     route, route_errors = route_completion(
                         repo_root, fb_state, branch=state.branch, source="codex"
                     )
@@ -522,6 +537,7 @@ def process_wake_signal(
                     }
 
     save_run_state(repo_root, state)
+    layer_heartbeat.tick(progress=True)
     route, route_errors = route_completion(
         repo_root, state, branch=state.branch, source=state.assigned_agent
     )
@@ -574,6 +590,8 @@ def run_forever(
     cfg = config or SupervisorConfig()
     global STOP_REQUESTED
     STOP_REQUESTED = False
+    if hasattr(signal, "SIGBREAK"):
+        signal.signal(signal.SIGBREAK, _handle_stop)
     signal.signal(signal.SIGINT, _handle_stop)
     if hasattr(signal, "SIGTERM"):
         signal.signal(signal.SIGTERM, _handle_stop)
@@ -589,6 +607,7 @@ def run_forever(
             pass
 
     while not STOP_REQUESTED:
+        layer_heartbeat.tick()
         report = process_once(repo_root, config=cfg, **kwargs)
         report_status = str(report.get("status"))
         if report_status == "idle":

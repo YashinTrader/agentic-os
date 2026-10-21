@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
+from orchestrator.layer_heartbeat import tick, wait_with_heartbeat
 from dispatch.assignment_channel import (
     list_inbox_assignments,
     read_assignment,
@@ -458,6 +459,7 @@ def process_one_review(
             # buffered final result before classifying launch activity.
             activity_started = time.monotonic()
             while handle.process.poll() is None:
+                tick()
                 try:
                     if (repo_root / state.stdout_path).stat().st_size > 0:
                         break
@@ -481,7 +483,7 @@ def process_one_review(
                 time.sleep(0.1)
             elapsed = time.monotonic() - activity_started
             try:
-                code = handle.process.wait(timeout=max(0.1, timeout_seconds - elapsed))
+                code = wait_with_heartbeat(handle.process, max(0.1, timeout_seconds - elapsed))
             except Exception:
                 reviewer.cancel_review(review_run_id)
                 state = load_review_state(repo_root, review_run_id) or state
@@ -551,6 +553,10 @@ def process_one_review(
             "applied": applied,
             "apply_errors": apply_errors,
         }
+    except BaseException:
+        if "review_run_id" in locals() and "reviewer" in locals():
+            reviewer.cancel_review(review_run_id)
+        raise
     finally:
         release_review_lease(repo_root, aid)
 

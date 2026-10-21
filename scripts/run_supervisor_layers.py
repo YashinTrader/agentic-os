@@ -1,35 +1,21 @@
-﻿#!/usr/bin/env python3
-"""Run composer and Claude-reviewer persistent supervisor layers together."""
+#!/usr/bin/env python3
+"""Run independently supervised builder and Claude-reviewer layers."""
 from __future__ import annotations
-import subprocess
+
 import sys
-import time
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT))
+
+from orchestrator.layer_supervisor import LayerSupervisor
 
 
 def main() -> int:
-    commands = [
-        [sys.executable, str(REPO_ROOT / "scripts" / "run_orchestrator.py"), "--root", str(REPO_ROOT)],
-        [sys.executable, str(REPO_ROOT / "scripts" / "run_claude_event_consumer.py"), "--root", str(REPO_ROOT)],
-    ]
-    processes = [subprocess.Popen(command, cwd=REPO_ROOT, shell=False) for command in commands]
-    try:
-        while all(process.poll() is None for process in processes):
-            time.sleep(1)
-        return next((int(process.returncode) for process in processes if process.returncode), 1)
-    except KeyboardInterrupt:
-        return 130
-    finally:
-        for process in processes:
-            if process.poll() is None:
-                process.terminate()
-        for process in processes:
-            try:
-                process.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                process.kill()
+    return LayerSupervisor(REPO_ROOT, {
+        "builder": [sys.executable, str(REPO_ROOT / "scripts/run_orchestrator.py"), "--root", str(REPO_ROOT)],
+        "claude": [sys.executable, str(REPO_ROOT / "scripts/run_claude_event_consumer.py"), "--root", str(REPO_ROOT)],
+    }).run()
 
 
 if __name__ == "__main__":

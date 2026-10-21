@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
+from orchestrator.layer_heartbeat import tick
 from orchestrator.runtime_store import (
     STATE_ORPHANED,
     STATE_RUNNING,
@@ -73,30 +74,37 @@ def monitor_process(
     exit_code: int | None = None
     timed_out = False
 
-    while True:
-        code = poll(process)
-        state.heartbeat_at = utc_now()
-        save_run_state(repo_root, state)
-        if code is not None:
-            exit_code = int(code)
-            break
-        elapsed = time.monotonic() - started
-        # timeout_seconds == 0 means immediate timeout (tests / hard stop).
-        if timeout_seconds >= 0 and elapsed >= timeout_seconds:
-            timed_out = True
-            if kill_fn is not None:
-                kill_fn(process)
-            else:
-                try:
-                    process.kill()
-                except OSError:
-                    pass
-                try:
-                    exit_code = int(process.wait(timeout=5))
-                except Exception:
-                    exit_code = None
-            break
-        sleep(max(0.05, heartbeat_seconds))
+    try:
+        while True:
+            tick()
+            code = poll(process)
+            state.heartbeat_at = utc_now()
+            save_run_state(repo_root, state)
+            if code is not None:
+                exit_code = int(code)
+                break
+            elapsed = time.monotonic() - started
+            # timeout_seconds == 0 means immediate timeout (tests / hard stop).
+            if timeout_seconds >= 0 and elapsed >= timeout_seconds:
+                timed_out = True
+                if kill_fn is not None:
+                    kill_fn(process)
+                else:
+                    try:
+                        process.kill()
+                    except OSError:
+                        pass
+                    try:
+                        exit_code = int(process.wait(timeout=5))
+                    except Exception:
+                        exit_code = None
+                break
+            sleep(max(0.05, heartbeat_seconds))
+    except BaseException:
+        if process.poll() is None:
+            process.kill()
+            process.wait(timeout=5)
+        raise
 
     return MonitorResult(
         exit_code=exit_code,

@@ -9,6 +9,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 from orchestrator.claude_event_consumer import ClaudeEventConsumer
+from orchestrator.layer_heartbeat import install_stop_handlers
 from orchestrator.rotating_log import RotatingLogWriter
 
 
@@ -25,6 +26,7 @@ def main() -> int:
         report = consumer.process_once()
         print(json.dumps(report, indent=2, sort_keys=True))
         return 0 if report.get("status") in {"idle", "resolved", "deduplicated", "deferred"} else 1
+    install_stop_handlers()
     return consumer.run_forever(poll_seconds=args.poll_seconds)
 
 

@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
 
+from orchestrator.layer_heartbeat import tick
 from dispatch.atomic_io import atomic_create_json, atomic_write_json
 from dispatch.orchestrator_pokes import list_orchestrator_pokes
 from orchestrator.agent_launcher import resolve_executable
@@ -129,6 +130,8 @@ class ClaudeEventConsumer:
         self.state_logger = state_logger
 
     def _emit(self, event: str, **details: Any) -> None:
+        if event == "claimed":
+            tick(progress=True)
         if self.state_logger:
             self.state_logger({"at": _format_time(self.now()), "event": event, **details})
 
@@ -283,6 +286,7 @@ class ClaudeEventConsumer:
                 genuine_activity = bool(session_id) or valid_verdict
                 launch_ok = bool(pid) and genuine_activity
                 if launch_ok:
+                    tick(progress=True)
                     transitions.append("review_running")
                     self._status(
                         lifecycle_state="review_running", pid=pid,
@@ -305,6 +309,7 @@ class ClaudeEventConsumer:
                     resolved_path.parent.mkdir(parents=True, exist_ok=True)
                     atomic_write_json(resolved_path, resolution)
                     deferred_path(self.repo_root, fingerprint).unlink(missing_ok=True)
+                    tick(progress=True)
                     transitions.append("resolved")
                     self._archive(poke)
                     self._status(
@@ -337,5 +342,6 @@ class ClaudeEventConsumer:
 
     def run_forever(self, *, poll_seconds: float = 5.0) -> int:
         while True:
+            tick()
             self.process_once()
             time.sleep(max(0.1, poll_seconds))
