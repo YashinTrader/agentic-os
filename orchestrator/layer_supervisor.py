@@ -18,6 +18,7 @@ from orchestrator.process_ownership import owned_popen, terminate_owned, ownersh
 from orchestrator.layer_heartbeat import read_heartbeat, timestamp
 
 STDERR_LIMIT = 8192
+GRACE_SECONDS = 20
 
 
 def backoff_seconds(exits: int) -> float:
@@ -137,10 +138,17 @@ class LayerSupervisor:
                             ticking=False, progressing=False, last_tick_at=None,
                             last_progress_at=None, ticks=0)
 
-    def terminate(self, child: Child):
+    def terminate(self, child: Child, *, planned: bool = False):
         process = child.process
         if process is None:
             return
+        if planned and process.poll() is None:
+            try:
+                process.send_signal(signal.CTRL_BREAK_EVENT if os.name == "nt" else signal.SIGTERM)
+                process.wait(timeout=GRACE_SECONDS)
+            except (subprocess.TimeoutExpired, ProcessLookupError):
+                pass
+        # Also clean up surviving descendants after a graceful root exit.
         terminate_owned(process)
         process.wait(timeout=5)
         if child.tail:
@@ -210,7 +218,7 @@ class LayerSupervisor:
     def shutdown(self):
         self.stop_requested = True
         for child in self.children.values():
-            self.terminate(child)
+            self.terminate(child, planned=True)
             child.status.update(state="stopped", alive=False, ticking=False, progressing=False,
                                 stopped_at=timestamp(),
                                 stopped_exit_code=child.process.returncode if child.process else None)

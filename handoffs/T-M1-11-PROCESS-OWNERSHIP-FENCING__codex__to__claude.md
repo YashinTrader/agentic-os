@@ -78,3 +78,13 @@ validator_exit_code: 0
 post_test_diff_policy: POST_TEST_ALLOWLIST_EXACT
 post_test_files: handoffs/T-M1-11-PROCESS-OWNERSHIP-FENCING__codex__to__claude.md
 working_copy_path: C:/Users/gabot/agentic-os-worktrees/m1-11-ownership
+
+## Correction: T-M1-11B-GRACEFUL-PLANNED-SHUTDOWN (2026-10-21)
+
+- Restored planned shutdown: signal the live child with CTRL_BREAK_EVENT on Windows or SIGTERM elsewhere and wait up to GRACE_SECONDS (20 by default), then clean up the owned tree. An ignored signal escalates through terminate_owned(); successful graceful root exit also cleans up any remaining owned descendants.
+- Failure recovery retains immediate forced termination with no graceful signal or grace wait.
+- Restored the ignored-signal escalation ordering test, added explicit hung-child/no-grace assertions, and retained tree cleanup coverage using a real child that ignores the graceful signal and launches a grandchild. Both processes were confirmed gone after escalation.
+- Focused verification: python runtime/dispatch/m1-11/run_focused.py tests.test_layer_supervisor tests.test_process_ownership_fencing ? 28 tests passed in 7.664s, exit 0. The existing local runner supplies clone-local temporary fixtures.
+- python scripts/validate.py ? exit 0 (existing deprecated-event warnings). git diff --check passed.
+- No session pickup, full suite, push, merge, network, or writes outside this clone. No dependencies changed; network dependency auditing was excluded by the task's no-network constraint.
+- Correction remains uncommitted: git add failed creating this clone's .git/index.lock with Permission denied.

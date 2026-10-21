@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import signal
 import subprocess
 import sys
 import tempfile
@@ -12,7 +13,7 @@ from unittest.mock import Mock, patch
 
 from dispatch.atomic_io import atomic_write_json
 from orchestrator import layer_heartbeat
-from orchestrator.layer_supervisor import LayerSupervisor, STDERR_LIMIT, backoff_seconds
+from orchestrator.layer_supervisor import LayerSupervisor, STDERR_LIMIT, GRACE_SECONDS, backoff_seconds
 
 
 class FakeProcess:
@@ -165,13 +166,79 @@ class LayerSupervisorTests(unittest.TestCase):
         self.assertGreaterEqual(register.call_count, 4)
         self.assertEqual(register.call_args.args[1], "previous")
 
-    def test_shutdown_terminates_owned_tree(self):
+    def test_shutdown_graceful_signal(self):
         self.supervisor.step()
         child = self.supervisor.children["builder"]
         self.supervisor.shutdown()
-        self.assertTrue(child.process.killed)
+        self.assertEqual(child.process.signals, [signal.CTRL_BREAK_EVENT if os.name == "nt" else signal.SIGTERM])
         self.assertEqual(child.status["state"], "stopped")
         self.assertEqual(child.status["exits"], [])
+
+    def test_shutdown_escalates_if_child_ignores_signal(self):
+        self.supervisor.step()
+        process = self.supervisor.children["builder"].process
+        events = []
+        process.send_signal = lambda sig: events.append(("signal", sig))
+        def wait(timeout=None):
+            events.append(("wait", timeout))
+            if not process.killed:
+                raise subprocess.TimeoutExpired("dummy", timeout)
+            return process.returncode
+        process.wait = wait
+        from orchestrator.process_ownership import terminate_owned
+        def terminate(proc):
+            if proc is process:
+                events.append(("terminate_owned", None))
+            return terminate_owned(proc)
+        with patch("orchestrator.layer_supervisor.terminate_owned", side_effect=terminate):
+            self.supervisor.shutdown()
+        self.assertEqual(events, [
+            ("signal", signal.CTRL_BREAK_EVENT if os.name == "nt" else signal.SIGTERM),
+            ("wait", GRACE_SECONDS), ("terminate_owned", None), ("wait", 5)])
+        self.assertTrue(process.killed)
+
+    def test_hung_child_forces_termination_without_grace_wait(self):
+        self.supervisor.step()
+        process = self.supervisor.children["builder"].process
+        process.wait = Mock(return_value=-9)
+        self.now = 61
+        self.heartbeat("claude", 2)
+        self.supervisor.step()
+        self.assertTrue(process.killed)
+        self.assertEqual(process.signals, [])
+        process.wait.assert_called_once_with(timeout=5)
+
+    def test_shutdown_terminates_owned_tree(self):
+        from orchestrator.process_ownership import terminate_owned, process_start_time, pid_is_alive
+        marker = self.root / "grandchild.json"
+        code = (
+            "import subprocess,sys,time,json,signal; from pathlib import Path; "
+            "signal.signal(getattr(signal,'SIGBREAK',signal.SIGTERM),signal.SIG_IGN); "
+            "p=subprocess.Popen([sys.executable,'-c','import time; time.sleep(120)']); "
+            f"Path({str(marker)!r}).write_text(json.dumps(p.pid)); time.sleep(120)"
+        )
+        supervisor = LayerSupervisor(self.root, {"tree": [sys.executable, "-c", code]})
+        supervisor.step()
+        process = supervisor.children["tree"].process
+        try:
+            deadline = time.monotonic() + 15
+            while not marker.exists() and time.monotonic() < deadline:
+                time.sleep(.05)
+            self.assertTrue(marker.exists())
+            grandchild = json.loads(marker.read_text())
+            start = process_start_time(grandchild)
+            self.assertTrue(start)
+            self.assertTrue(pid_is_alive(grandchild, start))
+            with patch("orchestrator.layer_supervisor.GRACE_SECONDS", .1):
+                supervisor.shutdown()
+            deadline = time.monotonic() + 5
+            while pid_is_alive(grandchild, start) and time.monotonic() < deadline:
+                time.sleep(.05)
+            self.assertIsNotNone(process.poll())
+            self.assertFalse(pid_is_alive(grandchild, start))
+        finally:
+            terminate_owned(process)
+            process.wait(timeout=5)
 
     def test_atomic_status_failure_preserves_previous_document(self):
         self.supervisor.step()
