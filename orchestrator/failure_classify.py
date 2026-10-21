@@ -25,8 +25,11 @@ _QUOTA_PATTERNS = (
     re.compile(r"usage[\s_-]?limit", re.I),
     re.compile(r"too many requests", re.I),
     re.compile(r"\b429\b"),
+    re.compile(r"\b402\b"),
     re.compile(r"monthly limit", re.I),
     re.compile(r"tokens? remaining", re.I),
+    re.compile(r"usage balance", re.I),
+    re.compile(r"balance exhausted", re.I),
 )
 
 _AUTH_PATTERNS = (
@@ -219,6 +222,8 @@ def should_relaunch(
                 if retry_count >= max_automatic_retry:
                     return False, "automatic retry budget exhausted after retry_after"
                 return True, "retry_after elapsed; one automatic retry allowed"
+            # Wake relaunch stays off. The supervisor tick schedules the bounded
+            # retry (backoff, retry_after, or a quota-free probe).
             return False, "unchanged external failure fingerprint; no automatic relaunch"
         if retry_count >= max_automatic_retry:
             return False, "automatic retry budget exhausted for unchanged failure"

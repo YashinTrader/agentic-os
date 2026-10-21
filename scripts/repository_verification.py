@@ -28,6 +28,8 @@ POST_TEST_ALLOWLIST_EXACT = frozenset(
           "handoffs/T-PHASE3-9-6B-ACTIVITY-DETECTION-FIX__codex__to__claude.md",
           "handoffs/T-PHASE3-9-6C-STREAM-VERDICT-SELECTION__codex__to__claude.md",
           "handoffs/T-M1-02-DEFERRED-REEVAL__codex__to__claude.md",
+          "handoffs/T-M1-02C-BUILDER-CONDITION-RETRY__codex__to__claude.md",
+          "handoffs/T-M1-02C-BUILDER-CONDITION-RETRY__grok__to__claude.md",
           "handoffs/T-PHASE3-7A-CODEX-CANARY-ACTIVATION__composer__to__claude.md",
         "docs/REVIEW_COMPOSER_PHASE_3_7A_SELF_REVIEW.md",
         "docs/PHASE_3_7A_BASELINE.md",

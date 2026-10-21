@@ -72,7 +72,39 @@ When Grok is `blocked_quota`, `blocked_authentication`, `blocked_no_adapter`, or
 2. At most **one** Codex fallback launch via existing `build_codex_command` surface
 3. Preserve lineage (`fallback_from_run_id`)
 4. No builder-to-builder reassignment of the assignment contract (Claude remains authority)
-5. Unchanged failure fingerprints do **not** relaunch
+5. An unchanged quota/auth fingerprint does **not** relaunch on the next wake.
+   The supervisor tick may relaunch it later under the condition-retry cap below.
+
+## Condition retry (quota / auth)
+
+Builder runs blocked on quota or authentication record `blocked_on`
+(`quota:<provider>` or `auth:<provider>`), `blocked_since`, `next_eligible_at`,
+and `attempts` on the run record. The supervisor tick re-evaluates them without
+a new wake. A run becomes eligible when its parsed `retry_after` elapses, when
+the exponential backoff elapses (15 minutes, doubling, capped at 6 hours), or
+when a quota-free probe succeeds. Probes run at most once per provider per 10
+minutes. Each eligibility window relaunches once. A `retry_after` that is no
+longer in the future does not open another immediate window; the next wait is
+the backoff. The relaunch reuses the preserved
+worktree, branch, and work lock, and still uses the M1-04B deadlines. The
+relaunch emits one terminal poke when that attempt ends.
+
+Automatic condition retries stop at 4 per run (configurable). The run then
+becomes `blocked_external` and an alert is written to
+`runtime/dispatch/builder_condition_alerts.json`. Orchestrator `supersede`
+still replaces the held work lock, and a changed fingerprint can still relaunch
+through the existing wake path.
+
+Probes, from the installed CLIs (no model invocation):
+
+| Provider | Probe | Notes |
+|---|---|---|
+| grok / composer | none | `grok status` opens the TUI. There is no non-mutating status command, so Grok waits on backoff or `retry_after` only. |
+| codex | `codex login status` | Resolved executable, `shell=False`, success is exit code 0. This sees login, not quota, so it clears `auth:codex` only. |
+| claude | `claude auth status` | Same M1-02 probe; only `auth:claude` with `loggedIn: true`. |
+
+`recovered_at` and `recovery_seconds` record the interval from `blocked_since`
+to the first genuine activity of a successful condition relaunch.
 
 ## Process states
 

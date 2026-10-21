@@ -23,6 +23,12 @@ from orchestrator.agent_launcher import (
     extract_session_id,
     launch_process,
 )
+from orchestrator.builder_condition import (
+    apply_block_schedule,
+    clock_from,
+    maybe_record_recovery,
+    reevaluate_blocked_builders,
+)
 from orchestrator.event_router import route_completion
 from orchestrator.failure_classify import build_fingerprint, classify_process_output, should_relaunch
 from orchestrator.leases import (
@@ -75,6 +81,9 @@ class SupervisorConfig:
     timeout_seconds: int = 1800
     allow_codex_fallback: bool = True
     max_automatic_retry: int = 1
+    max_condition_retries: int = 4
+    now: Callable[[], Any] | None = None
+    condition_probe: Callable[[str], bool] | None = None
     worktree: str | None = None
     grok_executable: str | None = None
     codex_executable: str | None = None
@@ -133,6 +142,7 @@ def process_wake_signal(
     popen: Callable[..., Any] | None = None,
     monitor: Callable[..., Any] | None = None,
     launch_plan_builder: Callable[..., Any] | None = None,
+    condition_retry_from: RunState | None = None,
 ) -> dict[str, Any]:
     """Consume one wake signal and physically launch the assigned agent if eligible."""
     signal = read_wake_signal(signal_path)
@@ -163,7 +173,7 @@ def process_wake_signal(
             "assignment_id": assignment_id,
         }
 
-    if existing and existing.process_state in {
+    if condition_retry_from is None and existing and existing.process_state in {
         "blocked_authentication",
         "blocked_quota",
         "blocked_no_adapter",
@@ -232,18 +242,32 @@ def process_wake_signal(
             }
 
     try:
-        work_lock.acquire(repo_root, record.logical_task_id or record.task_id,
-                          holder_agent=agent_id, route="supervisor", assignment_id=assignment_id,
-                          run_id=run_id, base_sha=record.base_sha, branch=record.new_branch, resume=True)
+        logical_id = record.logical_task_id or record.task_id
+        if condition_retry_from is not None:
+            work_lock.supersede(
+                repo_root, logical_id, actor="supervisor",
+                reason="bounded condition retry reuses the preserved work lock",
+                holder_agent=agent_id, route="supervisor", assignment_id=assignment_id,
+                run_id=run_id, base_sha=record.base_sha,
+                branch=condition_retry_from.branch or record.new_branch,
+                expected_assignment_id=assignment_id, expected_run_id=condition_retry_from.run_id,
+            )
+        else:
+            work_lock.acquire(repo_root, logical_id, holder_agent=agent_id, route="supervisor",
+                              assignment_id=assignment_id, run_id=run_id, base_sha=record.base_sha,
+                              branch=record.new_branch, resume=True)
     except (work_lock.WorkLockError, OSError) as exc:
         release_lease(repo_root, assignment_id)
         return {"status": "error", "reason": str(exc), "assignment_id": assignment_id}
     set_assignment_status(repo_root, assignment_id, "building")
 
-    is_continuation = bool(existing and existing.process_state == STATE_MAX_TURNS)
-    if is_continuation:
-        worktree = Path(existing.worktree)
-        branch_name = existing.branch
+    preserved = condition_retry_from if condition_retry_from is not None else None
+    is_continuation = preserved is None and bool(existing and existing.process_state == STATE_MAX_TURNS)
+    if preserved is None and is_continuation and existing is not None:
+        preserved = existing
+    if preserved is not None and preserved.worktree:
+        worktree = Path(preserved.worktree)
+        branch_name = preserved.branch or record.new_branch
     elif config.worktree:
         worktree = Path(config.worktree).resolve()
         if worktree == repo_root.resolve():
@@ -277,29 +301,55 @@ def process_wake_signal(
         if signal_path.is_relative_to(repo_root)
         else str(signal_path),
         retry_count=(existing.retry_count + 1) if existing else 0,
-        fallback_from_run_id=existing.run_id if existing else None,
+        fallback_from_run_id=None if condition_retry_from is not None else (existing.run_id if existing else None),
         continuation_from_run_id=existing.run_id if is_continuation else None,
         auto_resume_count=(existing.auto_resume_count + 1) if is_continuation else 0,
     )
+    if condition_retry_from is not None:
+        state.blocked_on = condition_retry_from.blocked_on
+        state.blocked_since = condition_retry_from.blocked_since
+        state.attempts = condition_retry_from.attempts
+        state.condition_retry_from_run_id = condition_retry_from.run_id
+        state.fallback_from_run_id = None
     work_lock.heartbeat(repo_root, state.logical_task_id, run_id=run_id, branch=branch_name)
     save_run_state(repo_root, state)
     layer_heartbeat.tick(progress=True)
 
-    prompt = (
-        _continuation_prompt(existing, task_path or record.task_path)
-        if is_continuation and existing
-        else _default_prompt(assignment_id, state.task_id, task_path or record.task_path)
-    )
+    task_file_rel = task_path or record.task_path
+    if condition_retry_from is not None:
+        prompt = _default_prompt(assignment_id, state.task_id, task_file_rel) + (
+            f" Prior run {condition_retry_from.run_id} stopped on "
+            f"{condition_retry_from.blocked_on or 'an external condition'}. "
+            "Resume the preserved worktree and branch. Do not discard commits."
+        )
+    elif is_continuation and existing:
+        prompt = _continuation_prompt(existing, task_file_rel)
+    else:
+        prompt = _default_prompt(assignment_id, state.task_id, task_file_rel)
     required_mcp_servers = list(getattr(record, "required_mcp_servers", None) or [])
-    builder = launch_plan_builder or build_grok_launch_plan
-    plan = builder(
-        worktree=worktree,
-        prompt=prompt,
-        max_turns=config.max_turns,
-        timeout_hint_seconds=config.timeout_seconds,
-        grok_executable=config.grok_executable,
-        required_mcp_servers=required_mcp_servers,
-    )
+    if condition_retry_from is not None and agent_id == "codex" and launch_plan_builder is None:
+        task_file = (repo_root / task_file_rel).resolve()
+        out_path = run_directory(repo_root, run_id) / "codex_agent_output.json"
+        plan = build_codex_fallback_plan(
+            repo_root=repo_root,
+            worktree=worktree,
+            task_path=task_file,
+            agent_output_path=out_path,
+            codex_executable=config.codex_executable,
+            required_mcp_servers=required_mcp_servers,
+        )
+        state.assigned_agent = "codex"
+        state.adapter = "codex-restricted"
+    else:
+        builder = launch_plan_builder or build_grok_launch_plan
+        plan = builder(
+            worktree=worktree,
+            prompt=prompt,
+            max_turns=config.max_turns,
+            timeout_hint_seconds=config.timeout_seconds,
+            grok_executable=config.grok_executable,
+            required_mcp_servers=required_mcp_servers,
+        )
 
     used_fallback = False
     if (not plan.ok) and config.allow_codex_fallback:
@@ -399,6 +449,7 @@ def process_wake_signal(
         **({"started_monotonic": handle.started_monotonic,
             "initial_snapshot": handle.initial_snapshot} if monitor is None else {}),
     )
+    maybe_record_recovery(state, now=clock_from(config))
 
     # Reload state after monitor heartbeats.
     state.exit_code = mon.exit_code
@@ -426,6 +477,14 @@ def process_wake_signal(
         exit_code=mon.exit_code,
     )
     state.failure_fingerprint = fp.to_dict() if classification.category != "completed" else None
+    if not state.deadline_fired:
+        apply_block_schedule(
+            repo_root,
+            state,
+            retry_after=classification.retry_after,
+            now=clock_from(config),
+            max_attempts=config.max_condition_retries,
+        )
 
     if state.process_state == STATE_MAX_TURNS:
         save_run_state(repo_root, state)
@@ -535,6 +594,7 @@ def process_wake_signal(
                         **({"started_monotonic": fb_handle.started_monotonic,
                             "initial_snapshot": fb_handle.initial_snapshot} if monitor is None else {}),
                     )
+                    maybe_record_recovery(fb_state, now=clock_from(config))
                     fb_state.exit_code = fb_mon.exit_code
                     fb_state.completed_at = utc_now()
                     fb_class = classify_process_output(
@@ -562,6 +622,14 @@ def process_wake_signal(
                     fb_state.failure_fingerprint = (
                         fb_fp.to_dict() if fb_class.category != "completed" else None
                     )
+                    if not fb_state.deadline_fired:
+                        apply_block_schedule(
+                            repo_root,
+                            fb_state,
+                            retry_after=fb_class.retry_after,
+                            now=clock_from(config),
+                            max_attempts=config.max_condition_retries,
+                        )
                     save_run_state(repo_root, fb_state)
                     layer_heartbeat.tick(progress=True)
                     route, route_errors = route_completion(
@@ -625,9 +693,14 @@ def process_once(repo_root: Path, *, config: SupervisorConfig | None = None, **k
     recover_orphans(repo_root)
     queue = _wake_queue(repo_root, cfg.agent)
     signals = sorted(queue.glob("*.json")) if queue.is_dir() else []
-    if not signals:
-        return {"status": "idle", "agent": cfg.agent}
-    return process_wake_signal(repo_root, signals[0], config=cfg, **kwargs)
+    if signals:
+        return process_wake_signal(repo_root, signals[0], config=cfg, **kwargs)
+    report = reevaluate_blocked_builders(
+        repo_root, config=cfg, launch=process_wake_signal, **kwargs
+    )
+    if report is not None:
+        return report
+    return {"status": "idle", "agent": cfg.agent}
 
 
 def run_forever(

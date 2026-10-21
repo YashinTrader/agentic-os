@@ -125,6 +125,15 @@ class RunState:
     wake_signal_path: str = ""
     schema_version: str = "1.0"
     kind: str = "physical_agent_launch"
+    blocked_on: str = ""
+    blocked_since: str | None = None
+    next_eligible_at: str | None = None
+    attempts: int = 0
+    recovered_at: str | None = None
+    recovery_seconds: int | None = None
+    condition_retry_from_run_id: str | None = None
+    condition_retry_dispatched_at: str | None = None
+    escalated_at: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -182,6 +191,14 @@ def save_run_state(repo_root: Path, state: RunState) -> Path:
             "fallback_from_run_id": state.fallback_from_run_id,
             "fallback_to_agent": state.fallback_to_agent,
             "kind": state.kind,
+            "blocked_on": state.blocked_on,
+            "blocked_since": state.blocked_since,
+            "next_eligible_at": state.next_eligible_at,
+            "attempts": state.attempts,
+            "recovered_at": state.recovered_at,
+            "recovery_seconds": state.recovery_seconds,
+            "condition_retry_from_run_id": state.condition_retry_from_run_id,
+            "escalated_at": state.escalated_at,
             "command_redacted": state.command_redacted,
             "executable": state.executable,
             "executable_version": state.executable_version,

@@ -14,6 +14,7 @@ from dispatch.assignment_channel import (
 from dispatch.orchestrator_pokes import write_orchestrator_poke
 from orchestrator.runtime_store import (
     BLOCKED_EXTERNAL_STATES,
+    STATE_BLOCKED_EXTERNAL,
     STATE_COMPLETED,
     RunState,
 )
@@ -54,7 +55,7 @@ def route_completion(
         errors.extend(complete_errors)
         result["outbox_status"] = outbox_status
         result["outbox"] = out.status if out else None
-    elif state.process_state in BLOCKED_EXTERNAL_STATES:
+    elif state.process_state in BLOCKED_EXTERNAL_STATES or state.process_state == STATE_BLOCKED_EXTERNAL:
         outbox_status = "blocked"
         event = "assignment_blocked_external"
         blocked = [state.blocked_reason or state.process_state]
