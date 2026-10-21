@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dispatch.completion_fence import fenced_completion
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +21,7 @@ from orchestrator.runtime_store import (
 )
 
 
+@fenced_completion
 def route_completion(
     repo_root: Path,
     state: RunState,
@@ -46,6 +48,7 @@ def route_completion(
         out, complete_errors = complete_assignment(
             repo_root,
             state.assignment_id,
+            run_id=state.run_id,
             handoff_path=state.handoff_path or None,
             branch_name=branch or state.branch or None,
             branch_tip_sha=branch_tip_sha,

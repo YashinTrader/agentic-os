@@ -95,6 +95,8 @@ class RunState:
     logical_task_id: str = ""
     process_state: str = STATE_QUEUED
     pid: int | None = None
+    process_start_time: str | None = None
+    process_identity: str = ""
     session_id: str | None = None
     worktree: str = ""
     branch: str = ""
@@ -149,8 +151,18 @@ def result_path(run_dir: Path) -> Path:
 
 def save_run_state(repo_root: Path, state: RunState) -> Path:
     if state.logical_task_id:
-        from dispatch.work_lock import heartbeat
-        heartbeat(repo_root, state.logical_task_id, run_id=state.run_id, state=state.process_state)
+        from dispatch.work_lock import heartbeat, WorkLockError
+        try:
+            heartbeat(repo_root, state.logical_task_id, run_id=state.run_id, state=state.process_state)
+        except WorkLockError:
+            # Keep the zombie's evidence separate from normal outcomes. The
+            # monitor catches this ownership loss and terminates its own tree.
+            from dispatch.atomic_io import atomic_create_json
+            import uuid
+            atomic_create_json(repo_root / "runtime/dispatch/fenced" / f"{uuid.uuid4().hex}.json",
+                               {"status": "fenced", "run_id": state.run_id,
+                                "recorded_at": utc_now(), "evidence": state.to_dict()})
+            raise
     run_dir = run_directory(repo_root, state.run_id)
     path = run_state_path(run_dir)
     atomic_write_json(path, state.to_dict())
@@ -167,6 +179,8 @@ def save_run_state(repo_root: Path, state: RunState) -> Path:
             "assigned_agent": state.assigned_agent,
             "adapter_id": state.adapter,
             "pid": state.pid,
+            "process_start_time": state.process_start_time,
+            "process_identity": state.process_identity,
             "session_id": state.session_id,
             "worktree_path": state.worktree,
             "branch": state.branch,

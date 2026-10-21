@@ -10,6 +10,8 @@ import json
 import subprocess
 import time
 import uuid
+from orchestrator.process_ownership import terminate_owned, ownership_metadata
+
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
@@ -449,7 +451,7 @@ def process_one_review(
             deadline_state = getattr(mon, "deadline_state", None) or ("timed_out" if mon.timed_out else None)
             if deadline_state:
                 if handle.process.poll() is None:
-                    handle.process.kill()
+                    terminate_owned(handle.process)
                     handle.process.wait(timeout=5)
                 reviewer._handles.pop(review_run_id, None)
                 state.process_state = deadline_state

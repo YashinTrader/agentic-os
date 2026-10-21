@@ -307,7 +307,7 @@ def launch_process(
     stderr_path.parent.mkdir(parents=True, exist_ok=True)
     stdout_f = stdout_path.open("w", encoding="utf-8")
     stderr_f = stderr_path.open("w", encoding="utf-8")
-    runner = popen or subprocess.Popen
+    from orchestrator.process_ownership import owned_popen
     # A file-backed stdin cannot block the launcher on a child that never reads.
     stdin_file = None
     if plan.stdin_text is not None:
@@ -317,8 +317,9 @@ def launch_process(
     snapshot = worktree_snapshot(Path(plan.cwd), (stdout_path, stderr_path)) if plan.agent != "claude" else None
     started = time.monotonic()
     try:
-        proc = runner(
+        proc = owned_popen(
             plan.argv,
+            popen=popen,
             cwd=plan.cwd,
             stdout=stdout_f,
             stderr=stderr_f,

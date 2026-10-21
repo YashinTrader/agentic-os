@@ -14,9 +14,11 @@ from pathlib import Path
 from typing import Callable
 
 from dispatch.atomic_io import atomic_write_json
+from orchestrator.process_ownership import owned_popen, terminate_owned, ownership_metadata
 from orchestrator.layer_heartbeat import read_heartbeat, timestamp
 
 STDERR_LIMIT = 8192
+GRACE_SECONDS = 20
 
 
 def backoff_seconds(exits: int) -> float:
@@ -119,11 +121,12 @@ class LayerSupervisor:
                "AGENTIC_LAYER_TOKEN": child.token}
         options = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == "nt" else {}
         try:
-            child.process = self.popen(child.command, cwd=self.root, shell=False,
-                                       stderr=subprocess.PIPE, env=env, **options)
+            child.process = owned_popen(child.command, cwd=self.root, shell=False,
+                                       stderr=subprocess.PIPE, env=env, popen=self.popen, **options)
         except OSError as exc:
             self.failed(child, now, None, "launch_failed", str(exc))
             return
+        child.status.update(ownership_metadata(child.process))
         child.tail = StderrTail(child.process.stderr) if child.process.stderr else None
         if child.exit_started is not None:
             child.status["restart_count"] += 1
@@ -135,21 +138,19 @@ class LayerSupervisor:
                             ticking=False, progressing=False, last_tick_at=None,
                             last_progress_at=None, ticks=0)
 
-    def terminate(self, child: Child):
+    def terminate(self, child: Child, *, planned: bool = False):
         process = child.process
         if process is None:
             return
-        if process.poll() is None:
+        if planned and process.poll() is None:
             try:
-                if os.name == "nt":
-                    process.send_signal(signal.CTRL_BREAK_EVENT)
-                else:
-                    process.send_signal(signal.SIGTERM)
-                process.wait(timeout=10)
-            except (OSError, subprocess.TimeoutExpired):
-                if process.poll() is None:
-                    process.kill()
-                    process.wait(timeout=5)
+                process.send_signal(signal.CTRL_BREAK_EVENT if os.name == "nt" else signal.SIGTERM)
+                process.wait(timeout=GRACE_SECONDS)
+            except (subprocess.TimeoutExpired, ProcessLookupError):
+                pass
+        # Also clean up surviving descendants after a graceful root exit.
+        terminate_owned(process)
+        process.wait(timeout=5)
         if child.tail:
             child.tail.thread.join(timeout=1)
 
@@ -217,7 +218,7 @@ class LayerSupervisor:
     def shutdown(self):
         self.stop_requested = True
         for child in self.children.values():
-            self.terminate(child)
+            self.terminate(child, planned=True)
             child.status.update(state="stopped", alive=False, ticking=False, progressing=False,
                                 stopped_at=timestamp(),
                                 stopped_exit_code=child.process.returncode if child.process else None)

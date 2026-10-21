@@ -16,6 +16,7 @@ from typing import Any, Literal
 
 from dispatch.atomic_io import atomic_create_json, atomic_write_json
 from dispatch import work_lock
+from dispatch.completion_fence import fenced_completion
 from dispatch.mcp_isolation import (
     extract_required_mcp_servers,
     normalize_required_mcp_servers,
@@ -1234,6 +1235,7 @@ def reassign_assignment(
     return replacement, errors
 
 
+@fenced_completion
 def write_outbox_result(
     repo_root: Path,
     *,
@@ -1277,6 +1279,7 @@ def write_outbox_result(
     return target, []
 
 
+@fenced_completion
 def complete_assignment(
     repo_root: Path,
     assignment_id: str,
