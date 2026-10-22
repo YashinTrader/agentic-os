@@ -1,4 +1,4 @@
-timestamp: 2026-10-22T00:12:08Z
+timestamp: 2026-10-22T02:15:22Z
 dependency_install: skipped
 dependency_install_reason: cognee==1.1.0 cannot build on this host (Rust/Cargo); see docs/RUN_TESTS_BOOTSTRAP_BLOCKER.md
 known_exempt_failures: []
@@ -7,14 +7,14 @@ artifact_origin_path: C:/Users/gabot/agentic-os-worktrees/m1-integration
 hostname: AIAG
 python_version: 3.11.15
 command_line: ["C:\\Users\\gabot\\AppData\\Local\\hermes\\hermes-agent\\venv\\Scripts\\python.exe", "-m", "unittest", "discover", "-s", "tests", "-p", "test_*.py", "-v"]
-raw_output_sha256: d00930c2ea6559b786ea9457062d8e5f4ae5fab4d53135ed395aa0bc53ec8624
+raw_output_sha256: 154e40cc978c883032f79e55e802cb6427841c8f37fc986ec11faccec6d4e58b
 repo_root: C:/Users/gabot/agentic-os-worktrees/m1-integration
 commit: unknown
-commit_full: 9ab519ebe4491f635ae48dfe2b03ee48a2f347e7
+commit_full: 1f8ba22794dab8631a0c9310416e3a1a2bbde259
 python: C:\Users\gabot\AppData\Local\hermes\hermes-agent\venv\Scripts\python.exe
-test_count: 803
+test_count: 818
 exit_code: 0
-evidence_block_sha256: 41e6de45a81b15081c660125c70c0ddce956685c106d2d701b82cd124852089c
+evidence_block_sha256: 93befe1296a13857c534e0668a17a339aa6a8c73f01b539f0a8a959b5801002b
 --- raw output ---
 dependency_install: skipped
 dependency_install_reason: cognee==1.1.0 cannot build on this host (Rust/Cargo); see docs/RUN_TESTS_BOOTSTRAP_BLOCKER.md
@@ -695,6 +695,21 @@ test_nonzero_exit_and_timeout (test_physical_agent_launcher.SupervisorFlowTests.
 test_process_once_idle_without_wake (test_physical_agent_launcher.SupervisorFlowTests.test_process_once_idle_without_wake) ... ok
 test_supervisor_allocates_isolated_worktree (test_physical_agent_launcher.SupervisorFlowTests.test_supervisor_allocates_isolated_worktree) ... ok
 test_supervisor_pickup_atomic_claim_and_running_after_pid (test_physical_agent_launcher.SupervisorFlowTests.test_supervisor_pickup_atomic_claim_and_running_after_pid) ... ok
+test_deferred_head_does_not_hide_valid_wake (test_prelaunch_failure_isolation.PrelaunchIsolationTests.test_deferred_head_does_not_hide_valid_wake) ... ok
+test_due_quota_relaunches_with_poison_in_queue (test_prelaunch_failure_isolation.PrelaunchIsolationTests.test_due_quota_relaunches_with_poison_in_queue) ... ok
+test_ghost_reported_stale_without_stealing (test_prelaunch_failure_isolation.PrelaunchIsolationTests.test_ghost_reported_stale_without_stealing) ... ok
+test_invalid_base_releases_attempt_lock_with_audit (test_prelaunch_failure_isolation.PrelaunchIsolationTests.test_invalid_base_releases_attempt_lock_with_audit) ... ok
+test_launch_exception_releases_lock_and_retries_same_assignment (test_prelaunch_failure_isolation.PrelaunchIsolationTests.test_launch_exception_releases_lock_and_retries_same_assignment) ... ok
+test_live_lease_without_run_record_is_not_declared_ghost (test_prelaunch_failure_isolation.PrelaunchIsolationTests.test_live_lease_without_run_record_is_not_declared_ghost) ... ok
+test_malformed_wake_is_bounded (test_prelaunch_failure_isolation.PrelaunchIsolationTests.test_malformed_wake_is_bounded) ... ok
+test_missing_adapter_dead_letters_and_releases_lock (test_prelaunch_failure_isolation.PrelaunchIsolationTests.test_missing_adapter_dead_letters_and_releases_lock) ... ok
+test_poison_backoff_then_dead_letter (test_prelaunch_failure_isolation.PrelaunchIsolationTests.test_poison_backoff_then_dead_letter) ... ok
+test_poison_does_not_hide_two_valid_wakes (test_prelaunch_failure_isolation.PrelaunchIsolationTests.test_poison_does_not_hide_two_valid_wakes) ... ok
+test_prelaunch_cleanup_cannot_release_replacement_holder (test_prelaunch_failure_isolation.PrelaunchIsolationTests.test_prelaunch_cleanup_cannot_release_replacement_holder) ... ok
+test_rechecks_conditions_on_each_tick_with_valid_wakes (test_prelaunch_failure_isolation.PrelaunchIsolationTests.test_rechecks_conditions_on_each_tick_with_valid_wakes) ... ok
+test_restart_finishes_exhausted_move_without_fourth_attempt (test_prelaunch_failure_isolation.PrelaunchIsolationTests.test_restart_finishes_exhausted_move_without_fourth_attempt) ... ok
+test_spawn_error_result_releases_lock (test_prelaunch_failure_isolation.PrelaunchIsolationTests.test_spawn_error_result_releases_lock) ... ok
+test_tick_does_not_launch_post_process_fallback (test_prelaunch_failure_isolation.PrelaunchIsolationTests.test_tick_does_not_launch_post_process_fallback) ... ok
 test_holder_completes_normally (test_process_ownership_fencing.CompletionFenceTests.test_holder_completes_normally) ... ok
 test_holder_routes_normally (test_process_ownership_fencing.CompletionFenceTests.test_holder_routes_normally) ... ok
 test_same_run_release_allowed_but_older_release_is_not (test_process_ownership_fencing.CompletionFenceTests.test_same_run_release_allowed_but_older_release_is_not) ... ok
@@ -837,6 +852,6 @@ test_worker_correction_does_not_claim_parent_reservation (test_work_lock.WorkLoc
 test_yaml_followups_inherit_parent_task_and_explicit_split (test_work_lock.WorkLockTests.test_yaml_followups_inherit_parent_task_and_explicit_split) ... ok
 
 ----------------------------------------------------------------------
-Ran 803 tests in 3832.044s
+Ran 818 tests in 2714.539s
 
 OK (skipped=3)
