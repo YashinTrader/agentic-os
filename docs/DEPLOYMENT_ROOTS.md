@@ -114,6 +114,31 @@ venv shim/interpreter tree is covered. Unreadable or reused root identities
 are refused, never signaled. Supervisors predating this control need a separately
 validated legacy shutdown; missing identity evidence is deliberately refused.
 
+When switching from a pre-T-M1-25 release, first prevent the old scheduler
+from restarting the runtime and stop the old tree using the validated owned-tree
+procedure: establish its root PID/creation time and owned Job/group membership,
+request its supported graceful shutdown, and verify that the validated tree and
+all three runtime entrypoints have exited. Never infer ownership from executable
+names or use the new stop command to guess missing legacy identities. If ownership
+cannot be validated, stop the deployment and investigate.
+
+Then archive the legacy status explicitly with the selected release:
+
+```powershell
+python <selected-checkout>/scripts/stop_supervisor.py --state-root <state-root> --adopt-legacy-status --actor Gabriel --reason "upgrade from pre-T-M1-25 release"
+```
+
+Only exit 0 authorizes proceeding to the fence-clear and start commands above.
+Adoption checks command lines for `run_supervisor_layers.py`, `run_orchestrator.py`
+and `run_claude_event_consumer.py`, resolving explicit `--state-root`/`--root`
+against cwd where available. Matching or unverifiable candidates refuse with
+exit 2 and process details; the operation never kills anything. Process inspection uses psutil (required for adoption). Candidates with unreadable
+command lines, cwd/environment, or unresolved roots are conservatively refused.
+Resolve those candidates before retrying. The original
+status is preserved under `layer_supervisor/legacy/status.<timestamp>.<token>.json`
+and the actor, reason, scan result and archive path are recorded in the audit.
+Identity-bearing records, including incomplete ones, cannot be adopted.
+
 For rollback, repeat the fenced stop, select the old pinned checkout, clear
 maintenance and start the old entrypoint. Verify `status.json` has the new root
 PID/creation time, expected `config_root_git_sha`, and advancing child ticks

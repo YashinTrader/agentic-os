@@ -158,3 +158,61 @@ def force_recorded_tree(record: dict) -> None:
         if identity_state(record) != "live":
             raise ValueError("root identity changed immediately before termination")
         os.killpg(record["pid"], signal.SIGKILL)
+
+
+ROOT_IDENTITY_FIELDS = frozenset({"pid", "process_start_time", "instance_token", "process_identity"})
+
+
+def is_legacy_status(record: dict) -> bool:
+    """Only records with no root identity fields qualify for explicit adoption."""
+    return bool(record) and not ROOT_IDENTITY_FIELDS.intersection(record)
+
+
+def legacy_process_blockers(root: Path) -> list[dict]:
+    """Read-only process scan; unreadable candidate identities fail closed."""
+    try:
+        import psutil
+    except ImportError as exc:
+        raise ValueError("legacy adoption requires psutil for process inspection") from exc
+    scripts = {"run_supervisor_layers.py", "run_orchestrator.py", "run_claude_event_consumer.py"}
+    candidates = []
+    for process in psutil.process_iter(["pid", "name"]):
+        try:
+            args = process.cmdline()
+        except psutil.NoSuchProcess:
+            continue
+        except psutil.AccessDenied:
+            if "python" in (process.info.get("name") or "").lower():
+                raise ValueError(f"cannot inspect Python process {process.pid}")
+            continue
+        if not any(Path(arg.replace("\\", "/")).name.lower() in scripts for arg in args):
+            continue
+        try:
+            cwd = Path(process.cwd()).resolve()
+            environment_root = process.environ().get("AGENTIC_OS_STATE_ROOT")
+        except psutil.NoSuchProcess:
+            continue
+        except psutil.AccessDenied as exc:
+            raise ValueError(f"cannot inspect runtime process {process.pid}: {args}") from exc
+        candidates.append((process.pid, args, cwd, environment_root))
+    blockers = []
+    for pid, args, cwd, environment_root in candidates:
+        options = {}
+        for index, arg in enumerate(args):
+            for flag in ("--state-root", "--root"):
+                if arg == flag:
+                    options[flag] = args[index + 1] if index + 1 < len(args) else ""
+                elif arg.startswith(flag + "="):
+                    options[flag] = arg.split("=", 1)[1]
+        selected = options.get("--state-root") or environment_root or options.get("--root")
+        resolved = None
+        if selected:
+            path = Path(selected)
+            if path.is_absolute() or cwd is not None:
+                resolved = (path if path.is_absolute() else cwd / path).resolve()
+        # With no explicit root, cwd alone cannot exclude environment/default
+        # script-root selection. Keep such candidates as uncertain blockers.
+        if resolved is None or resolved == root.resolve():
+            blockers.append({"pid": pid, "command": args, "cwd": str(cwd) if cwd else None,
+                             "resolved_state_root": str(resolved) if resolved else None})
+    return blockers

@@ -102,6 +102,84 @@ class StopSupervisorTests(unittest.TestCase):
                                "--state-root", str(self.root), "--actor", "test", "--reason", "maintenance",
                                "--timeout", "10", *extra], env=self.env, capture_output=True, text=True, timeout=20)
 
+    def legacy_status(self):
+        record = {"state": "running", "children": {}, "state_root": str(self.root),
+                  "config_root": str(ROOT), "config_root_git_sha": "old", "updated_at": "old"}
+        atomic_write_json(control_dir(self.root) / "status.json", record)
+        return record
+
+    def test_legacy_adoption_archives_audits_and_allows_start(self):
+        before = self.legacy_status()
+        host = self.root / "blocked.py"
+        host.write_text(HOST, encoding="utf-8")
+        blocked = self.launch([sys.executable, str(host), str(self.root)])
+        self.assertEqual(blocked.wait(timeout=10), 2)
+        self.assertIn("--adopt-legacy-status", blocked.stdout.read().decode())
+        result = self.stop_cli("--adopt-legacy-status")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        archives = list((control_dir(self.root) / "legacy").glob("status.*.json"))
+        self.assertEqual(len(archives), 1)
+        self.assertEqual(read_heartbeat(archives[0]), before)
+        audit = read_heartbeat(next((control_dir(self.root) / "audit").glob("*.json")))
+        self.assertEqual(audit["exit_code"], 0)
+        self.assertEqual(audit["process_blockers"], [])
+        self.assertEqual(audit["archive"], str(archives[0]))
+        process = self.start()
+        self.assertEqual(self.stop_cli().returncode, 0)
+        self.assertEqual(process.wait(timeout=5), 0)
+
+    def test_legacy_adoption_refuses_own_fake_runtime(self):
+        before = self.legacy_status()
+        fake = self.root / "run_orchestrator.py"
+        fake.write_text("import time; time.sleep(120)", encoding="utf-8")
+        process = self.launch([sys.executable, str(fake), "--state-root", str(self.root)])
+        result = self.stop_cli("--adopt-legacy-status")
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn(str(process.pid), result.stdout)
+        self.assertEqual(self.status(), before)
+        self.assertFalse((control_dir(self.root) / "legacy").exists())
+        self.assertIsNone(process.poll())
+        terminate_owned(process)
+        process.wait(timeout=10)
+
+    def test_adoption_refuses_partial_identity_and_scan_errors(self):
+        for field in ("pid", "process_start_time", "instance_token", "process_identity"):
+            self.legacy_status()
+            atomic_write_json(control_dir(self.root) / "status.json", {**self.status(), field: None})
+            self.assertEqual(self.stop_cli("--adopt-legacy-status").returncode, 2)
+        self.legacy_status()
+        from scripts.stop_supervisor import adopt_legacy_status
+        with patch("scripts.stop_supervisor.legacy_process_blockers", side_effect=OSError("unreadable")):
+            self.assertEqual(adopt_legacy_status(self.root, "test", "scan error"), 2)
+        self.assertTrue(self.status())
+
+    def test_scan_resolves_root_flags_environment_and_cwd(self):
+        from types import SimpleNamespace
+        from orchestrator.supervisor_control import legacy_process_blockers
+        for args, env, expected in (
+            (["--state-root", str(self.root)], {}, True),
+            (["--state-root=" + str(self.root)], {}, True),
+            (["--root", "."], {}, True),
+            ([], {"AGENTIC_OS_STATE_ROOT": str(self.root)}, True),
+            (["--state-root", str(self.root / "other")], {}, False),
+            ([], {}, True),
+        ):
+            process = SimpleNamespace(pid=123, info={"name": "python"},
+                cmdline=lambda: [sys.executable, "run_orchestrator.py", *args],
+                cwd=lambda: str(self.root), environ=lambda: env)
+            with patch("psutil.process_iter", return_value=[process]):
+                self.assertEqual(bool(legacy_process_blockers(self.root)), expected)
+
+    def test_gone_identity_allows_start_without_adoption(self):
+        process = self.launch([sys.executable, "-c", "pass"])
+        process.wait(timeout=10)
+        atomic_write_json(control_dir(self.root) / "status.json", {
+            "pid": process.pid, "process_start_time": "previous-creation"})
+        self.assertEqual(identity_state(self.status()), "gone")
+        replacement = self.start()
+        self.assertEqual(self.stop_cli().returncode, 0)
+        self.assertEqual(replacement.wait(timeout=5), 0)
+
     def test_graceful_real_two_layers_and_audit(self):
         process = self.start()
         before = self.status()

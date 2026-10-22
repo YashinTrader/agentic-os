@@ -15,7 +15,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from dispatch.atomic_io import atomic_write_json
 from orchestrator.layer_heartbeat import read_heartbeat, timestamp
-from orchestrator.supervisor_control import control_dir, file_lock, identity_state, force_recorded_tree
+from orchestrator.supervisor_control import control_dir, file_lock, identity_state, force_recorded_tree, is_legacy_status, legacy_process_blockers
 from root_paths import resolve_state_root
 
 
@@ -118,9 +118,40 @@ def stop(root: Path, actor: str, reason: str, timeout: float = 90,
         return finish(2, f"refused/failed: {exc}")
 
 
+def adopt_legacy_status(root: Path, actor: str, reason: str) -> int:
+    directory = control_dir(root)
+    token = uuid.uuid4().hex
+    audit = {"requester": actor, "reason": reason, "token": token, "at": timestamp(),
+             "operation": "adopt_legacy_status", "state_root": str(root)}
+    audit_path = directory / "audit" / f"{token}.json"
+    try:
+        with file_lock(directory / "operator.lock"), file_lock(directory / "instance.lock"), file_lock(directory / "control.lock"):
+            status_path = directory / "status.json"
+            if not is_legacy_status(read_heartbeat(status_path)):
+                raise ValueError("status is missing, invalid, or carries root identity; adoption refused")
+            blockers = legacy_process_blockers(root)
+            audit["process_blockers"] = blockers
+            atomic_write_json(audit_path, audit)
+            if blockers:
+                raise ValueError(f"matching or unverifiable runtime processes: {blockers}")
+            archive = directory / "legacy" / f"status.{timestamp().replace(':', '-')}.{token}.json"
+            archive.parent.mkdir(parents=True, exist_ok=True)
+            audit["archive"] = str(archive)
+            atomic_write_json(audit_path, audit)  # durable intent before archive
+            status_path.rename(archive)
+            code, message = 0, f"legacy status archived: {archive}"
+    except (OSError, ValueError, subprocess.SubprocessError) as exc:
+        code, message = 2, f"refused/failed: {exc}"
+    audit.update(exit_code=code, outcome=message, finished_at=timestamp())
+    atomic_write_json(audit_path, audit)
+    print(message, flush=True)
+    return code
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--state-root")
+    parser.add_argument("--adopt-legacy-status", action="store_true")
     parser.add_argument("--actor")
     parser.add_argument("--reason")
     parser.add_argument("--timeout", type=float, default=90)
@@ -132,8 +163,12 @@ def main() -> int:
         parser.error("a stop request requires --actor and --reason")
     if args.actor is not None and (not args.actor.strip() or not args.reason.strip()):
         parser.error("--actor and --reason must not be blank")
+    if args.adopt_legacy_status and (not args.actor or args.maintenance):
+        parser.error("--adopt-legacy-status requires --actor and --reason and cannot combine with --maintenance")
     try:
         root = resolve_state_root(REPO_ROOT, args.state_root)
+        if args.adopt_legacy_status:
+            return adopt_legacy_status(root, args.actor, args.reason)
         return stop(root, args.actor or "local-operator", args.reason or f"maintenance {args.maintenance}",
                     args.timeout, args.maintenance, request_stop=args.actor is not None)
     except (ValueError, OSError) as exc:
