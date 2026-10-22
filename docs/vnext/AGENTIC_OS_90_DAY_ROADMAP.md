@@ -29,6 +29,7 @@ Each milestone has an exit gate backed by evidence. A milestone is not complete 
 |---|---|---|
 | M2-S1 | **Spike:** Beads (`bd`) on Windows vs SQLite WAL, behind `TaskLedger`. Measure atomic claim under concurrency, crash recovery, install friction | Codex |
 | M2-S2 | **Spike:** Omnigent in WSL running Claude + Grok harnesses; policy engine fit | Grok |
+| M2-S3 | **Spike (experimental runtime):** Google Antigravity CLI (`agy`) adapter, default model `gemini-3.8-flash-medium`. Contract-conformant prototype plus a 10–15 task benchmark against Codex Sol 6.1 (and MiMo Flash if installed). Read-only analysis and isolated experiments only. See below | Codex |
 | M2-01 | `TaskLedger` interface + chosen backend, dual-write | Grok |
 | M2-02 | Ledger becomes authoritative; JSON export | Grok |
 | M2-03 | Spend/quota capture per run; provider quota state | Codex |
@@ -36,6 +37,25 @@ Each milestone has an exit gate backed by evidence. A milestone is not complete 
 | M2-05 | MiMo Flash adapter for analysis role (if available locally) | Codex |
 
 **Exit gate:** No JSON-only state transitions. The router chooses its fallback automatically on quota exhaustion (demonstrated). Spend is visible per accepted task.
+
+### M2-S3 — Antigravity CLI adapter spike (owner request 2026-10-22)
+
+Branch `agent/codex/T-M2-S3-ANTIGRAVITY-CLI-ADAPTER`, based on the M1 candidate. It does not modify the M1 candidate or the scheduled supervisor. Sequencing: the offline prototype may proceed alongside M1. Live probes and the benchmark run only when no M1 gating suite or drill is running. Production routing stays off until M1 passes **and** the owner explicitly approves activation.
+
+Facts established on 2026-10-22 (orchestrator probe, `agy` 1.1.5):
+- `agy -p` performs a silent keyring login (consumer auth). `agy models` does not, so pre-login it lists a stale local set without Gemini models.
+- One bounded call with `--model gemini-3.8-flash-medium --mode plan --sandbox` resolved to `Gemini 3.8 Flash (Medium)` after login, returned exit 0 in 50.7 s, and wrote nothing to the workspace.
+- Before login the resolver logs `defaulting to CCPA`. Silent model fallback is therefore possible and must be detected, not inferred from exit 0.
+- 1.1.5 has no `--output-format`/`stream-json`/JSON-schema flag. The conversation ID and model label appear only in the CLI log. No token usage was observed in stdout or the log.
+
+Spike requirements:
+- Reuse the global work lock, isolated workspaces, Job Object process ownership (internal subagents are children of the run and count against its budgets), startup/inactivity/overall deadlines, and per-task MCP isolation, or document the gap as for Grok.
+- Never pass `--dangerously-skip-permissions`. Use `--sandbox`; `--mode plan` for read-only analysis; workspace limited to the task worktree.
+- Use a per-run `--log-file` as the evidence source for the model actually resolved, the conversation ID, auth, quota and model-unavailable events, permission soft-denials (including exit 0), and completion.
+- Treat intermediate activity as liveness only. Accept only the terminal result plus independent verification.
+- Classify auth, quota and model-unavailable conditions without token-wasting retries.
+- Benchmark metrics: accepted completion, wall-clock time, tokens (where reported), human corrections, quality, task-specific strengths. Subscription allowance is reported separately from API spend.
+- Deliverables: adapter design, prototype, test evidence, benchmark table, recommendation ENABLE / EXPERIMENTAL / REJECT.
 
 ## M3 — Product surface and governance (days 56–90)
 
@@ -55,3 +75,4 @@ Each milestone has an exit gate backed by evidence. A milestone is not complete 
 - Paid plan or quota changes (Grok balance, Codex/Claude plans, model tiers)
 - Running services outside this machine (cloud sandboxes, hosted DB)
 - Adopting any external substrate after the spikes
+- Activating Antigravity (or any new runtime) for normal production routing
