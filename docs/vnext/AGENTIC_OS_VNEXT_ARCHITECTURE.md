@@ -100,6 +100,28 @@ Approvals arrive in a dashboard inbox and are recorded as ledger events with the
 - **Per project:** a kanban of tasks, with each card showing its evidence chain (gates, verdict, SHAs).
 - Alerts for any unhandled terminal event older than 5 minutes, and for a stale heartbeat.
 
+## Mission layer: AOS-MISSION-001 (approved 2026-10-22, built after M1 and M2-02)
+
+The mission layer sits above the runtime. A **mission controller** owns a bounded mission and drives the supervisor, builders and reviewers through it. Each mission has:
+- a goal and acceptance criteria
+- a deadline (15–240 min)
+- a budget
+- a tool and risk envelope
+- required verification gates
+
+Every mission reaches exactly one terminal decision: **GO / FIX / BLOCKED / NO-GO**.
+
+How the controller works:
+- It reads and writes only through the ledger.
+- It reuses the M1 runtime guarantees: work locks, owned process trees, run deadlines, graceful stop, crash-safe evidence.
+- It schedules toward the earliest verified outcome, reserving time and budget for independent verification.
+
+Mission deadlines are separate from agent-run startup, inactivity and overall deadlines. It is domain-neutral through plug-ins: executors, verifiers, evidence extractors and progress signals.
+
+Full spec, state machine, schema, dashboard and acceptance tests: [AOS-MISSION-001](AOS-MISSION-001_DEADLINE_DRIVEN_MISSIONS.md).
+
+Optimization objective: **validated useful work per hour and per unit of cost.**
+
 ## Explicit non-goals (next 90 days)
 
 - No rewrite, and no adoption of an external orchestrator.

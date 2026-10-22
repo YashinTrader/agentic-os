@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentic-os.local/schemas/mission_contract.schema.json",
+  "title": "AOS-MISSION-001 mission contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "mission_id", "domain", "goal", "acceptance_criteria", "deadline_minutes",
+               "target_minutes", "budget", "tools", "risk", "verification_gates", "verification_reserve",
+               "created_by", "created_at"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "mission_id": {"type": "string", "pattern": "^MSN-[0-9]{8}T[0-9]{6}Z-[a-z0-9]{6,}$"},
+    "parent_mission_id": {"type": ["string", "null"]},
+    "domain": {"enum": ["coding", "research", "qa", "browser", "general"]},
+    "goal": {"type": "string", "minLength": 10, "maxLength": 500},
+    "acceptance_criteria": {
+      "type": "array", "minItems": 1,
+      "items": {"type": "object", "additionalProperties": false, "required": ["id", "statement", "verifier"],
+                "properties": {"id": {"type": "string"}, "statement": {"type": "string"},
+                               "verifier": {"type": "string", "description": "verification_gates[].id that proves it"}}}
+    },
+    "deadline_minutes": {"enum": [15, 30, 60, 120, 240]},
+    "deadline_override": {
+      "type": ["object", "null"], "description": "Only with owner approval; > 240 min",
+      "required": ["minutes", "approved_by", "approval_ref"],
+      "properties": {"minutes": {"type": "integer", "minimum": 241}, "approved_by": {"type": "string"}, "approval_ref": {"type": "string"}}
+    },
+    "target_minutes": {"type": "integer", "minimum": 1, "description": "Expected duration; scheduler aims here, not at the deadline"},
+    "budget": {
+      "type": "object", "additionalProperties": false, "required": ["max_cost_usd", "allowed_models", "max_attempts"],
+      "properties": {
+        "max_cost_usd": {"type": "number", "minimum": 0},
+        "max_tokens": {"type": ["integer", "null"], "minimum": 0},
+        "subscription_allowance_ok": {"type": "boolean", "default": true},
+        "allowed_models": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["provider", "model", "tier"],
+          "properties": {"provider": {"type": "string"}, "model": {"type": "string"}, "effort": {"type": "string"},
+                         "tier": {"enum": ["cheapest", "standard", "escalation"]}}}},
+        "max_attempts": {"type": "integer", "minimum": 1, "maximum": 10},
+        "max_replans": {"type": "integer", "minimum": 0, "maximum": 5, "default": 2}
+      }
+    },
+    "tools": {
+      "type": "object", "required": ["allowed"],
+      "properties": {"allowed": {"type": "array", "items": {"type": "string"}},
+                     "allowed_paths": {"type": "array", "items": {"type": "string"}},
+                     "network": {"enum": ["none", "allowlist", "open"]},
+                     "network_allowlist": {"type": "array", "items": {"type": "string"}}}
+    },
+    "risk": {
+      "type": "object", "required": ["level", "forbidden_operations", "approval_required"],
+      "properties": {"level": {"enum": ["low", "medium", "high"]},
+                     "forbidden_operations": {"type": "array", "items": {"type": "string"}},
+                     "approval_required": {"type": "array", "items": {"type": "string"},
+                       "description": "Actions that move the mission to BLOCKED until the owner approves"}}
+    },
+    "verification_gates": {
+      "type": "array", "minItems": 1,
+      "items": {"type": "object", "required": ["id", "kind", "independent", "expected_minutes"],
+                "properties": {"id": {"type": "string"},
+                               "kind": {"enum": ["command", "review", "e2e", "fault_injection", "metric", "human"]},
+                               "spec": {"type": "string"}, "independent": {"const": true},
+                               "expected_minutes": {"type": "number", "minimum": 0},
+                               "expected_cost_usd": {"type": "number", "minimum": 0}}}
+    },
+    "verification_reserve": {
+      "type": "object", "required": ["minutes", "cost_usd"],
+      "properties": {"minutes": {"type": "number", "minimum": 1}, "cost_usd": {"type": "number", "minimum": 0}}
+    },
+    "run_deadlines": {
+      "type": "object", "description": "Per agent run; independent of the mission deadline",
+      "properties": {"startup_seconds": {"type": "integer"}, "inactivity_seconds": {"type": "integer"}, "overall_seconds": {"type": "integer"}}
+    },
+    "lessons_in": {"type": "array", "items": {"type": "string"}},
+    "inherited_evidence": {"type": "array", "items": {"type": "string"}, "description": "Verified partial progress from a FIX parent"},
+    "created_by": {"type": "string"},
+    "created_at": {"type": "string", "format": "date-time"}
+  }
+}

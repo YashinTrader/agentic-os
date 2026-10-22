@@ -81,6 +81,36 @@ Spike requirements:
 - Benchmark metrics: accepted completion, wall-clock time, tokens (where reported), human corrections, quality, task-specific strengths. Subscription allowance is reported separately from API spend.
 - Deliverables: adapter design, prototype, test evidence, benchmark table, recommendation ENABLE / EXPERIMENTAL / REJECT.
 
+## Track AOS-MISSION-001: Deadline-driven autonomous missions (permanent core capability)
+
+Approved by the owner on 2026-10-22. It starts after the M1 exit gate and M2-02 (ledger authoritative), and runs in phases MS-0 to MS-6 as defined in [the spec](AOS-MISSION-001_DEADLINE_DRIVEN_MISSIONS.md#8-incremental-implementation-plan).
+
+| Phase | Deliverable | Depends on |
+|---|---|---|
+| MS-0 | Contract schema plus validator, mission ledger records, decision reports | M2-02 |
+| MS-1 | Controller: state machine, deadline/reserve scheduler, owned checkpoint/stop | MS-0 |
+| MS-2 | Progress, loop and stall detection | MS-1 |
+| MS-3 | Replanning and cheapest-competent model routing with budgets | MS-2, M2-04 |
+| MS-4 | FIX → child mission, lessons store | MS-1 |
+| MS-5 | Missions dashboard and KPIs | MS-3, M3-02 |
+| MS-6 | Research, QA and browser adapters | MS-1..MS-4 |
+
+**Exit gate per phase:** a GO release cycle that passes the phase's acceptance tests (MT-01..MT-15 subset) and completes a real mission end to end.
+
+**Primary metric:** validated outcomes per hour and per unit of cost.
+
+## Scheduling and efficiency rules (owner directive 2026-10-22, apply to all work)
+
+Four hours is a hard ceiling, not a target. Target durations: bounded tasks 5–30 min, integration 30–90 min, release cycles 60–120 min.
+- Stop as soon as the mandatory evidence is sufficient.
+- Use event-driven completion, not polling; do useful non-conflicting work while waiting.
+- Auto-advance between ready stages.
+- Parallelize safely: never contend with an uncontested suite or with recovery measurements.
+- Use the cheapest competent model and minimum effort, and escalate only on evidence.
+- Stop approaches that are not progressing.
+- Test edge cases with realistic fixtures, never by extending real runs.
+- Report a time split (productive, tests, avoidable waiting, retries) and model usage.
+
 ## M3 — Product surface and governance (days 56–90)
 
 | ID | Task | Builder |
