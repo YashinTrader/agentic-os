@@ -149,7 +149,8 @@ def probe_codex_login(*, runner: Callable[..., Any] | None = None) -> bool:
     executable = resolve_executable("codex")
     if not executable:
         return False
-    run = runner or subprocess.run
+    from orchestrator.process_ownership import owned_run
+    run = runner or owned_run
     try:
         completed = run(
             [executable, "login", "status"],
@@ -374,8 +375,11 @@ def dispatch_condition_retry(repo_root: Path, source: RunState, *, config: objec
         condition_retry_from=source,
         **kwargs,
     )
-    if report.get("status") == "error":
+    if report.get("status") in {"error", "deferred"}:
         _rollback_dispatch(repo_root, source, now=now)
+        if report.get("status") == "deferred":
+            source.next_eligible_at = format_time(now + timedelta(seconds=10))
+            save_run_state(repo_root, source)
     return report
 
 

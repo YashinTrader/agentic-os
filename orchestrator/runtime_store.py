@@ -97,6 +97,8 @@ class RunState:
     pid: int | None = None
     process_start_time: str | None = None
     process_identity: str = ""
+    owner_pid: int | None = None
+    owner_start_time: str | None = None
     session_id: str | None = None
     stop_reason: str | None = None
     token_usage: dict[str, int] = field(default_factory=dict)
@@ -153,8 +155,8 @@ def result_path(run_dir: Path) -> Path:
 
 
 def save_run_state(repo_root: Path, state: RunState, *, refresh_work_lock: bool = True) -> Path:
-    if not refresh_work_lock and state.process_state != STATE_ORPHANED:
-        raise ValueError('only orphan recovery evidence may bypass work lock refresh')
+    if not refresh_work_lock and state.process_state not in {STATE_ORPHANED, STATE_FAILED_LAUNCH}:
+        raise ValueError('only dead-process recovery evidence may bypass work lock refresh')
     if state.logical_task_id and refresh_work_lock:
         from dispatch.work_lock import heartbeat, WorkLockError
         try:
@@ -245,7 +247,7 @@ def load_run_state(repo_root: Path, run_id: str) -> RunState | None:
         return None
 
 
-def list_supervisor_runs(repo_root: Path, *, limit: int = 50) -> list[RunState]:
+def list_supervisor_runs(repo_root: Path, *, limit: int | None = 50) -> list[RunState]:
     runs_root = repo_root / "runtime" / "dispatch" / "runs"
     if not runs_root.is_dir():
         return []
@@ -256,7 +258,7 @@ def list_supervisor_runs(repo_root: Path, *, limit: int = 50) -> list[RunState]:
         state = load_run_state(repo_root, path.name)
         if state is not None:
             states.append(state)
-        if len(states) >= limit:
+        if limit is not None and len(states) >= limit:
             break
     return states
 

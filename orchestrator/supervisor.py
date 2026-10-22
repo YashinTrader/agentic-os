@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import signal
 import time
 import uuid
@@ -36,17 +37,17 @@ from orchestrator.event_router import route_completion
 from orchestrator.failure_classify import Classification, build_fingerprint, classify_process_output, should_relaunch
 from orchestrator.leases import (
     DEFAULT_MAX_CONCURRENCY,
+    count_active_leases,
     has_assignment_lease,
     heartbeat_lease,
     release_lease,
     try_acquire_concurrency,
     assignment_lease_path,
 )
-from orchestrator.process_ownership import ownership_metadata
+from orchestrator.process_ownership import ownership_metadata, process_start_time
 from orchestrator.quota_probe import paid_probe_status
 from orchestrator.process_monitor import mark_orphaned, monitor_process, pid_is_alive, read_text
 from orchestrator.runtime_store import (
-    STATE_BLOCKED_CAPACITY,
     STATE_BLOCKED_NO_ADAPTER,
     STATE_COMPLETED,
     STATE_FAILED_LAUNCH,
@@ -181,7 +182,7 @@ def process_wake_signal(
                 except work_lock.WorkLockError as exc:
                     report["cleanup_fenced"] = str(exc)
                 finally:
-                    release_lease(repo_root, attempt["assignment_id"])
+                    release_lease(repo_root, attempt["assignment_id"], run_id=attempt["run_id"])
             report.setdefault("run_id", attempt["run_id"])
     report["process_started"] = attempt["started"]
     return report
@@ -252,35 +253,35 @@ def _process_wake_signal(
                 "process_state": existing.process_state,
             }
 
+    def defer_capacity(reason: str) -> dict[str, Any]:
+        # Preserve failure attempts; capacity waits never escalate to dead letter.
+        retry = signal.get("retry", {})
+        retry = dict(retry) if isinstance(retry, dict) else {}
+        retry["next_attempt_at"] = (clock_from(config) + timedelta(seconds=10)).isoformat()
+        signal["retry"] = retry
+        atomic_write_json(signal_path, signal)
+        layer_heartbeat.tick()
+        return {"status": "deferred", "reason": reason, "assignment_id": assignment_id}
+
+    if count_active_leases(repo_root) >= config.max_concurrency:
+        return defer_capacity("blocked_capacity: maximum concurrency reached")
     run_id = generate_run_id(task_id or assignment_id)
     lease, lease_reason = try_acquire_concurrency(
-        repo_root,
-        assignment_id=assignment_id,
-        run_id=run_id,
-        holder="supervisor",
-        max_concurrency=config.max_concurrency,
+        repo_root, assignment_id=assignment_id, run_id=run_id,
+        holder="supervisor", max_concurrency=config.max_concurrency,
     )
     if lease is None:
-        state = RunState(
-            run_id=run_id,
-            assignment_id=assignment_id,
-            task_id=task_id,
-            assigned_agent=agent_id,
-            adapter=adapter_id,
-            process_state=STATE_BLOCKED_CAPACITY if "capacity" in lease_reason else STATE_QUEUED,
-            blocked_reason=lease_reason,
-            wake_signal_path=str(signal_path),
-        )
-        save_run_state(repo_root, state)
-        layer_heartbeat.tick(progress=True)
-        return {"status": "deferred", "reason": lease_reason, "assignment_id": assignment_id, "run_id": run_id}
+        return defer_capacity(lease_reason)
 
     attempt.update(run_id=run_id, assignment_id=assignment_id)
     # Write evidence BEFORE any durable lock can refer to this run.
-    save_run_state(repo_root, RunState(
+    prelaunch_state = RunState(
         run_id=run_id, assignment_id=assignment_id, task_id=task_id,
         assigned_agent=agent_id, adapter=adapter_id, process_state=STATE_QUEUED,
-    ))
+        owner_pid=os.getpid(), owner_start_time=process_start_time(os.getpid()),
+        wake_signal_path=str(signal_path),
+    )
+    save_run_state(repo_root, prelaunch_state)
 
     # Atomic claim of the assignment for the assigned builder.
     record, claim_errors = claim_assignment(repo_root, assignment_id, claimed_by=agent_id)
@@ -297,7 +298,7 @@ def _process_wake_signal(
             "building",
             "changes_requested",
         } and not retrying_prelaunch):
-            release_lease(repo_root, assignment_id)
+            release_lease(repo_root, assignment_id, run_id=run_id)
             return {
                 "status": "error",
                 "reason": "; ".join(claim_errors) or "claim failed",
@@ -320,8 +321,10 @@ def _process_wake_signal(
                               assignment_id=assignment_id, run_id=run_id, base_sha=record.base_sha,
                               branch=record.new_branch, resume=True)
         attempt.update(lock_acquired=True, logical_id=logical_id)
+        prelaunch_state.logical_task_id = logical_id
+        save_run_state(repo_root, prelaunch_state)
     except (work_lock.WorkLockError, OSError) as exc:
-        release_lease(repo_root, assignment_id)
+        release_lease(repo_root, assignment_id, run_id=run_id)
         return {"status": "error", "reason": str(exc), "assignment_id": assignment_id}
     set_assignment_status(repo_root, assignment_id, "building")
 
@@ -335,7 +338,7 @@ def _process_wake_signal(
     elif config.worktree:
         worktree = Path(config.worktree).resolve()
         if worktree == repo_root.resolve():
-            release_lease(repo_root, assignment_id)
+            release_lease(repo_root, assignment_id, run_id=run_id)
             return {"status": "error", "reason": "canonical repo cannot be used as a build worktree"}
         branch_name = record.new_branch
     else:
@@ -345,7 +348,7 @@ def _process_wake_signal(
             owner="supervisor", cleanup_policy="preserve",
         )
         if not allocation.success:
-            release_lease(repo_root, assignment_id)
+            release_lease(repo_root, assignment_id, run_id=run_id)
             return {"status": "error", "reason": "; ".join(allocation.errors), "run_id": run_id}
         worktree = Path(allocation.worktree_path)
         branch_name = allocation.branch_name
@@ -358,6 +361,7 @@ def _process_wake_signal(
         adapter=adapter_id or record.adapter_id,
         logical_task_id=record.logical_task_id or record.task_id,
         process_state=STATE_QUEUED,
+        owner_pid=os.getpid(), owner_start_time=process_start_time(os.getpid()),
         worktree=str(worktree),
         branch=branch_name,
         base_sha=record.base_sha,
@@ -448,7 +452,7 @@ def _process_wake_signal(
         save_run_state(repo_root, state)
         layer_heartbeat.tick(progress=True)
         route, route_errors = route_completion(repo_root, state, branch=state.branch, source="composer")
-        release_lease(repo_root, assignment_id)
+        release_lease(repo_root, assignment_id, run_id=run_id)
         return {
             "status": "blocked",
             "assignment_id": assignment_id,
@@ -481,7 +485,7 @@ def _process_wake_signal(
         save_run_state(repo_root, state)
         layer_heartbeat.tick(progress=True)
         route, route_errors = route_completion(repo_root, state, branch=state.branch, source=state.assigned_agent)
-        release_lease(repo_root, assignment_id)
+        release_lease(repo_root, assignment_id, run_id=run_id)
         return {
             "status": "failed_launch",
             "assignment_id": assignment_id,
@@ -540,7 +544,7 @@ def _process_wake_signal(
     if state.process_state == STATE_MAX_TURNS:
         save_run_state(repo_root, state)
         layer_heartbeat.tick(progress=True)
-        release_lease(repo_root, assignment_id)
+        release_lease(repo_root, assignment_id, run_id=run_id)
         if state.auto_resume_count < 1:
             return {
                 "status": "requeued_continuation", "assignment_id": assignment_id,
@@ -633,7 +637,7 @@ def _process_wake_signal(
                     fb_state.completed_at = utc_now()
                     save_run_state(repo_root, fb_state)
                     route, route_errors = route_completion(repo_root, fb_state, branch=state.branch, source="codex")
-                    release_lease(repo_root, assignment_id)
+                    release_lease(repo_root, assignment_id, run_id=run_id)
                     _consume_wake(repo_root, signal_path)
                     return {"status": "failed_launch", "reason": fb_msg, "assignment_id": assignment_id,
                             "run_id": fallback_run, "route": route, "route_errors": route_errors}
@@ -697,7 +701,7 @@ def _process_wake_signal(
                     route, route_errors = route_completion(
                         repo_root, fb_state, branch=state.branch, source="codex"
                     )
-                    release_lease(repo_root, assignment_id)
+                    release_lease(repo_root, assignment_id, run_id=run_id)
                     _consume_wake(repo_root, signal_path)
                     return {
                         "status": "completed" if fb_state.process_state == STATE_COMPLETED else fb_state.process_state,
@@ -718,7 +722,7 @@ def _process_wake_signal(
     route, route_errors = route_completion(
         repo_root, state, branch=state.branch, source=state.assigned_agent
     )
-    release_lease(repo_root, assignment_id)
+    release_lease(repo_root, assignment_id, run_id=run_id)
     _consume_wake(repo_root, signal_path)
     return {
         "status": "completed" if state.process_state == STATE_COMPLETED else state.process_state,
@@ -758,11 +762,42 @@ def recover_orphans(repo_root: Path, *, config: SupervisorConfig | None = None) 
 
     cfg = config or SupervisorConfig()
     recovered: list[dict[str, Any]] = []
-    for state in list_supervisor_runs(repo_root, limit=100):
-        if state.process_state not in {STATE_RUNNING, STATE_LAUNCHING}:
+    for state in list_supervisor_runs(repo_root, limit=None):
+        layer_heartbeat.tick()
+        if state.process_state not in {STATE_RUNNING, STATE_LAUNCHING, STATE_QUEUED}:
             continue
         alive = pid_is_alive(state.pid or -1, state.process_start_time) if state.pid else False
         if alive is not False:
+            continue
+        if state.process_state in {STATE_QUEUED, STATE_LAUNCHING}:
+            # Missing identity is unknown, never authority to reclaim a slot.
+            if not state.owner_pid or pid_is_alive(state.owner_pid, state.owner_start_time) is not False:
+                continue
+            try:
+                lease = json.loads(assignment_lease_path(repo_root, state.assignment_id).read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                lease = {}
+            if lease.get("pid") and pid_is_alive(lease["pid"], lease.get("process_start_time")) is not False:
+                continue
+            state.process_state = STATE_FAILED_LAUNCH
+            state.blocked_reason = "builder layer exited before launch"
+            state.completed_at = utc_now()
+            state.retry_eligible = True
+            try:
+                save_run_state(repo_root, state)
+                work_lock.release(repo_root, state.logical_task_id or state.task_id,
+                                  actor="supervisor", reason=state.blocked_reason,
+                                  assignment_id=state.assignment_id, run_id=state.run_id)
+            except work_lock.WorkLockError:
+                save_run_state(repo_root, state, refresh_work_lock=False)
+                # Replacement work lock is never ours to release.
+            release_lease(repo_root, state.assignment_id, run_id=state.run_id)
+            wake = Path(state.wake_signal_path)
+            if not wake.is_absolute():
+                wake = repo_root / wake
+            if wake.is_file():
+                _retry_wake(repo_root, wake, {"status": "failed_launch", "reason": state.blocked_reason}, config=cfg)
+            recovered.append({"run_id": state.run_id, "status": state.process_state})
             continue
         assignment, _ = read_assignment(repo_root, state.assignment_id)
         classification = classify_process_output(
@@ -801,7 +836,7 @@ def recover_orphans(repo_root: Path, *, config: SupervisorConfig | None = None) 
         except (FileNotFoundError, ValueError):
             lease = {}
         if lease.get("run_id") == state.run_id:
-            release_lease(repo_root, state.assignment_id)
+            release_lease(repo_root, state.assignment_id, run_id=state.run_id)
         recovered.append({"run_id": state.run_id, "assignment_id": state.assignment_id, "status": state.process_state})
 
     # Recovery above can release newly orphaned holders. Pre-existing terminal

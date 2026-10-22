@@ -155,15 +155,10 @@ def run_git(repo_root: Path, argv: list[str], *, timeout: int = GIT_TIMEOUT_SECO
     if subcommand == "worktree" and argv[1] not in {"add", "remove", "list", "prune"}:
         raise ValueError(f"git worktree subcommand not allowlisted: {argv[1]!r}")
 
-    proc = subprocess.run(
-        [GIT_EXECUTABLE, *argv],
-        cwd=repo_root,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-        shell=False,
-    )
+    from orchestrator.process_ownership import owned_run
+    proc = owned_run([GIT_EXECUTABLE, *argv], cwd=repo_root, timeout=timeout, shell=False)
     return proc.returncode, proc.stdout or "", proc.stderr or ""
+
 
 
 def git_worktree_dirty(repo_root: Path, worktree_path: Path) -> bool:

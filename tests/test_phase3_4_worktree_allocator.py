@@ -158,7 +158,7 @@ class WorktreeAllocatorTests(unittest.TestCase):
         self.assertTrue(dirty_file.exists())
 
     def test_run_git_never_uses_shell(self) -> None:
-        with patch("dispatch.worktree_allocator.subprocess.run") as mock_run:
+        with patch("orchestrator.process_ownership.owned_run") as mock_run:
             mock_run.return_value = subprocess.CompletedProcess(
                 args=["git", "rev-parse", "HEAD"],
                 returncode=0,

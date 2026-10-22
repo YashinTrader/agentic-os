@@ -117,8 +117,15 @@ def heartbeat_lease(repo_root: Path, assignment_id: str, *, pid: int | None = No
     atomic_write_json(path, data)
 
 
-def release_lease(repo_root: Path, assignment_id: str) -> None:
+def release_lease(repo_root: Path, assignment_id: str, *, run_id: str | None = None) -> None:
     path = assignment_lease_path(repo_root, assignment_id)
+    if run_id is not None:
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return
+        if data.get("run_id") != run_id:
+            return
     if path.exists():
         path.unlink()
     # Update snapshot

@@ -145,7 +145,19 @@ def run_quota_probe(provider: str, *, config: dict) -> dict:
             process = owned_popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                   stderr=subprocess.PIPE, text=True, encoding="utf-8",
                                   errors="replace", cwd=directory, shell=False)
-            stdout, stderr = process.communicate(timeout=120)
+            from orchestrator import layer_heartbeat
+            deadline = time.monotonic() + 120
+            while True:
+                layer_heartbeat.tick()
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise subprocess.TimeoutExpired(argv, 120)
+                try:
+                    stdout, stderr = process.communicate(timeout=min(2, remaining))
+                    break
+                except subprocess.TimeoutExpired:
+                    if time.monotonic() >= deadline:
+                        raise
             return _classify(provider, stdout, stderr, process.returncode)
         except subprocess.TimeoutExpired:
             return {"outcome": "failure", "exit_code": None, "classification": "timed_out"}
