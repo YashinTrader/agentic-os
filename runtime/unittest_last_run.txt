@@ -1,23 +1,23 @@
-timestamp: 2026-10-22T13:19:58Z
+timestamp: 2026-10-22T20:28:06Z
 dependency_install: skipped
-dependency_install_reason: cognee==1.1.0 cannot build on this host (Rust/Cargo); see docs/RUN_TESTS_BOOTSTRAP_BLOCKER.md
+dependency_install_reason: core dependencies preinstalled in the hermes venv; cognee optional since T-M1-22 (requirements-memory.txt)
 known_exempt_failures: []
 repo_identity: {"origin": "https://github.com/YashinTrader/agentic-os.git", "roots": ["18ccb6e2e421044e6e21411c83513d80e38fb4ba"]}
 artifact_origin_path: C:/Users/gabot/agentic-os-worktrees/m1-integration
 hostname: AIAG
 python_version: 3.11.15
 command_line: ["C:\\Users\\gabot\\AppData\\Local\\hermes\\hermes-agent\\venv\\Scripts\\python.exe", "-m", "unittest", "discover", "-s", "tests", "-p", "test_*.py", "-v"]
-raw_output_sha256: c1e5f54c9277ab4ca8c61c1936e62f858d20130393b067a28f33ac9403574ec3
+raw_output_sha256: a5ceaafc109a3ae1d8fecce58898a19cb9fdec100d01768e66f5954ab847fc75
 repo_root: C:/Users/gabot/agentic-os-worktrees/m1-integration
 commit: unknown
-commit_full: 8ed9680b0c4c9c66b858a370e8c06de7018c107d
+commit_full: 7cfe687b69c8561c2d66295e3e0168f22eacdd3c
 python: C:\Users\gabot\AppData\Local\hermes\hermes-agent\venv\Scripts\python.exe
-test_count: 887
+test_count: 906
 exit_code: 0
-evidence_block_sha256: 773617706ae60e9e46b7c3171f177c6e2a9071d029d2d34c0625ffcc45f0ede2
+evidence_block_sha256: 8b7ef4f8e79c739b22f2b63adf36d140ef7b2f1d65cf68e5f563b0baea41eddb
 --- raw output ---
 dependency_install: skipped
-dependency_install_reason: cognee==1.1.0 cannot build on this host (Rust/Cargo); see docs/RUN_TESTS_BOOTSTRAP_BLOCKER.md
+dependency_install_reason: core dependencies preinstalled in the hermes venv; cognee optional since T-M1-22 (requirements-memory.txt)
 {
   "status": "idle"
 }
@@ -30,6 +30,9 @@ dependency_install_reason: cognee==1.1.0 cannot build on this host (Rust/Cargo);
 {
   "status": "idle"
 }
+maintenance mode on
+maintenance mode off
+refused: missing, reused or unverifiable root PID/start time
 test_canonical_seal_ignores_only_formatting_and_closeout (test_achievable_evidence_seal.AchievableSealTests.test_canonical_seal_ignores_only_formatting_and_closeout) ... ok
 test_missing_or_duplicate_evidence_is_rejected (test_achievable_evidence_seal.AchievableSealTests.test_missing_or_duplicate_evidence_is_rejected) ... ok
 test_real_git_closeout_and_every_sealed_field_tamper (test_achievable_evidence_seal.AchievableSealTests.test_real_git_closeout_and_every_sealed_field_tamper) ... ok
@@ -138,11 +141,11 @@ test_t0012_rollback_shape (test_cli_guardrails.CliGuardrailTests.test_t0012_roll
 test_update_task_rejects_review_without_reviewer (test_cli_guardrails.CliGuardrailTests.test_update_task_rejects_review_without_reviewer) ... ok
 test_accepts_openai_protocol_local_llm_endpoint (test_cognee_local_profile.CogneeLocalProfileTests.test_accepts_openai_protocol_local_llm_endpoint) ... ok
 test_checked_in_profile_is_local_first (test_cognee_local_profile.CogneeLocalProfileTests.test_checked_in_profile_is_local_first) ... ok
+test_optional_requirements_declares_cognee_dependency (test_cognee_local_profile.CogneeLocalProfileTests.test_optional_requirements_declares_cognee_dependency) ... ok
 test_rejects_cloud_provider_flag (test_cognee_local_profile.CogneeLocalProfileTests.test_rejects_cloud_provider_flag) ... ok
 test_rejects_enabled_ingestion (test_cognee_local_profile.CogneeLocalProfileTests.test_rejects_enabled_ingestion) ... ok
 test_rejects_openai_cloud_llm_endpoint (test_cognee_local_profile.CogneeLocalProfileTests.test_rejects_openai_cloud_llm_endpoint) ... ok
 test_rejects_partial_local_configuration (test_cognee_local_profile.CogneeLocalProfileTests.test_rejects_partial_local_configuration) ... ok
-test_requirements_declares_cognee_dependency (test_cognee_local_profile.CogneeLocalProfileTests.test_requirements_declares_cognee_dependency) ... ok
 test_script_reports_invalid_profile (test_cognee_local_profile.CogneeLocalProfileTests.test_script_reports_invalid_profile) ... ok
 test_script_validates_profile_without_optional_services (test_cognee_local_profile.CogneeLocalProfileTests.test_script_validates_profile_without_optional_services) ... ok
 test_all_layer_statuses_record_config_sha_and_state_root (test_config_root.ConfigRootTests.test_all_layer_statuses_record_config_sha_and_state_root) ... ok
@@ -262,6 +265,10 @@ test_required_mcp_uses_error_channels (test_failure_classify.StructuredClassific
 test_retry_after_uses_only_error_channels (test_failure_classify.StructuredClassificationTests.test_retry_after_uses_only_error_channels) ... ok
 test_stderr_and_plain_stdout (test_failure_classify.StructuredClassificationTests.test_stderr_and_plain_stdout) ... ok
 test_structured_provider_errors (test_failure_classify.StructuredClassificationTests.test_structured_provider_errors) ... ok
+test_adapter_streams_past_startup_and_inactivity (test_grok_streaming.FormatSensitiveFlowTests.test_adapter_streams_past_startup_and_inactivity) ... ok
+test_malformed_lines_are_liveness_only (test_grok_streaming.StreamingTests.test_malformed_lines_are_liveness_only) ... ok
+test_real_events_and_terminal_metadata (test_grok_streaming.StreamingTests.test_real_events_and_terminal_metadata) ... ok
+test_terminal_classification (test_grok_streaming.StreamingTests.test_terminal_classification) ... ok
 test_modules_import_in_fresh_interpreters (test_import_guard.ImportGuardTests.test_modules_import_in_fresh_interpreters) ... ok
 test_blocking_wait_ticks_and_honors_stop (test_layer_supervisor.HeartbeatTests.test_blocking_wait_ticks_and_honors_stop) ... ok
 test_idle_and_progress_markers (test_layer_supervisor.HeartbeatTests.test_idle_and_progress_markers) ... ok
@@ -722,6 +729,7 @@ test_fallback_lineage_and_no_loop_marker (test_physical_agent_launcher.CodexFall
 test_auth_and_quota_classification (test_physical_agent_launcher.FailureClassifyTests.test_auth_and_quota_classification) ... ok
 test_max_turns_classification_is_resume_eligible (test_physical_agent_launcher.FailureClassifyTests.test_max_turns_classification_is_resume_eligible) ... ok
 test_unchanged_failure_no_relaunch (test_physical_agent_launcher.FailureClassifyTests.test_unchanged_failure_no_relaunch) ... ok
+test_buffered_json_format_is_rejected (test_physical_agent_launcher.GrokArgvTests.test_buffered_json_format_is_rejected) ... ok
 test_grok_argv_construction_shell_false_safe_flags (test_physical_agent_launcher.GrokArgvTests.test_grok_argv_construction_shell_false_safe_flags) ... ok
 test_launch_process_records_pid_and_requires_real_process (test_physical_agent_launcher.GrokArgvTests.test_launch_process_records_pid_and_requires_real_process) ... ok
 test_pid_probe_contains_system_error (test_physical_agent_launcher.ProcessMonitorTests.test_pid_probe_contains_system_error) ... ok
@@ -735,6 +743,11 @@ test_nonzero_exit_and_timeout (test_physical_agent_launcher.SupervisorFlowTests.
 test_process_once_idle_without_wake (test_physical_agent_launcher.SupervisorFlowTests.test_process_once_idle_without_wake) ... ok
 test_supervisor_allocates_isolated_worktree (test_physical_agent_launcher.SupervisorFlowTests.test_supervisor_allocates_isolated_worktree) ... ok
 test_supervisor_pickup_atomic_claim_and_running_after_pid (test_physical_agent_launcher.SupervisorFlowTests.test_supervisor_pickup_atomic_claim_and_running_after_pid) ... ok
+test_batch_guard_reproduces_loaders_cycle_after_warm_import (test_postdeploy_hygiene.PostdeployTests.test_batch_guard_reproduces_loaders_cycle_after_warm_import) ... ok
+test_cli_config_fallback_preserves_explicit_legacy_root (test_postdeploy_hygiene.PostdeployTests.test_cli_config_fallback_preserves_explicit_legacy_root) ... ok
+test_cli_root_precedence_and_config_selection (test_postdeploy_hygiene.PostdeployTests.test_cli_root_precedence_and_config_selection) ... ok
+test_cognee_is_optional_and_never_imported (test_postdeploy_hygiene.PostdeployTests.test_cognee_is_optional_and_never_imported) ... ok
+test_status_ignores_unowned_pokes_but_alerts_on_old_completion (test_postdeploy_hygiene.PostdeployTests.test_status_ignores_unowned_pokes_but_alerts_on_old_completion) ... ok
 test_deferred_head_does_not_hide_valid_wake (test_prelaunch_failure_isolation.PrelaunchIsolationTests.test_deferred_head_does_not_hide_valid_wake) ... ok
 test_due_quota_relaunches_with_poison_in_queue (test_prelaunch_failure_isolation.PrelaunchIsolationTests.test_due_quota_relaunches_with_poison_in_queue) ... ok
 test_ghost_reported_stale_without_stealing (test_prelaunch_failure_isolation.PrelaunchIsolationTests.test_ghost_reported_stale_without_stealing) ... ok
@@ -869,6 +882,15 @@ test_list_skills_filters_by_agent (test_skills_registry.SkillsRegistryTests.test
 test_list_skills_filters_by_risk (test_skills_registry.SkillsRegistryTests.test_list_skills_filters_by_risk) ... ok
 test_required_skill_fields_exist (test_skills_registry.SkillsRegistryTests.test_required_skill_fields_exist) ... ok
 test_skills_registry_loads (test_skills_registry.SkillsRegistryTests.test_skills_registry_loads) ... ok
+test_force_revalidates_creation_immediately_before_termination (test_stop_supervisor.StopSupervisorTests.test_force_revalidates_creation_immediately_before_termination) ... ok
+test_foreign_job_is_refused_and_decoy_survives (test_stop_supervisor.StopSupervisorTests.test_foreign_job_is_refused_and_decoy_survives) ... ok
+test_graceful_real_two_layers_and_audit (test_stop_supervisor.StopSupervisorTests.test_graceful_real_two_layers_and_audit) ... ok
+test_live_status_fence_even_without_instance_lock (test_stop_supervisor.StopSupervisorTests.test_live_status_fence_even_without_instance_lock) ... ok
+test_maintenance_entrypoint_and_resume (test_stop_supervisor.StopSupervisorTests.test_maintenance_entrypoint_and_resume) ... ok
+test_restart_rollback_no_overlap_and_heartbeats_resume (test_stop_supervisor.StopSupervisorTests.test_restart_rollback_no_overlap_and_heartbeats_resume) ... ok
+test_reused_pid_refused_without_signaling (test_stop_supervisor.StopSupervisorTests.test_reused_pid_refused_without_signaling) ... ok
+test_stale_stop_request_does_not_stop_replacement (test_stop_supervisor.StopSupervisorTests.test_stale_stop_request_does_not_stop_replacement) ... ok
+test_unresponsive_forces_only_recorded_tree_leaves_decoy (test_stop_supervisor.StopSupervisorTests.test_unresponsive_forces_only_recorded_tree_leaves_decoy) ... ok
 test_suggest_team_by_dashboard_skill (test_team_suggestion.TeamSuggestionTests.test_suggest_team_by_dashboard_skill) ... ok
 test_suggest_team_by_python_cli_skill (test_team_suggestion.TeamSuggestionTests.test_suggest_team_by_python_cli_skill) ... ok
 test_suggest_team_cli_json_output (test_team_suggestion.TeamSuggestionTests.test_suggest_team_cli_json_output) ... ok
@@ -927,6 +949,6 @@ test_worker_correction_does_not_claim_parent_reservation (test_work_lock.WorkLoc
 test_yaml_followups_inherit_parent_task_and_explicit_split (test_work_lock.WorkLockTests.test_yaml_followups_inherit_parent_task_and_explicit_split) ... ok
 
 ----------------------------------------------------------------------
-Ran 887 tests in 3473.456s
+Ran 906 tests in 6701.675s
 
 OK (skipped=3)
