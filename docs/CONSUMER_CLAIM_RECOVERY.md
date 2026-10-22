@@ -43,8 +43,10 @@ under the shared mutation guard, before checking capacity. The same recovery
 helper checks consumer creation identity and every recorded child (including
 review run state). A tokened lease is removed only when its consumer is provably
 dead and all recorded children are provably dead, or no child was recorded.
-The request and its run ID remain intact; fingerprint claims still serialize
-event processing, and resolved fingerprints are archived without another launch.
+The request remains intact; a retry updates its run ID to a fresh attempt and
+preserves prior artifacts and recovery lineage (see [review attempt evidence](REVIEW_ATTEMPT_EVIDENCE.md)).
+Fingerprint claims still serialize event processing, and resolved fingerprints
+are archived without another launch.
 
 Consumer status includes `stale_review_leases` (key, assignment, age, reason) and
 `stale_review_lease_alert_active`. Legacy/unreadable and unknown owners alert;
@@ -71,3 +73,15 @@ actor, reason, timestamp, and full prior owner. Recovery also emits the
 protecting the interval before its review child is known. The consumer, lease
 writer, and operator CLI serialize mutations using the same OS guard; a crash
 releases that guard without expiring durable ownership.
+
+For explicit operator release, a PID without creation identity is checked without
+signaling it. OS-confirmed absence or exit proves death. If creation time is
+readable and later than the PID-holding record's own started_at, claimed_at or
+acquired_at, it proves PID reuse; earlier/equal or unreadable creation stays
+unknown. Windows uses process handles/FILETIME; Linux uses /proc start ticks
+and boot time. Missing timestamps never establish reuse. Automatic recovery
+still requires consumer_token and recorded creation identities.
+
+Operator release also finalizes referenced running/queued review states as
+abandoned immediately, preserving the original state snapshot and all logs,
+with the operator reason and durable audit reference in recovery_audits.

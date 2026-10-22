@@ -12,7 +12,12 @@ import subprocess
 import time
 import uuid
 from orchestrator.process_ownership import terminate_owned, ownership_metadata, process_start_time
-from orchestrator.consumer_claims import mutation_guard, read_record, recover_review_leases_locked
+from orchestrator.consumer_claims import (
+    directory as consumer_claims_dir,
+    mutation_guard,
+    read_record,
+    recover_review_leases_locked,
+)
 
 from dataclasses import dataclass
 from pathlib import Path
@@ -27,7 +32,7 @@ from dispatch.assignment_channel import (
     write_assignment,
 )
 from dispatch.work_lock import WorkLockError
-from dispatch.atomic_io import atomic_create_json, atomic_write_json
+from dispatch.atomic_io import atomic_create_json, atomic_write_json, atomic_write_text
 from dispatch.orchestrator_pokes import write_orchestrator_poke
 from orchestrator.claude_reviewer_adapter import (
     AUTH_MODE_LOCAL,
@@ -53,6 +58,66 @@ from orchestrator.process_monitor import monitor_process
 from orchestrator.review_schema import ReviewVerdict, validate_review_payload
 
 DEFAULT_REVIEW_CONCURRENCY = 1
+
+
+def prepare_review_attempt(repo_root: Path, payload: dict[str, Any]) -> str:
+    """Called with the assignment lease held; publish latest identity before launch.
+
+    attempt.json is a durable launch reservation, including for prelaunch crashes.
+    Older artifacts are never used as output targets again.
+    """
+    aid = str(payload["assignment_id"])
+    with mutation_guard(repo_root):
+        old_id = str(payload["review_run_id"])
+        old_dir = review_run_dir(repo_root, old_id)
+        run_id = old_id
+        if any((old_dir / name).exists() for name in (
+            "attempt.json", "review_run.json", "prompt.txt", "stdout.log", "stderr.log"
+        )):
+            run_id = f"review-{utc_now().replace(':', '')}-{uuid.uuid4().hex}"
+            history = list(payload.get("prior_review_run_ids", []))
+            if old_id not in history:
+                history.append(old_id)
+            audits = []
+            audit_dir = consumer_claims_dir(repo_root) / "audit"
+            for path in sorted(audit_dir.glob("*.json")):
+                entry = read_record(path)
+                owner = entry.get("prior_owner", {})
+                if entry.get("event") in ("claim_recovered", "lease_recovered", "claim_released", "lease_released") and (
+                    owner.get("review_run_id") == old_id or (
+                        owner.get("assignment_id") == aid and not owner.get("review_run_id")
+                    )
+                ):
+                    audits.append({"path": path.relative_to(repo_root).as_posix(), **entry})
+            state_path = old_dir / "review_run.json"
+            if state_path.exists():
+                original = state_path.read_bytes()
+                state = json.loads(original)
+                if state.get("process_state") in (STATE_RUNNING, STATE_QUEUED):
+                    snapshot = old_dir / "review_run.before_abandonment.json"
+                    if not snapshot.exists():
+                        atomic_write_text(snapshot, original.decode("utf-8"))
+                    reason = "; ".join(str(a["reason"]) for a in audits) or "exclusive review lease reacquired after prior attempt"
+                    state.update(process_state="abandoned", completed_at=utc_now(),
+                                 blocked_reason=reason, recovery_audits=audits)
+                    atomic_write_json(state_path, state)
+            new_dir = review_run_dir(repo_root, run_id)
+            context = repo_root / str(payload["context_bundle_path"])
+            (new_dir / "context_bundle.json").write_bytes(context.read_bytes())
+            payload.update(review_run_id=run_id, prior_review_run_ids=history,
+                           recovery_audits=audits,
+                           context_bundle_path=(new_dir / "context_bundle.json").relative_to(repo_root).as_posix())
+        attempt = {"review_run_id": run_id, "assignment_id": aid,
+                   "prior_review_run_ids": payload.get("prior_review_run_ids", []),
+                   "recovery_audits": payload.get("recovery_audits", []), "reserved_at": utc_now()}
+        atomic_create_json(review_run_dir(repo_root, run_id) / "attempt.json", attempt)
+        lease_path = review_lease_path(repo_root, aid)
+        lease = read_record(lease_path)
+        lease["review_run_id"] = run_id
+        atomic_write_json(lease_path, lease)
+        payload["status"] = "queued"
+        atomic_write_json(review_request_path(repo_root, aid), payload)
+        return run_id
 
 
 def review_requests_dir(repo_root: Path) -> Path:
@@ -401,6 +466,7 @@ def process_one_review(
                 "assignment_id": aid}
 
     try:
+        review_run_id = prepare_review_attempt(repo_root, request_payload)
         record, _ = read_assignment(repo_root, aid)
         assert record is not None
         req = ReviewRequest(

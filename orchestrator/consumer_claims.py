@@ -49,17 +49,19 @@ def read_record(path: Path) -> dict:
     return value
 
 
-def process_liveness(pid, start) -> bool | None:
+def process_liveness(pid, start, recorded_at=None) -> bool | None:
     """False means OS-confirmed absence, exit or PID reuse; access errors are unknown."""
     if (not isinstance(pid, int) or isinstance(pid, bool) or not 0 < pid <= 0xffffffff
-            or not isinstance(start, str) or not start.strip()):
+            or (start is not None and (not isinstance(start, str) or not start.strip()))):
         return None
     try:
         actual = process_start_time(pid)
     except OSError:
         return None
     if actual is not None:
-        return actual == str(start)
+        if start is not None:
+            return actual == str(start)
+        return legacy_creation_liveness(actual, recorded_at)
     if os.name == 'nt':
         from orchestrator.process_ownership import kernel
         handle = kernel.OpenProcess(0x1000, False, pid)
@@ -85,6 +87,33 @@ def process_liveness(pid, start) -> bool | None:
     return None
 
 
+def legacy_creation_liveness(actual, recorded_at) -> bool | None:
+    """Only creation after this PID-holding record proves legacy PID reuse."""
+    try:
+        recorded = datetime.fromisoformat(recorded_at.replace('Z', '+00:00'))
+        if recorded.tzinfo is None:
+            return None
+        if os.name == 'nt':
+            created = (int(actual) - 116444736000000000) / 10000000
+        else:
+            ticks = os.sysconf('SC_CLK_TCK')
+            boot = next(line.split()[1] for line in Path('/proc/stat').read_text().splitlines()
+                        if line.startswith('btime '))
+            created = int(boot) + int(actual) / ticks
+        return False if created > recorded.timestamp() else None
+    except (AttributeError, TypeError, ValueError, OSError, StopIteration, OverflowError):
+        return None
+
+
+def record_start(record: dict):
+    return next((record[k] for k in ('started_at', 'claimed_at', 'acquired_at') if record.get(k)), None)
+
+
+def evidence_liveness(pid, start, recorded_at):
+    # Keep the established identity path shared by automatic recovery and release.
+    return process_liveness(pid, start) if start is not None else process_liveness(pid, start, recorded_at)
+
+
 def claim_liveness(record: dict) -> tuple[bool | None, bool | None]:
     return (process_liveness(record.get('consumer_pid'), record.get('consumer_start_time')),
             process_liveness(record.get('review_pid'), record.get('review_start_time')))
@@ -92,14 +121,14 @@ def claim_liveness(record: dict) -> tuple[bool | None, bool | None]:
 
 def recovery_reason(root: Path, prior: dict) -> str | None:
     """Shared automatic recovery fence; callers must hold mutation_guard."""
-    if (not prior.get('consumer_token') or
+    if (not prior.get('consumer_token') or not prior.get('consumer_start_time') or
             process_liveness(prior.get('consumer_pid'), prior.get('consumer_start_time')) is not False):
         return None
     try:
-        children = [(pid, start) for pid, start in _review_evidence(root, prior) if pid is not None]
+        children = [(pid, start, recorded_at) for pid, start, recorded_at in _review_evidence(root, prior) if pid is not None]
     except (OSError, ValueError, TypeError):
         return None  # Unreadable run evidence cannot prove that its child died.
-    if any(process_liveness(pid, start) is not False for pid, start in children):
+    if any(not start or process_liveness(pid, start) is not False for pid, start, recorded_at in children):
         return None
     # owned_popen's consumer-owned KILL_ON_JOB_CLOSE job prevents an
     # unrecorded review child from surviving a provably dead consumer.
@@ -149,7 +178,8 @@ def stale_review_leases(root: Path, now: datetime) -> list[dict]:
     return result
 
 
-def audit(root: Path, event: str, prior: dict, *, actor: str, reason: str) -> dict:
+def audit(root: Path, event: str, prior: dict, *, actor: str, reason: str,
+          reference_paths: list[Path] | None = None) -> dict:
     if not actor.strip() or not reason.strip():
         raise ValueError('actor and reason must be non-empty')
     record = dict(event=event, actor=actor, reason=reason, prior_owner=prior,
@@ -157,6 +187,8 @@ def audit(root: Path, event: str, prior: dict, *, actor: str, reason: str) -> di
     path = directory(root) / 'audit' / f'{uuid.uuid4().hex}.json'
     path.parent.mkdir(parents=True, exist_ok=True)
     atomic_create_json(path, record)
+    if reference_paths is not None:
+        reference_paths.append(path)
     return record
 
 
@@ -235,7 +267,7 @@ def _target(root: Path, key: str, kind: str) -> Path:
 def _review_evidence(root: Path, prior: dict) -> list[tuple]:
     evidence = []
     if 'review_pid' in prior:
-        evidence.append((prior.get('review_pid'), prior.get('review_start_time')))
+        evidence.append((prior.get('review_pid'), prior.get('review_start_time'), record_start(prior)))
     run = prior.get('review_run_id')
     if run:
         if not isinstance(run, str) or not re.fullmatch(r'[A-Za-z0-9_-]+', run):
@@ -244,16 +276,16 @@ def _review_evidence(root: Path, prior: dict) -> list[tuple]:
         if path.exists():
             state = read_record(path)
             if state.get('pid') is not None:
-                evidence.append((state['pid'], state.get('process_start_time')))
+                evidence.append((state['pid'], state.get('process_start_time'), record_start(state)))
     return evidence
 
 
 def _owner_evidence(prior: dict) -> list[tuple]:
     result = []
     if 'consumer_pid' in prior or prior.get('consumer_token'):
-        result.append((prior.get('consumer_pid'), prior.get('consumer_start_time')))
+        result.append((prior.get('consumer_pid'), prior.get('consumer_start_time'), record_start(prior)))
     if 'pid' in prior:
-        result.append((prior.get('pid'), prior.get('process_start_time')))
+        result.append((prior.get('pid'), prior.get('process_start_time'), record_start(prior)))
     return result
 
 
@@ -271,15 +303,37 @@ def release(root: Path, key: str, *, actor: str, reason: str, kind: str = 'claim
         for item in resolved.glob('*.json'):
             if aid and read_record(item).get('assignment_id') == aid:
                 raise ValueError('resolved record exists for assignment')
+        owners = [prior]
         evidence = _review_evidence(root, prior) + _owner_evidence(prior)
         if kind == 'claim' and aid:
             lease = _target(root, f'review-{aid}', 'lease')
             if lease.exists():
                 lease_record = read_record(lease)
+                owners.append(lease_record)
                 evidence.extend(_review_evidence(root, lease_record) + _owner_evidence(lease_record))
-        if any(process_liveness(pid, start) is not False for pid, start in evidence if pid is not None):
+        if any(evidence_liveness(pid, start, recorded_at) is not False for pid, start, recorded_at in evidence if pid is not None):
             raise ValueError('live or unknown process owns this record')
-        record = audit(root, f'{kind}_released', prior, actor=actor, reason=reason)
+        audit_paths = []
+        record = audit(root, f'{kind}_released', prior, actor=actor, reason=reason,
+                       reference_paths=audit_paths)
+        for owner in owners:
+            run = owner.get('review_run_id')
+            if not run:
+                continue
+            state_path = root / 'runtime/dispatch/reviews' / run / 'review_run.json'
+            if not state_path.exists():
+                continue
+            original = state_path.read_bytes()
+            state = json.loads(original)
+            if state.get('process_state') in ('running', 'queued'):
+                snapshot = state_path.with_name('review_run.before_abandonment.json')
+                if not snapshot.exists():
+                    from dispatch.atomic_io import atomic_write_text
+                    atomic_write_text(snapshot, original.decode('utf-8'))
+                state.update(process_state='abandoned', completed_at=record['at'],
+                             blocked_reason=reason, recovery_audits=[
+                                 {'path': p.relative_to(root).as_posix(), **record} for p in audit_paths])
+                atomic_write_json(state_path, state)
         path.unlink()
         return record
 

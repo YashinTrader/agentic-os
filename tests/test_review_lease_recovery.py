@@ -52,6 +52,61 @@ class ReviewLeaseRecoveryTests(unittest.TestCase):
         atomic_write_json(self.lease, prior)
         return prior
 
+    def test_legacy_missing_identity_release_finalizes_and_unblocks_capacity(self):
+        self.prepare()
+        prior = self.abandoned()
+        prior.pop('consumer_token')
+        prior.pop('consumer_pid')
+        prior.pop('consumer_start_time')
+        atomic_write_json(self.lease, prior)
+        run_dir = self.root / 'runtime/dispatch/reviews' / prior['review_run_id']
+        state_path = run_dir / 'review_run.json'
+        atomic_write_json(state_path, dict(pid=35728, process_start_time=None,
+            process_state='running', started_at='2026-08-14T15:56:10Z'))
+        original = state_path.read_bytes()
+        (run_dir / 'stdout.log').write_bytes(b'legacy output')
+        claim = consumer_claims.directory(self.root) / 'claims' / f'{self.fp}.json'
+        atomic_write_json(claim, dict(assignment_id=self.assignment_id))
+        with patch('orchestrator.consumer_claims.process_start_time', return_value=None), patch(
+                'orchestrator.consumer_claims.os.name', 'nt'), patch(
+                'orchestrator.process_ownership.kernel.OpenProcess', return_value=0), patch(
+                'orchestrator.consumer_claims.ctypes.get_last_error', return_value=87):
+            self.assertIsNone(consumer_claims.recovery_reason(self.root, prior))
+            # Claim must evaluate the matching lease's own review-run evidence.
+            consumer_claims.release(self.root, self.fp, actor='operator', reason='legacy dead')
+            state = consumer_claims.read_record(state_path)
+            self.assertEqual(state['process_state'], 'abandoned')
+            self.assertEqual(state['blocked_reason'], 'legacy dead')
+            self.assertTrue(state['recovery_audits'][0]['path'])
+            consumer_claims.release(self.root, self.lease.stem, kind='lease',
+                                    actor='operator', reason='legacy dead')
+        self.assertEqual((run_dir / 'review_run.before_abandonment.json').read_bytes(), original)
+        self.assertEqual((run_dir / 'stdout.log').read_bytes(), b'legacy output')
+        self.assertEqual(self.consumer.process_once()['status'], 'resolved')
+        self.assertEqual(len(self.launches), 1)
+
+    def test_legacy_run_reuse_and_unknown_creation_fence_operator_release(self):
+        self.prepare()
+        request, _ = dispatcher.create_review_request(self.root, self.assignment_id)
+        state_path = self.root / 'runtime/dispatch/reviews' / request['review_run_id'] / 'review_run.json'
+        atomic_write_json(self.lease, dict(review_run_id=request['review_run_id'],
+                                          acquired_at='2099-01-01T00:00:00Z'))
+        atomic_write_json(state_path, dict(pid=35728, process_start_time=None,
+            process_state='running', started_at='2026-08-14T15:56:10Z'))
+        recorded = datetime(2026, 8, 14, 15, 56, 10, tzinfo=timezone.utc)
+        ticks = int(recorded.timestamp() * 10000000) + 116444736000000000
+        for actual in (str(ticks - 10000000), str(ticks), 'unreadable'):
+            with patch('orchestrator.consumer_claims.os.name', 'nt'), patch(
+                    'orchestrator.consumer_claims.process_start_time', return_value=actual):
+                with self.assertRaisesRegex(ValueError, 'live or unknown'):
+                    consumer_claims.release(self.root, self.lease.stem, kind='lease',
+                                            actor='operator', reason='reuse')
+        with patch('orchestrator.consumer_claims.os.name', 'nt'), patch(
+                'orchestrator.consumer_claims.process_start_time', return_value=str(ticks + 10000000)):
+            consumer_claims.release(self.root, self.lease.stem, kind='lease',
+                                    actor='operator', reason='reuse')
+        self.assertEqual(consumer_claims.read_record(state_path)['process_state'], 'abandoned')
+
     def test_legacy_capacity_is_visible_readable_and_operator_release_retries_once(self):
         self.prepare()
         atomic_write_json(self.lease, dict(holder='claude-reviewer', acquired_at='2026-08-14T15:56:09Z'))
@@ -116,6 +171,76 @@ class ReviewLeaseRecoveryTests(unittest.TestCase):
         request = consumer_claims.read_record(dispatcher.review_request_path(self.root, self.assignment_id))
         self.assertEqual(request['review_run_id'], prior['review_run_id'])
         self.assertEqual(request['status'], 'applied')
+
+    def test_crashed_attempt_evidence_and_lineage_survive_retry(self):
+        self.prepare()
+        prior = self.abandoned(review_pid=222, review_start_time='dead-child')
+        run_dir = self.root / 'runtime/dispatch/reviews' / prior['review_run_id']
+        original = (json.dumps(dict(review_run_id=prior['review_run_id'],
+            assignment_id=self.assignment_id, task_id='test', process_state='running',
+            pid=222, process_start_time='dead-child', started_at='2026-10-22T11:14:57Z')) + '\n').encode()
+        (run_dir / 'review_run.json').write_bytes(original)
+        (run_dir / 'stdout.log').write_bytes(b'partial review\r\n\x00')
+        (run_dir / 'stderr.log').write_bytes(b'old stderr')
+        (run_dir / 'prompt.txt').write_bytes(b'old prompt')
+        claim = consumer_claims.directory(self.root) / 'claims' / f'{self.fp}.json'
+        atomic_write_json(claim, dict(prior, fingerprint=self.fp))
+        with patch('orchestrator.consumer_claims.process_liveness', return_value=False), patch.object(
+                dispatcher, 'apply_verdict', wraps=dispatcher.apply_verdict) as apply:
+            self.assertEqual(self.consumer.process_once()['status'], 'resolved')
+            self.consumer.process_once()
+            replay = dispatcher.process_one_review(self.root, assignment_id=self.assignment_id)
+            self.assertTrue(replay['recovered'])
+            self.assertEqual(apply.call_count, 1)
+        request = consumer_claims.read_record(dispatcher.review_request_path(self.root, self.assignment_id))
+        self.assertNotEqual(request['review_run_id'], prior['review_run_id'])
+        self.assertEqual(request['prior_review_run_ids'], [prior['review_run_id']])
+        attempt = consumer_claims.read_record(self.root / 'runtime/dispatch/reviews' /
+                                              request['review_run_id'] / 'attempt.json')
+        self.assertEqual(sorted(a['event'] for a in attempt['recovery_audits']),
+                         ['claim_recovered', 'lease_recovered'])
+        self.assertTrue(all((self.root / a['path']).is_file() for a in attempt['recovery_audits']))
+        self.assertEqual((run_dir / 'review_run.before_abandonment.json').read_bytes(), original)
+        state = consumer_claims.read_record(run_dir / 'review_run.json')
+        self.assertEqual(state['process_state'], 'abandoned')
+        self.assertEqual(state['pid'], 222)
+        self.assertEqual(state['process_start_time'], 'dead-child')
+        self.assertEqual(state['started_at'], '2026-10-22T11:14:57Z')
+        self.assertTrue(state['blocked_reason'])
+        self.assertEqual((run_dir / 'stdout.log').read_bytes(), b'partial review\r\n\x00')
+        self.assertEqual((run_dir / 'stderr.log').read_bytes(), b'old stderr')
+        self.assertEqual((run_dir / 'prompt.txt').read_bytes(), b'old prompt')
+        self.assertEqual(len(self.launches), 1)
+
+    def test_normal_review_uses_original_run_and_files(self):
+        self.prepare()
+        request, errors = dispatcher.create_review_request(self.root, self.assignment_id)
+        self.assertEqual(errors, [])
+        self.assertEqual(self.consumer.process_once()['status'], 'resolved')
+        current = consumer_claims.read_record(dispatcher.review_request_path(self.root, self.assignment_id))
+        self.assertEqual(current['review_run_id'], request['review_run_id'])
+        run_dir = self.root / 'runtime/dispatch/reviews' / current['review_run_id']
+        self.assertEqual(consumer_claims.read_record(run_dir / 'attempt.json')['prior_review_run_ids'], [])
+        for name in ('context_bundle.json', 'prompt.txt', 'stdout.log', 'stderr.log', 'review_run.json'):
+            self.assertTrue((run_dir / name).is_file(), name)
+        self.assertEqual(len(list(run_dir.parent.iterdir())), 1)
+
+    def test_retry_reservation_updates_lease_liveness_and_retains_full_history(self):
+        self.prepare()
+        request, _ = dispatcher.create_review_request(self.root, self.assignment_id)
+        first = request['review_run_id']
+        self.assertTrue(dispatcher.try_acquire_review_lease(self.root,
+            assignment_id=self.assignment_id, review_run_id=first)[0])
+        self.assertEqual(dispatcher.prepare_review_attempt(self.root, request), first)
+        second = dispatcher.prepare_review_attempt(self.root, request)
+        self.assertNotEqual(first, second)
+        third = dispatcher.prepare_review_attempt(self.root, request)
+        self.assertEqual(request['prior_review_run_ids'], [first, second])
+        lease = consumer_claims.read_record(self.lease)
+        self.assertEqual(lease['review_run_id'], third)
+        atomic_write_json(self.root / 'runtime/dispatch/reviews' / third / 'review_run.json',
+                          dict(pid=333, process_start_time='latest-child'))
+        self.assertEqual(consumer_claims._review_evidence(self.root, lease), [(333, 'latest-child', None)])
 
     def test_live_unknown_owner_or_child_preserves_lease(self):
         self.prepare()
