@@ -17,7 +17,7 @@ from root_paths import root_metadata
 from dispatch.atomic_io import atomic_write_json
 from orchestrator.process_ownership import owned_popen, terminate_owned, ownership_metadata, process_start_time
 from orchestrator.layer_heartbeat import read_heartbeat, timestamp
-from orchestrator.supervisor_control import control_dir, file_lock, identity_state, register_supervisor_job
+from orchestrator.supervisor_control import control_dir, file_lock, identity_state, register_supervisor_job, is_legacy_status
 
 STDERR_LIMIT = 8192
 GRACE_SECONDS = 20
@@ -266,6 +266,9 @@ class LayerSupervisor:
                         print("maintenance mode: supervisor not started", flush=True)
                         return 0
                     old = read_heartbeat(self.path)
+                    if is_legacy_status(old):
+                        print(f'legacy supervisor status requires audited adoption: python scripts/stop_supervisor.py --state-root "{self.root}" --adopt-legacy-status --actor <a> --reason <r>', flush=True)
+                        return 2
                     if old and identity_state(old) in {"live", "unknown"}:
                         print("supervisor already live or identity unverifiable; refusing start", flush=True)
                         return 2

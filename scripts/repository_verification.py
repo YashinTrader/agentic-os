@@ -24,6 +24,7 @@ UNITTEST_ARTIFACT_REL = "runtime/unittest_last_run.txt"
 POST_TEST_ALLOWLIST_EXACT = frozenset(
     {
         "handoffs/T-M1-27-CAPACITY-LEAK__codex__to__claude.md",
+        "handoffs/T-M1-28-LEGACY-STATUS-TAKEOVER__codex__to__claude.md",
         "handoffs/T-M1-22-POSTDEPLOY-HYGIENE__codex__to__claude.md",
         "handoffs/T-M1-25-GRACEFUL-SUPERVISOR-STOP__codex__to__claude.md",
         "handoffs/T-M1-26-GROK-STREAMING-ACTIVITY__codex__to__claude.md",

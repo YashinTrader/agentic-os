@@ -1,2 +1,3 @@
 PyYAML
 langgraph>=0.2.0
+psutil>=5.9
