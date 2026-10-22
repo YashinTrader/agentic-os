@@ -7,6 +7,7 @@ import signal
 import time
 import uuid
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable
 
@@ -37,6 +38,7 @@ from orchestrator.leases import (
     heartbeat_lease,
     release_lease,
     try_acquire_concurrency,
+    assignment_lease_path,
 )
 from orchestrator.process_ownership import ownership_metadata
 from orchestrator.quota_probe import paid_probe_status
@@ -141,10 +143,59 @@ def process_wake_signal(
     signal_path: Path,
     *,
     config: SupervisorConfig,
+    **kwargs: Any,
+) -> dict[str, Any]:
+    """Fence pre-launch cleanup to this attempt; never release a running holder."""
+    attempt: dict[str, Any] = {"started": False}
+    report: dict[str, Any] = {"status": "error", "reason": "pre-launch interrupted"}
+    try:
+        report = _process_wake_signal(repo_root, signal_path, config=config, attempt=attempt, **kwargs)
+    except Exception as exc:
+        if attempt["started"]:
+            raise
+        report = {"status": "error", "reason": str(exc)}
+    finally:
+        if not attempt["started"] and attempt.get("run_id"):
+            from orchestrator.runtime_store import load_run_state
+            try:
+                state = load_run_state(repo_root, attempt["run_id"])
+                if state and state.process_state in {STATE_QUEUED, STATE_LAUNCHING}:
+                    state.process_state = STATE_FAILED_LAUNCH
+                    state.completed_at = utc_now()
+                    state.blocked_reason = str(report.get("reason", "pre-launch failure"))
+                    state.logical_task_id = attempt.get("logical_id", "")
+                    save_run_state(repo_root, state)
+            except work_lock.WorkLockError as exc:
+                report["cleanup_fenced"] = str(exc)
+            finally:
+                try:
+                    if attempt.get("lock_acquired"):
+                        # Fence cleanup against a concurrent explicit supersede.
+                        work_lock.release(
+                            repo_root, attempt["logical_id"], actor="supervisor",
+                            reason="pre-launch failure: " + str(report.get("reason", report["status"])),
+                            assignment_id=attempt["assignment_id"], run_id=attempt["run_id"],
+                        )
+                except work_lock.WorkLockError as exc:
+                    report["cleanup_fenced"] = str(exc)
+                finally:
+                    release_lease(repo_root, attempt["assignment_id"])
+            report.setdefault("run_id", attempt["run_id"])
+    report["process_started"] = attempt["started"]
+    return report
+
+
+def _process_wake_signal(
+    repo_root: Path,
+    signal_path: Path,
+    *,
+    config: SupervisorConfig,
     popen: Callable[..., Any] | None = None,
     monitor: Callable[..., Any] | None = None,
     launch_plan_builder: Callable[..., Any] | None = None,
     condition_retry_from: RunState | None = None,
+    attempt: dict[str, Any],
+    single_launch: bool = False,
 ) -> dict[str, Any]:
     """Consume one wake signal and physically launch the assigned agent if eligible."""
     signal = read_wake_signal(signal_path)
@@ -178,9 +229,7 @@ def process_wake_signal(
     if condition_retry_from is None and existing and existing.process_state in {
         "blocked_authentication",
         "blocked_quota",
-        "blocked_no_adapter",
         "failed",
-        "failed_launch",
         "timed_out",
     }:
         prev_fp = _failure_from_state(existing)
@@ -224,6 +273,13 @@ def process_wake_signal(
         layer_heartbeat.tick(progress=True)
         return {"status": "deferred", "reason": lease_reason, "assignment_id": assignment_id, "run_id": run_id}
 
+    attempt.update(run_id=run_id, assignment_id=assignment_id)
+    # Write evidence BEFORE any durable lock can refer to this run.
+    save_run_state(repo_root, RunState(
+        run_id=run_id, assignment_id=assignment_id, task_id=task_id,
+        assigned_agent=agent_id, adapter=adapter_id, process_state=STATE_QUEUED,
+    ))
+
     # Atomic claim of the assignment for the assigned builder.
     record, claim_errors = claim_assignment(repo_root, assignment_id, claimed_by=agent_id)
     if record is not None:
@@ -231,11 +287,14 @@ def process_wake_signal(
     if record is None:
         # Already claimed by this agent in this session is OK if status is claimed/building.
         record, _ = read_assignment(repo_root, assignment_id)
-        if record is None or record.assigned_to != agent_id or record.status not in {
+        retrying_prelaunch = bool(existing and existing.pid is None and existing.process_state in {
+            STATE_FAILED_LAUNCH, STATE_BLOCKED_NO_ADAPTER,
+        } and record and record.status == "reviewable_failure")
+        if record is None or record.assigned_to != agent_id or (record.status not in {
             "claimed",
             "building",
             "changes_requested",
-        }:
+        } and not retrying_prelaunch):
             release_lease(repo_root, assignment_id)
             return {
                 "status": "error",
@@ -258,6 +317,7 @@ def process_wake_signal(
             work_lock.acquire(repo_root, logical_id, holder_agent=agent_id, route="supervisor",
                               assignment_id=assignment_id, run_id=run_id, base_sha=record.base_sha,
                               branch=record.new_branch, resume=True)
+        attempt.update(lock_acquired=True, logical_id=logical_id)
     except (work_lock.WorkLockError, OSError) as exc:
         release_lease(repo_root, assignment_id)
         return {"status": "error", "reason": str(exc), "assignment_id": assignment_id}
@@ -387,7 +447,6 @@ def process_wake_signal(
         layer_heartbeat.tick(progress=True)
         route, route_errors = route_completion(repo_root, state, branch=state.branch, source="composer")
         release_lease(repo_root, assignment_id)
-        _consume_wake(repo_root, signal_path)
         return {
             "status": "blocked",
             "assignment_id": assignment_id,
@@ -421,7 +480,6 @@ def process_wake_signal(
         layer_heartbeat.tick(progress=True)
         route, route_errors = route_completion(repo_root, state, branch=state.branch, source=state.assigned_agent)
         release_lease(repo_root, assignment_id)
-        _consume_wake(repo_root, signal_path)
         return {
             "status": "failed_launch",
             "assignment_id": assignment_id,
@@ -432,6 +490,7 @@ def process_wake_signal(
         }
 
     # Only after a real PID exists may state become running.
+    attempt["started"] = True
     state.pid = handle.pid
     for key, value in ownership_metadata(handle.process).items():
         setattr(state, key, value)
@@ -509,6 +568,7 @@ def process_wake_signal(
         and not state.deadline_fired
         and config.allow_codex_fallback
         and not used_fallback
+        and not single_launch
         and state.assigned_agent in {"composer", "grok"}
     ):
         prev = _failure_from_state(existing) if existing else None
@@ -539,11 +599,18 @@ def process_wake_signal(
                 required_mcp_servers=required_mcp_servers,
             )
             if cplan.ok:
+                # A fallback is a separate pre-launch attempt with its own evidence.
+                attempt.update(started=False, run_id=fallback_run, lock_acquired=False)
+                save_run_state(repo_root, RunState(
+                    run_id=fallback_run, assignment_id=assignment_id, task_id=state.task_id,
+                    assigned_agent="codex", adapter="codex-restricted", process_state=STATE_QUEUED,
+                ))
                 work_lock.supersede(repo_root, state.logical_task_id, actor="supervisor",
                                     reason=f"configured Codex fallback after primary exited: {state.process_state}",
                                     holder_agent="codex", route="supervisor", assignment_id=assignment_id,
                                     run_id=fallback_run, base_sha=record.base_sha, branch=state.branch,
                                     expected_assignment_id=assignment_id, expected_run_id=state.run_id)
+                attempt["lock_acquired"] = True
                 # Preserve lineage on a new run state.
                 fb_state = RunState(
                     run_id=fallback_run,
@@ -583,6 +650,7 @@ def process_wake_signal(
                     return {"status": "failed_launch", "reason": fb_msg, "assignment_id": assignment_id,
                             "run_id": fallback_run, "route": route, "route_errors": route_errors}
                 if fb_handle is not None:
+                    attempt["started"] = True
                     fb_state.pid = fb_handle.pid
                     for key, value in ownership_metadata(fb_handle.process).items():
                         setattr(fb_state, key, value)
@@ -683,6 +751,30 @@ def recover_orphans(repo_root: Path) -> list[dict[str, Any]]:
     from orchestrator.runtime_store import list_supervisor_runs
 
     recovered: list[dict[str, Any]] = []
+    ghosts = []
+    for lock in work_lock.status(repo_root):
+        run_id = lock.get("run_id")
+        if not run_id:
+            continue
+        run_dir = repo_root / "runtime/dispatch/runs" / run_id
+        if (run_dir / "supervisor_run.json").is_file() or (run_dir / "result.json").is_file():
+            continue
+        try:
+            lease = json.loads(assignment_lease_path(repo_root, lock["assignment_id"]).read_text(encoding="utf-8"))
+        except (FileNotFoundError, ValueError):
+            lease = {}
+        if lease.get("run_id") == run_id and lease.get("pid"):
+            if pid_is_alive(lease["pid"], lease.get("process_start_time")) is not False:
+                continue
+        # Legacy holders may include process identity directly on the lock.
+        if lock.get("pid") and pid_is_alive(lock["pid"], lock.get("process_start_time")) is not False:
+            continue
+        work_lock.report_ghost(repo_root, lock["logical_task_id"], run_id=run_id)
+        alert = {"status": "stale", "reason": "ghost_holder", "run_id": run_id,
+                 "assignment_id": lock["assignment_id"], "logical_task_id": lock["logical_task_id"]}
+        ghosts.append(alert)
+        recovered.append(alert)
+    _update_status(repo_root, work_lock_alerts=ghosts)
     for state in list_supervisor_runs(repo_root, limit=100):
         if state.process_state not in {STATE_RUNNING, STATE_LAUNCHING}:
             continue
@@ -694,19 +786,88 @@ def recover_orphans(repo_root: Path) -> list[dict[str, Any]]:
     return recovered
 
 
+def _update_status(repo_root: Path, **updates: Any) -> None:
+    path = repo_root / "runtime/dispatch/supervisor_status.json"
+    try:
+        status = json.loads(path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, ValueError):
+        status = {}
+    status.update(updates)
+    atomic_write_json(path, status)
+
+
+def _retry_wake(repo_root: Path, path: Path, report: dict[str, Any], *, config: SupervisorConfig) -> None:
+    """Three failures, exponential backoff, then durable dead-letter evidence."""
+    try:
+        signal = read_wake_signal(path)
+        if not isinstance(signal, dict):
+            signal = {"invalid_signal": signal}
+    except ValueError:
+        signal = {"invalid_signal": path.read_text(encoding="utf-8")}
+    previous = signal.get("retry", {})
+    if not isinstance(previous, dict):
+        previous = {}
+    try:
+        attempts = min(3, max(0, int(previous.get("attempts", 0))) + 1)
+    except (TypeError, ValueError):
+        attempts = 1
+    now = clock_from(config)
+    signal["retry"] = {
+        "attempts": attempts, "reason": report.get("reason", report["status"]),
+        "first_failed_at": previous.get("first_failed_at", now.isoformat()),
+        "last_failed_at": now.isoformat(),
+        "next_attempt_at": (now + timedelta(seconds=30 * 2 ** (attempts - 1))).isoformat(),
+    }
+    atomic_write_json(path, signal)
+    if attempts >= 3:
+        _dead_letter_wake(repo_root, path, signal, now=now)
+        report["dead_lettered"] = True
+
+
+def _dead_letter_wake(repo_root: Path, path: Path, signal: dict[str, Any], *, now: datetime) -> None:
+    destination = repo_root / "runtime/dispatch/wake_queue/dead_letter" / path.parent.name / path.name
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    signal["retry"]["dead_lettered_at"] = now.isoformat()
+    atomic_write_json(destination, signal)
+    path.unlink()
+
+
 def process_once(repo_root: Path, *, config: SupervisorConfig | None = None, **kwargs: Any) -> dict[str, Any]:
     cfg = config or SupervisorConfig()
     recover_orphans(repo_root)
+    # Re-evaluate every tick, before waking new work, so due retries cannot starve.
+    report = reevaluate_blocked_builders(
+        repo_root, config=cfg, launch=process_wake_signal, single_launch=True, **kwargs
+    )
+    if report is not None and report.get("process_started"):
+        return report
     queue = _wake_queue(repo_root, cfg.agent)
     signals = sorted(queue.glob("*.json")) if queue.is_dir() else []
-    if signals:
-        return process_wake_signal(repo_root, signals[0], config=cfg, **kwargs)
-    report = reevaluate_blocked_builders(
-        repo_root, config=cfg, launch=process_wake_signal, **kwargs
-    )
-    if report is not None:
-        return report
-    return {"status": "idle", "agent": cfg.agent}
+    for path in signals:
+        try:
+            data = read_wake_signal(path)
+            retry = data.get("retry", {}) if isinstance(data, dict) else {}
+            if isinstance(retry, dict) and int(retry.get("attempts", 0)) >= 3:
+                # Complete an interrupted dead-letter move without a fourth launch.
+                _dead_letter_wake(repo_root, path, data, now=clock_from(cfg))
+                report = {"status": "error", "reason": retry.get("reason"), "dead_lettered": True}
+                continue
+            due = retry.get("next_attempt_at") if isinstance(retry, dict) else None
+            if due and clock_from(cfg) < datetime.fromisoformat(due):
+                continue
+        except (ValueError, TypeError):
+            pass  # Malformed JSON is a bounded failure too.
+        current = process_wake_signal(repo_root, path, config=cfg, single_launch=True, **kwargs)
+        if current.get("status") in {"error", "failed_launch", "blocked"} and path.exists():
+            _retry_wake(repo_root, path, current, config=cfg)
+        report = current
+        if current.get("process_started") or current.get("pid"):
+            break
+    alerts = []
+    for path in sorted((repo_root / "runtime/dispatch/wake_queue/dead_letter").rglob("*.json")):
+        alerts.append({"path": str(path.relative_to(repo_root)), "retry": read_wake_signal(path).get("retry")})
+    _update_status(repo_root, wake_alerts=alerts)
+    return report or {"status": "idle", "agent": cfg.agent}
 
 
 def run_forever(
@@ -748,7 +909,8 @@ def run_forever(
             for provider, details in status["quota_probes"].items() if "alert_reason" in details
         }
         status_path.parent.mkdir(parents=True, exist_ok=True)
-        atomic_write_json(status_path, status)
+        _update_status(repo_root, **{k: v for k, v in status.items()
+                                   if k not in {"wake_alerts", "work_lock_alerts"}})
         if report.get("status") == "idle":
             time.sleep(max(1, cfg.poll_seconds))
         else:

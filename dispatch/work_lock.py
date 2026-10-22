@@ -122,9 +122,22 @@ def status(root: Path, logical_task_id: str | None = None, *, stale_seconds: int
         record = _read(path)
         if record:
             age = (datetime.now(timezone.utc) - datetime.fromisoformat(record['heartbeat_at'].replace('Z', '+00:00'))).total_seconds()
-            records.append({**record, "stale": age > stale_seconds,
-                            "lock_status": "stale" if age > stale_seconds else record['state']})
+            stale = age > stale_seconds or bool(record.get('stale_reason'))
+            records.append({**record, "stale": stale,
+                            "lock_status": "stale" if stale else record['state']})
     return records
+
+
+def report_ghost(root: Path, logical_task_id: str, *, run_id: str) -> dict:
+    """Mark missing-run evidence without releasing or changing ownership."""
+    path = lock_path(root, logical_task_id)
+    with _guard(path):
+        record = _read(path)
+        if not record or record['run_id'] != run_id:
+            raise WorkLockError('work lock run ownership changed')
+        record.update(stale_reason='ghost_holder')
+        atomic_write_json(path, record)
+        return record
 
 
 def _audit(root: Path, prior: dict, *, actor: str, reason: str, action: str) -> None:
