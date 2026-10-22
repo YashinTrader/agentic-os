@@ -282,8 +282,9 @@ class OperatorTests(unittest.TestCase):
     def test_new_claim_with_incomplete_identity_is_not_operator_released(self):
         from orchestrator.consumer_claims import release
         self.legacy(consumer_token='owner', consumer_pid=111)
-        with self.assertRaisesRegex(ValueError, 'live or unknown'):
-            release(self.root, self.fp, actor='op', reason='abandoned')
+        with patch('orchestrator.consumer_claims.process_start_time', return_value='unreadable'):
+            with self.assertRaisesRegex(ValueError, 'live or unknown'):
+                release(self.root, self.fp, actor='op', reason='abandoned')
 
     @patch.dict(os.environ, {}, clear=False)
     def test_cli_list_release_and_bad_key(self):
@@ -304,6 +305,29 @@ class OperatorTests(unittest.TestCase):
 
 
 class LivenessTests(unittest.TestCase):
+    def test_legacy_creation_evidence_is_conservative(self):
+        from orchestrator.consumer_claims import process_liveness
+        # FILETIME at 2026-08-14T15:56:10Z, plus/minus one second.
+        recorded = datetime(2026, 8, 14, 15, 56, 10, tzinfo=timezone.utc)
+        ticks = int(recorded.timestamp() * 10000000) + 116444736000000000
+        for actual, expected in [(str(ticks + 10000000), False),
+                                 (str(ticks), None), (str(ticks - 10000000), None),
+                                 ('unreadable', None)]:
+            with self.subTest(actual=actual), patch('orchestrator.consumer_claims.os.name', 'nt'), patch(
+                    'orchestrator.consumer_claims.process_start_time', return_value=actual):
+                self.assertIs(process_liveness(35728, None, recorded.isoformat()), expected)
+                self.assertIsNone(process_liveness(35728, None))
+
+    def test_linux_legacy_creation_uses_proc_boot_and_ticks(self):
+        from orchestrator.consumer_claims import process_liveness
+        for ticks, expected in [('100', None), ('300', False)]:
+            with patch('orchestrator.consumer_claims.os.name', 'posix'), patch(
+                    'orchestrator.consumer_claims.os.sysconf', return_value=100, create=True), patch(
+                    'orchestrator.consumer_claims.Path') as proc_path, patch(
+                    'orchestrator.consumer_claims.process_start_time', return_value=ticks):
+                proc_path.return_value.read_text.return_value = 'btime 1000\n'
+                self.assertIs(process_liveness(35728, None, '1970-01-01T00:16:42Z'), expected)
+
     def test_current_identity_and_pid_reuse(self):
         import os
         from orchestrator.consumer_claims import process_liveness
