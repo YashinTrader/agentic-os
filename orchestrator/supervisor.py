@@ -31,7 +31,7 @@ from orchestrator.builder_condition import (
     reevaluate_blocked_builders,
 )
 from orchestrator.event_router import route_completion
-from orchestrator.failure_classify import build_fingerprint, classify_process_output, should_relaunch
+from orchestrator.failure_classify import Classification, build_fingerprint, classify_process_output, should_relaunch
 from orchestrator.leases import (
     DEFAULT_MAX_CONCURRENCY,
     has_assignment_lease,
@@ -42,7 +42,7 @@ from orchestrator.leases import (
 )
 from orchestrator.process_ownership import ownership_metadata
 from orchestrator.quota_probe import paid_probe_status
-from orchestrator.process_monitor import mark_orphaned, monitor_process, pid_is_alive
+from orchestrator.process_monitor import mark_orphaned, monitor_process, pid_is_alive, read_text
 from orchestrator.runtime_store import (
     STATE_BLOCKED_CAPACITY,
     STATE_BLOCKED_NO_ADAPTER,
@@ -530,24 +530,7 @@ def _process_wake_signal(
         deadline_state=getattr(mon, "deadline_state", None),
         required_mcp_servers=list(getattr(plan, "required_mcp_servers", None) or required_mcp_servers),
     )
-    state.process_state = getattr(mon, "deadline_state", None) or (classification.process_state if classification.process_state != "completed" else STATE_COMPLETED)
-    state.blocked_reason = (f"{state.deadline_fired} deadline expired" if state.deadline_fired else classification.detail) if state.process_state != STATE_COMPLETED else ""
-    state.retry_eligible = classification.retry_eligible
-    fp = build_fingerprint(
-        agent=state.assigned_agent,
-        adapter=state.adapter,
-        classification=classification,
-        exit_code=mon.exit_code,
-    )
-    state.failure_fingerprint = fp.to_dict() if classification.category != "completed" else None
-    if not state.deadline_fired:
-        apply_block_schedule(
-            repo_root,
-            state,
-            retry_after=classification.retry_after,
-            now=clock_from(config),
-            max_attempts=config.max_condition_retries,
-        )
+    fp = _apply_classification(repo_root, state, classification, config=config)
 
     if state.process_state == STATE_MAX_TURNS:
         save_run_state(repo_root, state)
@@ -747,18 +730,100 @@ def _process_wake_signal(
     }
 
 
-def recover_orphans(repo_root: Path) -> list[dict[str, Any]]:
-    from orchestrator.runtime_store import list_supervisor_runs
+def _apply_classification(
+    repo_root: Path, state: RunState, classification: Classification, *, config: SupervisorConfig,
+) -> FailureFingerprint:
+    """Use the same failure metadata and condition schedule for monitoring and salvage."""
+    state.process_state = classification.process_state
+    state.blocked_reason = (
+        f"{state.deadline_fired} deadline expired" if state.deadline_fired else classification.detail
+    ) if state.process_state != STATE_COMPLETED else ""
+    state.retry_eligible = classification.retry_eligible
+    fp = build_fingerprint(agent=state.assigned_agent, adapter=state.adapter,
+                           classification=classification, exit_code=state.exit_code)
+    state.failure_fingerprint = fp.to_dict() if classification.category != "completed" else None
+    if not state.deadline_fired:
+        apply_block_schedule(repo_root, state, retry_after=classification.retry_after,
+                             now=clock_from(config), max_attempts=config.max_condition_retries)
+    return fp
 
+
+def recover_orphans(repo_root: Path, *, config: SupervisorConfig | None = None) -> list[dict[str, Any]]:
+    from orchestrator.runtime_store import list_supervisor_runs, load_run_state
+
+    cfg = config or SupervisorConfig()
     recovered: list[dict[str, Any]] = []
+    for state in list_supervisor_runs(repo_root, limit=100):
+        if state.process_state not in {STATE_RUNNING, STATE_LAUNCHING}:
+            continue
+        alive = pid_is_alive(state.pid or -1, state.process_start_time) if state.pid else False
+        if alive is not False:
+            continue
+        assignment, _ = read_assignment(repo_root, state.assignment_id)
+        classification = classify_process_output(
+            agent=state.assigned_agent, adapter=state.adapter, exit_code=None,
+            stdout=read_text(repo_root / state.stdout_path) if state.stdout_path else "",
+            stderr=read_text(repo_root / state.stderr_path) if state.stderr_path else "",
+            required_mcp_servers=list(getattr(assignment, "required_mcp_servers", None) or []),
+        )
+        if classification.process_state in {"blocked_quota", "blocked_authentication", "blocked_external", STATE_MAX_TURNS}:
+            state.exit_code = None
+            state.completed_at = utc_now()
+            _apply_classification(repo_root, state, classification, config=cfg)
+            if state.process_state == STATE_MAX_TURNS and state.auto_resume_count >= 1:
+                state.process_state = STATE_BLOCKED_EXTERNAL
+                state.blocked_reason = "automatic max-turn continuation budget exhausted"
+                state.retry_eligible = False
+            try:
+                save_run_state(repo_root, state)
+            except work_lock.WorkLockError:
+                # An explicit replacement owns this task now. Do not publish an
+                # outcome or change its assignment/lease on the dead run's behalf.
+                recovered.append({"run_id": state.run_id, "status": "fenced"})
+                continue
+            if state.process_state != STATE_MAX_TURNS:
+                route_completion(repo_root, state, branch=state.branch, source=state.assigned_agent)
+        else:
+            mark_orphaned(repo_root, state, detail=f"PID {state.pid} not alive")
+            try:
+                work_lock.release(repo_root, state.logical_task_id or state.task_id,
+                                  actor="supervisor", reason="orphan_recovered", run_id=state.run_id)
+            except work_lock.WorkLockError:
+                pass  # Fenced release: a different holder must remain untouched.
+        # Release only this run's concurrency lease, never a replacement's.
+        try:
+            lease = json.loads(assignment_lease_path(repo_root, state.assignment_id).read_text(encoding="utf-8"))
+        except (FileNotFoundError, ValueError):
+            lease = {}
+        if lease.get("run_id") == state.run_id:
+            release_lease(repo_root, state.assignment_id)
+        recovered.append({"run_id": state.run_id, "assignment_id": state.assignment_id, "status": state.process_state})
+
+    # Recovery above can release newly orphaned holders. Pre-existing terminal
+    # holders are alerted only; their age/state never grants permission to steal.
     ghosts = []
     for lock in work_lock.status(repo_root):
         run_id = lock.get("run_id")
         if not run_id:
             continue
         run_dir = repo_root / "runtime/dispatch/runs" / run_id
-        if (run_dir / "supervisor_run.json").is_file() or (run_dir / "result.json").is_file():
-            continue
+        state = load_run_state(repo_root, run_id)
+        if state is not None:
+            if state.process_state not in {"orphaned", "failed_launch", "blocked_external"}:
+                continue
+            if state.pid and pid_is_alive(state.pid, state.process_start_time) is not False:
+                continue
+        elif (run_dir / "result.json").is_file():
+            try:
+                result = json.loads((run_dir / "result.json").read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            if result.get("process_state", result.get("status")) not in {"orphaned", "failed_launch", "blocked_external"}:
+                continue
+            if result.get("pid") and pid_is_alive(result["pid"], result.get("process_start_time")) is not False:
+                continue
+        elif (run_dir / "supervisor_run.json").is_file():
+            continue  # Unreadable evidence cannot establish a terminal state.
         try:
             lease = json.loads(assignment_lease_path(repo_root, lock["assignment_id"]).read_text(encoding="utf-8"))
         except (FileNotFoundError, ValueError):
@@ -766,23 +831,17 @@ def recover_orphans(repo_root: Path) -> list[dict[str, Any]]:
         if lease.get("run_id") == run_id and lease.get("pid"):
             if pid_is_alive(lease["pid"], lease.get("process_start_time")) is not False:
                 continue
-        # Legacy holders may include process identity directly on the lock.
         if lock.get("pid") and pid_is_alive(lock["pid"], lock.get("process_start_time")) is not False:
             continue
-        work_lock.report_ghost(repo_root, lock["logical_task_id"], run_id=run_id)
+        try:
+            work_lock.report_ghost(repo_root, lock["logical_task_id"], run_id=run_id)
+        except work_lock.WorkLockError:
+            continue  # Ownership may have changed since the status snapshot.
         alert = {"status": "stale", "reason": "ghost_holder", "run_id": run_id,
                  "assignment_id": lock["assignment_id"], "logical_task_id": lock["logical_task_id"]}
         ghosts.append(alert)
         recovered.append(alert)
     _update_status(repo_root, work_lock_alerts=ghosts)
-    for state in list_supervisor_runs(repo_root, limit=100):
-        if state.process_state not in {STATE_RUNNING, STATE_LAUNCHING}:
-            continue
-        alive = pid_is_alive(state.pid or -1, state.process_start_time) if state.pid else False
-        if alive is False:
-            mark_orphaned(repo_root, state, detail=f"PID {state.pid} not alive")
-            release_lease(repo_root, state.assignment_id)
-            recovered.append({"run_id": state.run_id, "assignment_id": state.assignment_id, "status": "orphaned"})
     return recovered
 
 
@@ -834,7 +893,7 @@ def _dead_letter_wake(repo_root: Path, path: Path, signal: dict[str, Any], *, no
 
 def process_once(repo_root: Path, *, config: SupervisorConfig | None = None, **kwargs: Any) -> dict[str, Any]:
     cfg = config or SupervisorConfig()
-    recover_orphans(repo_root)
+    recover_orphans(repo_root, config=cfg)
     # Re-evaluate every tick, before waking new work, so due retries cannot starve.
     report = reevaluate_blocked_builders(
         repo_root, config=cfg, launch=process_wake_signal, single_launch=True, **kwargs

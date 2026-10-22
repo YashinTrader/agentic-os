@@ -129,7 +129,7 @@ def status(root: Path, logical_task_id: str | None = None, *, stale_seconds: int
 
 
 def report_ghost(root: Path, logical_task_id: str, *, run_id: str) -> dict:
-    """Mark missing-run evidence without releasing or changing ownership."""
+    """Mark missing/terminal-run evidence without releasing or changing ownership."""
     path = lock_path(root, logical_task_id)
     with _guard(path):
         record = _read(path)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import logging
 import sys
 import time
 from dataclasses import dataclass
@@ -85,7 +86,20 @@ def monitor_process(
     started = clock() if started_monotonic is None else started_monotonic
     policy = deadline_policy or adapter_deadlines(repo_root, state.adapter, timeout_seconds)
     deadlines = RunDeadlines(policy, started)
-    persist = persist_fn or save_run_state
+    persist_state = persist_fn or save_run_state
+    last_warning = None
+
+    def persist(root: Path, current: RunState) -> None:
+        nonlocal last_warning
+        try:
+            persist_state(root, current)
+        except OSError as exc:
+            # Keep process ownership and in-memory activity until exit. The next
+            # poll retries; final classification is persisted by the supervisor.
+            now = clock()
+            if last_warning is None or now - last_warning >= 60:
+                logging.getLogger(__name__).warning('Run %s persistence deferred: %.300s', current.run_id, exc)
+                last_warning = now
     activity = StreamActivity(stdout_path)
     if worktree is None and getattr(state, "worktree", ""):
         worktree = Path(state.worktree)
@@ -167,5 +181,7 @@ def mark_orphaned(repo_root: Path, state: RunState, *, detail: str = "process mi
     state.completed_at = utc_now()
     state.blocked_reason = detail
     state.retry_eligible = False
-    save_run_state(repo_root, state)
+    # Dead-run evidence must remain recordable even after explicit supersede.
+    # This does not authorize completion or mutate a replacement's work lock.
+    save_run_state(repo_root, state, refresh_work_lock=False)
     return state

@@ -101,7 +101,7 @@ def _diagnostic_text(value: Any) -> str:
     return str(value)
 
 
-def _error_signals(stdout: str, stderr: str, *, failed_exit: bool) -> tuple[str, bool, bool]:
+def _error_signals(stdout: str, stderr: str, *, failed_exit: bool, unknown_exit: bool = False) -> tuple[str, bool, bool]:
     """Extract terminal provider diagnostics, never tool or assistant content.
 
     CLIs emit JSONL or a single (possibly pretty-printed) JSON result. Plain
@@ -120,7 +120,9 @@ def _error_signals(stdout: str, stderr: str, *, failed_exit: bool) -> tuple[str,
                 try:
                     records.append(json.loads(line))
                 except ValueError:
-                    if failed_exit:
+                    # Recovery has no exit status. Trust explicit CLI error
+                    # prefixes, while still ignoring narration and tool events.
+                    if failed_exit or (unknown_exit and re.match(r'^\s*(?:API error\b|error\s*:)', line, re.I)):
                         diagnostics.append(line)
                         failed = True
                         if _MAX_TURN_CLI_PATTERN.search(line):
@@ -197,7 +199,7 @@ def classify_process_output(
         )
 
     blob, provider_failed, max_turns = _error_signals(
-        stdout, stderr, failed_exit=exit_code not in (0, None),
+        stdout, stderr, failed_exit=exit_code not in (0, None), unknown_exit=exit_code is None,
     )
     if exit_code in (0, None) and not provider_failed and not max_turns:
         return Classification(

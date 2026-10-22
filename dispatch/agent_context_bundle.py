@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
-import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 import yaml
+
+from dispatch.atomic_io import atomic_write_text
 
 MAX_CONTEXT_FILE_BYTES = 512_000
 MAX_BUNDLE_TOTAL_BYTES = 2_000_000
@@ -22,17 +22,7 @@ def utc_now() -> str:
 
 
 def _atomic_write(path: Path, content: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp_name = tempfile.mkstemp(dir=str(path.parent), prefix=f".{path.name}.", suffix=".tmp")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
-            handle.write(content)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(tmp_name, path)
-    finally:
-        if os.path.exists(tmp_name):
-            os.unlink(tmp_name)
+    atomic_write_text(path, content)
 
 
 def _bounded_dump(data: Any, *, max_bytes: int = MAX_CONTEXT_FILE_BYTES) -> str:

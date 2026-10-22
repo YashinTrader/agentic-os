@@ -106,10 +106,18 @@ transfer ownership; both require an actor and reason and preserve the full prior
 record. Invalid/corrupt records fail closed.
 
 Startup recovery also checks locks against run records and known process
-identities (including assignment leases). A holder without a run record and
-without a known live process is marked stale with `stale_reason: ghost_holder`
-and surfaced in supervisor status `work_lock_alerts`. Recovery never releases
-or steals that holder; an operator must explicitly release or supersede it.
+identities (including assignment leases). Dead running/launching runs are first
+classified from captured provider errors with an unknown exit code. Quota/auth
+failures use the normal condition schedule and retain their own lock for a fenced
+condition retry. Unclassifiable dead runs become `orphaned`; recovery releases
+only a lock whose run id matches, with audit reason `orphan_recovered`.
+
+A holder without a run record, or with a pre-existing `orphaned`, `failed_launch`,
+or `blocked_external` record, and without a known live process is marked stale
+with `stale_reason: ghost_holder` and surfaced in `work_lock_alerts`. These
+pre-existing holders are never released or stolen by the ghost check; an
+operator must explicitly release or supersede them. Unknown process liveness
+(including bare historical PIDs without start identity) does not prove death.
 
 Assignment readers expose the live `work_lock_status` record. The assignment
 CLI includes it in JSON. Within the existing dashboard contract, the assignment
