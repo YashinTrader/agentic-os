@@ -1,0 +1,14 @@
+I1022 09:46:40.459003  1 model.go:42] Model ID unknown not in local config, defaulting to CCPA
+I1022 09:46:40.459003  1 model.go:42] Model resolved via default
+I1022 09:46:40.459003  1 auth.go:42] Print mode: not authenticated, trying silent auth
+I1022 09:46:40.459003  1 auth.go:42] ChainedAuth: authenticated via keyring account=fixture@example.test
+I1022 09:46:40.459003  1 print.go:42] Print mode: silent auth succeeded
+I1022 09:46:40.459003  1 model.go:42] Resolving model gemini-3.8-flash
+I1022 09:46:40.459003  1 permissions.go:42] CLI settings initialized: permissions=<nil>, toolPermission=request-review
+I1022 09:46:40.459003  1 permissions.go:42] ApplyProjectPermissionGrants: no grants for project
+I1022 09:46:40.459003  1 print.go:42] Print mode: enabling terminal sandbox for this session
+I1022 09:46:40.459003  1 agent.go:42] applying agent mode plan
+I1022 09:46:40.459003  1 conversation.go:42] Created conversation 12345678-1234-1234-1234-123456789abc
+I1022 09:46:40.459003  1 print.go:42] Print mode: conversation=12345678-1234-1234-1234-123456789abc, sending message
+I1022 09:46:40.459003  1 quota_manager.go:42] doRefreshQuota
+I1022 09:46:40.459003  1 stream.go:42] Stream goroutine exited for 12345678-1234-1234-1234-123456789abc, sending completion signal

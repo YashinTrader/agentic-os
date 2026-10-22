@@ -1,0 +1,28 @@
+schema_version: "1.0"
+id: antigravity-restricted
+agent_id: antigravity
+display_name: Antigravity CLI experimental spike
+status: experimental
+enabled: false
+supports_execution: false
+supports_preview: true
+executable: agy
+minimum_version: "1.1.5"
+execution_scope: isolated_worktree
+worktree_required: true
+handoff_required: true
+independent_verification_required: true
+timeout_seconds: 300
+maximum_timeout_seconds: 1800
+role_allowlist:
+  - read-only-analysis
+  - isolated-development-experiment
+forbidden_flags:
+  - --dangerously-skip-permissions
+mcp_isolation_enforced: false
+token_usage_available: false
+automatic_retries: false
+notes: >
+  Offline Phase 1 only. Not registered or routable. Plan mode and terminal sandbox
+  are not a proven filesystem or MCP boundary. Phase 2 must establish these limits
+  before a separately reviewed activation. No inherited API keys or extra directories.

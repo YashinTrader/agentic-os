@@ -1,4 +1,7 @@
 # Overall limits come from each launch's adapter timeout.
+antigravity-restricted:
+  startup_seconds: 180
+  inactivity_seconds: 600
 composer-restricted:
   startup_seconds: 180
   inactivity_seconds: 600

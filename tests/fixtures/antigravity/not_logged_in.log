@@ -1,0 +1,2 @@
+I1022 09:46:40.459003  1 auth.go:42] Print mode: not authenticated, trying silent auth
+E1022 09:46:40.459003  1 auth.go:42] You are not logged into Antigravity
