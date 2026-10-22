@@ -56,3 +56,65 @@ Legacy explicit roots without a config override retain library config fallback.
 Consumer poke-age alerts count only `assignment_completed` events whose source
 is not `claude`, matching processing eligibility. `ignored_pending_poke_count`
 reports other queued notices without aging them into an unhandled-poke alert.
+## Maintenance, deployment restart and rollback
+
+Use the pinned checkout's local stop control for planned maintenance. Set the
+maintenance fence and request a stop in one command, using the same state root
+as the Scheduled Task:
+
+```powershell
+python <pinned-checkout>/scripts/stop_supervisor.py --state-root <state-root> --maintenance on --actor Gabriel --reason "deployment maintenance" --timeout 90
+```
+
+Exit 0 means the recorded supervisor and child identities are gone. Exit 3
+means the grace/wait deadline expired and the recorded owned tree was forcibly
+terminated; this is reported in stdout and the audit. Exit 2 means refusal or
+failure: inspect the audit and do not begin cleanup while any process remains.
+The default wait is 90 seconds. Do not use `schtasks /End` to stop the Python
+tree, or select processes by executable name with `taskkill`.
+
+The maintenance fence is `runtime/dispatch/layer_supervisor/maintenance.json`.
+While it exists, Scheduled Task repetitions exit 0 with "maintenance mode"
+without starting layers. Keep it set throughout cleanup or changing the pinned
+release. The stop request records requester, reason, token, time and target
+instance in `stop_request.json`; durable per-operation results and verified
+process identities are retained under `layer_supervisor/audit/<token>.json`.
+Do not delete these files as part of cleanup. Stale requests cannot stop a new
+instance. Do not remove `instance.lock` or `control.lock`: they are OS-locked
+files, released automatically on process exit, rather than stale PID files.
+
+Shutdown uses the existing planned-stop behavior: each child layer receives
+CTRL_BREAK and up to 20 seconds to unwind, then its owned Job Object is
+terminated, including surviving descendants. In-flight builder work is
+interrupted; its process monitor terminates the owned agent tree before
+unwinding. In-flight reviews are cancelled and release their review lease;
+the consumer claim is finalized by its existing cleanup. This does not finish
+or approve assignments. If the grace period is exhausted, cleanup handlers
+may not finish. Run states can retain their last running identity until
+existing orphan/claim recovery classifies them. Prompts, stdout, stderr,
+worktrees, run records and prior review-attempt evidence are preserved.
+Inspect these and existing recovery fences before retrying interrupted work.
+
+After cleanup, clear the fence, then let the Scheduled Task start the selected
+release (or run its entrypoint once):
+
+```powershell
+python <selected-checkout>/scripts/stop_supervisor.py --state-root <state-root> --maintenance off
+python <selected-checkout>/scripts/run_supervisor_layers.py --state-root <state-root> --config-root <selected-checkout>
+```
+
+Maintenance-only `--maintenance on`/`off` does not stop a running supervisor.
+Adding `--actor` and `--reason` makes it a stop request, including when combined
+with `--maintenance on`. A second supervisor for the same root is refused by
+an OS instance lock and validated root PID/creation-time status. The stop
+control uses creation identities for every recorded child and revalidates the
+root immediately before forced termination. On Windows it additionally checks
+membership in the recorded named Job before terminating that Job, so the
+venv shim/interpreter tree is covered. Unreadable or reused root identities
+are refused, never signaled. Supervisors predating this control need a separately
+validated legacy shutdown; missing identity evidence is deliberately refused.
+
+For rollback, repeat the fenced stop, select the old pinned checkout, clear
+maintenance and start the old entrypoint. Verify `status.json` has the new root
+PID/creation time, expected `config_root_git_sha`, and advancing child ticks
+after each start. Complete each stop before starting another release.

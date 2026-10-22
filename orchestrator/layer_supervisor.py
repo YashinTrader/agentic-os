@@ -15,8 +15,9 @@ from typing import Callable
 
 from root_paths import root_metadata
 from dispatch.atomic_io import atomic_write_json
-from orchestrator.process_ownership import owned_popen, terminate_owned, ownership_metadata
+from orchestrator.process_ownership import owned_popen, terminate_owned, ownership_metadata, process_start_time
 from orchestrator.layer_heartbeat import read_heartbeat, timestamp
+from orchestrator.supervisor_control import control_dir, file_lock, identity_state, register_supervisor_job
 
 STDERR_LIMIT = 8192
 GRACE_SECONDS = 20
@@ -88,6 +89,12 @@ class LayerSupervisor:
         self.clock = clock
         self.stale_seconds = max(60, 3 * poll_seconds)
         self.stop_requested = False
+        self.shutdown_complete = False
+        self.instance_token = uuid.uuid4().hex
+        self.stop_request = None
+        self.recorded_children = []
+        self.identity = {"pid": os.getpid(), "process_start_time": process_start_time(os.getpid()),
+                         "instance_token": self.instance_token}
         previous = read_heartbeat(self.path).get("children", {})
         for name, child in self.children.items():
             old = previous.get(name, {})
@@ -110,10 +117,16 @@ class LayerSupervisor:
         self.stop_requested = True
 
     def save(self):
+        state = "stopping" if self.stop_requested else "running"
+        if self.shutdown_complete:
+            state = "stopped_by_request" if self.stop_request else "stopped"
         atomic_write_json(self.path, {
             **self.root_audit,
             "updated_at": timestamp(),
-            "state": "stopped" if self.stop_requested else "running",
+            **self.identity,
+            "state": state,
+            "stop_request": self.stop_request,
+            "recorded_children": self.recorded_children,
             "children": {name: child.status for name, child in self.children.items()},
         })
 
@@ -131,6 +144,7 @@ class LayerSupervisor:
             self.failed(child, now, None, "launch_failed", str(exc))
             return
         child.status.update(ownership_metadata(child.process))
+        self.recorded_children.append({"pid": child.process.pid, **ownership_metadata(child.process)})
         child.tail = StderrTail(child.process.stderr) if child.process.stderr else None
         if child.exit_started is not None:
             child.status["restart_count"] += 1
@@ -140,7 +154,8 @@ class LayerSupervisor:
         child.progress_marker = None
         child.status.update(state="starting", pid=child.process.pid, alive=True,
                             ticking=False, progressing=False, last_tick_at=None,
-                            last_progress_at=None, ticks=0)
+                            last_progress_at=None, ticks=0, heartbeat_pid=None,
+                            heartbeat_process_start_time=None)
 
     def terminate(self, child: Child, *, planned: bool = False):
         process = child.process
@@ -179,6 +194,11 @@ class LayerSupervisor:
             child.status.update(state="backoff", backoff_seconds=delay)
 
     def step(self):
+        request = read_heartbeat(self.path.parent / "stop_request.json")
+        if (request.get("instance_token") == self.instance_token
+                and all(request.get(key) for key in ("requester", "reason", "token", "at"))):
+            self.stop_request = request
+            self.request_stop()
         now = self.clock()
         for child in self.children.values():
             if self.stop_requested:
@@ -200,6 +220,15 @@ class LayerSupervisor:
                 child.observed = now
                 child.status.update({key: hb.get(key) for key in ("ticks", "last_tick_at", "last_progress_at")})
                 child.status.update(state="running", ticking=True, heartbeat_pid=hb.get("pid"))
+                heartbeat_pid = hb.get("pid")
+                if type(heartbeat_pid) is int and heartbeat_pid > 0:
+                    start = process_start_time(heartbeat_pid)
+                    child.status["heartbeat_process_start_time"] = start
+                    identity = {"pid": heartbeat_pid, "process_start_time": start}
+                    # Windows venv shims and their interpreters have different
+                    # PIDs. Retain both identities for external exit verification.
+                    if start and identity not in self.recorded_children:
+                        self.recorded_children.append(identity)
                 if child.exit_started is not None:
                     child.status["recovery_seconds"] = now - child.exit_started
                     child.exit_started = None
@@ -226,9 +255,29 @@ class LayerSupervisor:
             child.status.update(state="stopped", alive=False, ticking=False, progressing=False,
                                 stopped_at=timestamp(),
                                 stopped_exit_code=child.process.returncode if child.process else None)
+        self.shutdown_complete = True
         self.save()
 
     def run(self):
+        try:
+            with file_lock(self.path.parent / "instance.lock"):
+                with file_lock(self.path.parent / "control.lock"):
+                    if (control_dir(self.root) / "maintenance.json").exists():
+                        print("maintenance mode: supervisor not started", flush=True)
+                        return 0
+                    old = read_heartbeat(self.path)
+                    if old and identity_state(old) in {"live", "unknown"}:
+                        print("supervisor already live or identity unverifiable; refusing start", flush=True)
+                        return 2
+                    job_name, self._root_job = register_supervisor_job()
+                    self.identity["process_identity"] = job_name
+                    self.save()
+                return self._run()
+        except OSError as exc:
+            print(f"supervisor start/control refused: {exc}", flush=True)
+            return 2
+
+    def _run(self):
         previous = {}
         for name in ("SIGINT", "SIGTERM", "SIGBREAK"):
             sig = getattr(signal, name, None)
