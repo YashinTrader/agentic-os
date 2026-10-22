@@ -149,8 +149,10 @@ def result_path(run_dir: Path) -> Path:
     return run_dir / "result.json"
 
 
-def save_run_state(repo_root: Path, state: RunState) -> Path:
-    if state.logical_task_id:
+def save_run_state(repo_root: Path, state: RunState, *, refresh_work_lock: bool = True) -> Path:
+    if not refresh_work_lock and state.process_state != STATE_ORPHANED:
+        raise ValueError('only orphan recovery evidence may bypass work lock refresh')
+    if state.logical_task_id and refresh_work_lock:
         from dispatch.work_lock import heartbeat, WorkLockError
         try:
             heartbeat(repo_root, state.logical_task_id, run_id=state.run_id, state=state.process_state)
