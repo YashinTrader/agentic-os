@@ -81,6 +81,76 @@ class LayerSupervisorTests(unittest.TestCase):
         self.assertIsNotNone(child.status["last_restart_at"])
         self.assertFalse(sibling.signals)
 
+    def test_slow_real_child_retained_until_exit(self):
+        supervisor = LayerSupervisor(self.root, {"slow": [sys.executable, "-c",
+            "import time; time.sleep(6.5)"]}, clock=lambda: self.now)
+        supervisor.step()
+        child = supervisor.children["slow"]
+        old = child.process
+        try:
+            self.now = 61
+            # Simulate an owned termination request that has not yet taken effect.
+            with patch("orchestrator.layer_supervisor.terminate_owned") as terminate:
+                supervisor.step()
+                self.assertEqual(child.status["state"], "terminating")
+                self.assertEqual(child.status["terminating_pid"], old.pid)
+                self.assertTrue(child.status["terminating_process_start_time"])
+                self.assertIs(child.process, old)
+                self.assertIsNone(old.poll())
+                self.assertFalse(supervisor.stop_requested)
+                supervisor.step()
+                self.assertGreaterEqual(terminate.call_count, 2)
+            self.assertIsNotNone(old.poll())
+            self.assertEqual(child.status["state"], "backoff")
+            self.now = child.due
+            supervisor.step()
+            self.assertIsNot(child.process, old)
+        finally:
+            supervisor.shutdown()
+
+    def test_run_continues_after_child_error(self):
+        original = self.supervisor.supervise_child
+        ticks = []
+        def injected(child, now):
+            if child is self.supervisor.children["builder"]:
+                raise RuntimeError("one child failed")
+            ticks.append(now)
+            return original(child, now)
+        def stop_after_ticks(_):
+            if len(ticks) == 3:
+                self.supervisor.request_stop()
+        with patch.object(self.supervisor, "supervise_child", side_effect=injected), \
+             patch("orchestrator.layer_supervisor.time.sleep", side_effect=stop_after_ticks):
+            self.assertEqual(self.supervisor.run(), 0)
+        self.assertEqual(len(ticks), 3)
+        self.assertEqual(self.supervisor.supervisor_error_count, 3)
+
+    def test_child_exception_isolated_and_breaker_bounds_retries(self):
+        self.supervisor.step()
+        child = self.supervisor.children["builder"]
+        sibling = self.supervisor.children["claude"]
+        original = self.supervisor.supervise_child
+        def injected(current, now):
+            if current is child:
+                raise RuntimeError("injected supervision failure")
+            return original(current, now)
+        with patch.object(self.supervisor, "supervise_child", side_effect=injected):
+            for tick in range(1, 7):
+                self.heartbeat("claude", tick)
+                self.supervisor.step()
+                self.assertEqual(sibling.status["ticks"], tick)
+        self.assertTrue(child.status["circuit_open"])
+        self.assertEqual(child.status["supervisor_error_count"], 6)
+        self.supervisor.step()
+        self.assertEqual(child.status["state"], "crash_loop")
+        saved = json.loads(self.supervisor.path.read_text())
+        self.assertEqual(saved["state"], "running")
+        self.assertEqual(saved["supervisor_error_count"], 6)
+        error = saved["supervisor_errors"][-1]
+        self.assertEqual(error["child"], "builder")
+        self.assertIn("RuntimeError", error["traceback_tail"])
+        self.assertTrue(error["at"])
+
     def test_backoff_progression_and_cap(self):
         self.assertEqual([backoff_seconds(i) for i in range(1, 11)],
                          [2, 4, 8, 16, 32, 64, 128, 256, 300, 300])
