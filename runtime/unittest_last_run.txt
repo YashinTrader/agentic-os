@@ -1,4 +1,4 @@
-timestamp: 2026-10-22T10:39:01Z
+timestamp: 2026-10-22T13:19:58Z
 dependency_install: skipped
 dependency_install_reason: cognee==1.1.0 cannot build on this host (Rust/Cargo); see docs/RUN_TESTS_BOOTSTRAP_BLOCKER.md
 known_exempt_failures: []
@@ -7,14 +7,14 @@ artifact_origin_path: C:/Users/gabot/agentic-os-worktrees/m1-integration
 hostname: AIAG
 python_version: 3.11.15
 command_line: ["C:\\Users\\gabot\\AppData\\Local\\hermes\\hermes-agent\\venv\\Scripts\\python.exe", "-m", "unittest", "discover", "-s", "tests", "-p", "test_*.py", "-v"]
-raw_output_sha256: 924a2d1c960c3d92076d494dceef48deb30ffa70cf91e2a8e0ec9d2e0384ad9f
+raw_output_sha256: c1e5f54c9277ab4ca8c61c1936e62f858d20130393b067a28f33ac9403574ec3
 repo_root: C:/Users/gabot/agentic-os-worktrees/m1-integration
 commit: unknown
-commit_full: d422a4241049f0790b9f60dd59223e3c0f443027
+commit_full: 8ed9680b0c4c9c66b858a370e8c06de7018c107d
 python: C:\Users\gabot\AppData\Local\hermes\hermes-agent\venv\Scripts\python.exe
-test_count: 880
+test_count: 887
 exit_code: 0
-evidence_block_sha256: e2b437af6f7b00872a77ed72f9ad8e09ab048a2d8ff444056425714da537efb0
+evidence_block_sha256: 773617706ae60e9e46b7c3171f177c6e2a9071d029d2d34c0625ffcc45f0ede2
 --- raw output ---
 dependency_install: skipped
 dependency_install_reason: cognee==1.1.0 cannot build on this host (Rust/Cargo); see docs/RUN_TESTS_BOOTSTRAP_BLOCKER.md
@@ -171,6 +171,8 @@ test_unknown_tokened_owner_is_alerted_without_recovery (test_consumer_claims.Fai
 test_child_exit_does_not_erase_recorded_creation_time (test_consumer_claims.LivenessTests.test_child_exit_does_not_erase_recorded_creation_time) ... ok
 test_current_identity_and_pid_reuse (test_consumer_claims.LivenessTests.test_current_identity_and_pid_reuse) ... ok
 test_invalid_and_inaccessible_identity_is_unknown (test_consumer_claims.LivenessTests.test_invalid_and_inaccessible_identity_is_unknown) ... ok
+test_legacy_creation_evidence_is_conservative (test_consumer_claims.LivenessTests.test_legacy_creation_evidence_is_conservative) ... ok
+test_linux_legacy_creation_uses_proc_boot_and_ticks (test_consumer_claims.LivenessTests.test_linux_legacy_creation_uses_proc_boot_and_ticks) ... ok
 test_claim_release_checks_matching_lease_child (test_consumer_claims.OperatorTests.test_claim_release_checks_matching_lease_child) ... ok
 test_cli_list_release_and_bad_key (test_consumer_claims.OperatorTests.test_cli_list_release_and_bad_key) ... ok
 test_lease_release_checks_run_pid_and_audits (test_consumer_claims.OperatorTests.test_lease_release_checks_run_pid_and_audits) ... ok
@@ -796,13 +798,18 @@ test_supervisor_status_contains_paid_probe_fields (test_quota_probe.QuotaProbeTe
 test_assignment_lease_remains_capacity_when_other_slots_free (test_review_lease_recovery.ReviewLeaseRecoveryTests.test_assignment_lease_remains_capacity_when_other_slots_free) ... ok
 test_audit_failure_keeps_lease (test_review_lease_recovery.ReviewLeaseRecoveryTests.test_audit_failure_keeps_lease) ... ok
 test_competing_recovery_acquires_only_one_slot (test_review_lease_recovery.ReviewLeaseRecoveryTests.test_competing_recovery_acquires_only_one_slot) ... ok
+test_crashed_attempt_evidence_and_lineage_survive_retry (test_review_lease_recovery.ReviewLeaseRecoveryTests.test_crashed_attempt_evidence_and_lineage_survive_retry) ... ok
 test_dead_consumer_no_child_and_dead_child_recover_claim_and_lease_once (test_review_lease_recovery.ReviewLeaseRecoveryTests.test_dead_consumer_no_child_and_dead_child_recover_claim_and_lease_once) ... ok
 test_deferral_reason_preserved_for_auth_and_failure (test_review_lease_recovery.ReviewLeaseRecoveryTests.test_deferral_reason_preserved_for_auth_and_failure) ... ok
 test_incomplete_identity_and_unreadable_evidence_stay_fenced (test_review_lease_recovery.ReviewLeaseRecoveryTests.test_incomplete_identity_and_unreadable_evidence_stay_fenced) ... ok
 test_legacy_capacity_is_visible_readable_and_operator_release_retries_once (test_review_lease_recovery.ReviewLeaseRecoveryTests.test_legacy_capacity_is_visible_readable_and_operator_release_retries_once) ... ok
+test_legacy_missing_identity_release_finalizes_and_unblocks_capacity (test_review_lease_recovery.ReviewLeaseRecoveryTests.test_legacy_missing_identity_release_finalizes_and_unblocks_capacity) ... ok
+test_legacy_run_reuse_and_unknown_creation_fence_operator_release (test_review_lease_recovery.ReviewLeaseRecoveryTests.test_legacy_run_reuse_and_unknown_creation_fence_operator_release) ... ok
 test_live_lease_is_capacity_without_stale_alert (test_review_lease_recovery.ReviewLeaseRecoveryTests.test_live_lease_is_capacity_without_stale_alert) ... ok
 test_live_unknown_owner_or_child_preserves_lease (test_review_lease_recovery.ReviewLeaseRecoveryTests.test_live_unknown_owner_or_child_preserves_lease) ... ok
 test_no_recorded_child_recovers_before_capacity_check (test_review_lease_recovery.ReviewLeaseRecoveryTests.test_no_recorded_child_recovers_before_capacity_check) ... ok
+test_normal_review_uses_original_run_and_files (test_review_lease_recovery.ReviewLeaseRecoveryTests.test_normal_review_uses_original_run_and_files) ... ok
+test_retry_reservation_updates_lease_liveness_and_retains_full_history (test_review_lease_recovery.ReviewLeaseRecoveryTests.test_retry_reservation_updates_lease_liveness_and_retains_full_history) ... ok
 test_run_state_child_fences_even_if_not_recorded_in_lease (test_review_lease_recovery.ReviewLeaseRecoveryTests.test_run_state_child_fences_even_if_not_recorded_in_lease) ... ok
 test_unreadable_lease_counts_and_alerts (test_review_lease_recovery.ReviewLeaseRecoveryTests.test_unreadable_lease_counts_and_alerts) ... ok
 test_blocked_status (test_risk_gate.RiskGateTests.test_blocked_status) ... ok
@@ -920,6 +927,6 @@ test_worker_correction_does_not_claim_parent_reservation (test_work_lock.WorkLoc
 test_yaml_followups_inherit_parent_task_and_explicit_split (test_work_lock.WorkLockTests.test_yaml_followups_inherit_parent_task_and_explicit_split) ... ok
 
 ----------------------------------------------------------------------
-Ran 880 tests in 3881.437s
+Ran 887 tests in 3473.456s
 
 OK (skipped=3)
