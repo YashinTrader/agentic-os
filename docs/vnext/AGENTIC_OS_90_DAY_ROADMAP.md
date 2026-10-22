@@ -4,9 +4,26 @@
 
 Each milestone has an exit gate backed by evidence. A milestone is not complete until its gate is met with recorded SHAs, test runs, and live demonstrations.
 
+## Release policy (owner decision 2026-10-22)
+
+Every candidate goes through an evidence-driven release cycle that reaches a documented **GO / FIX / ROLLBACK / NO-GO** decision within **at most 4 hours** of its start, and earlier when evidence permits.
+
+**How a cycle runs:**
+- A cycle stops immediately when a critical invariant fails.
+- Focused tests run throughout development. The uncontested full suite runs once on the final candidate SHA, and again only if the SHA changes or new evidence requires it.
+- Active evidence is preferred: real agent execution, independent review, state transitions, targeted fault injection, crash recovery, process-ownership checks.
+- Every cycle includes at least one real builder-to-reviewer task.
+
+**How a cycle ends:**
+- At the deadline, the decision uses the evidence available. Missing required evidence means NO-GO or FIX, never automatic approval.
+- Every cycle ends with a short decision report covering the candidate SHA, tests, real task results, recovery findings, time consumed, cost where available, blockers, and the next improvement.
+- After a GO, work advances to the next milestone. Passive health telemetry continues as operational monitoring only; it is not a gate.
+
+**What does not change:** owner approvals for protected merges, sensitive live-state changes, credentials and deployments. The shorter window does not relax safety requirements.
+
 ## M1 — Reliability floor (days 0–21)
 
-**Goal:** The existing loop runs unattended for 7 consecutive days with zero manual state repair.
+**Goal:** The existing loop runs reliably with zero manual state repair, proven by active evidence: real cycles, fault injection, crash recovery. (The original 7-day unattended goal was replaced by the release policy on 2026-10-22.)
 
 | ID | Task | Builder | Notes |
 |---|---|---|---|
@@ -21,7 +38,14 @@ Each milestone has an exit gate backed by evidence. A milestone is not complete 
 | M1-08 | Work lock: one active contract per task across builders | Codex | Prevents duplicate builds |
 | M1-09 | Integration branch → PR to `main` | Grok (integrator) | **Merge requires Gabriel's approval** |
 
-**Exit gate:** 7-day unattended run log, zero manual repairs, ≥3 real builder→reviewer cycles, `main` updated through an approved PR.
+**Exit gate:** a GO release cycle on the deployed candidate, covering:
+- uncontested full suite exit 0
+- drills A–F passed, including crash mid-review and a silent-start real-format builder
+- ≥3 real builder→reviewer cycles reaching a recorded verdict and state transition
+- zero manual state repairs since the deployment, other than owner-approved audited cleanup
+- `main` updated through an approved PR
+
+Telemetry is supporting evidence only and never blocks M2.
 
 ## M2 — Durable ledger and routing (days 22–55)
 

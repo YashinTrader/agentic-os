@@ -17,7 +17,10 @@
 
 | Metric | Definition | M1 target | M3 target |
 |---|---|---|---|
-| Unattended days | Consecutive days with a live heartbeat and no manual repair | 7 | 30 |
+| Release decision time | Release-cycle start → documented GO/FIX/ROLLBACK/NO-GO | ≤ 4 h | ≤ 2 h |
+| Real cycles per release | Real builder→reviewer tasks reaching a verdict within the cycle | ≥ 1 | ≥ 3 |
+| Fault-injection pass rate | Drills (layer kill, auth, quota, poison, crash mid-review, silent start) passed on the candidate | 100% | 100% |
+| Uptime (telemetry, non-gating) | Hours with a live heartbeat and no manual repair, from hourly telemetry | reported | reported |
 | Event latency p95 | Terminal poke → verdict recorded | < 10 min | < 5 min |
 | Stuck events | Events non-terminal > 1 h without `blocked_on` | 0 | 0 |
 | Duplicate work | Two active contracts for one task | 0 | 0 |
@@ -56,6 +59,9 @@
 
 ## Evidence rules
 
+- Release decisions follow the 4-hour release policy in the roadmap. Missing required evidence at the deadline means NO-GO or FIX.
+- Each cycle has a decision report under `agentic-os-ops/releases/<candidate>/`.
+- Passive telemetry (`agentic-os-ops/observation/telemetry/health.jsonl`) is operational monitoring and never gates a milestone.
 - Every number links to a run ID, log file, or SHA.
 - Fixture evidence and live evidence are labeled separately.
 - Metrics are collected by scripts in `scripts/metrics/` (task M2-03), not by agent self-report.
