@@ -36,6 +36,24 @@ its logical identity and recording actor, reason, and prior holder. Configured
 supervisor Codex fallbacks also explicitly supersede with an audit record, after
 the primary exits (or before any process starts when its adapter is unavailable).
 
+Supervisor pre-launch failures are an exception to failure retention. Before
+acquiring a run's lock, the supervisor persists a run record. Validation,
+allocation, task/adapter loading, and spawn failures record `failed_launch`
+evidence and release only that attempt's lock, with an audit reason fenced by
+assignment and run id. An unavailable adapter keeps its `blocked_no_adapter`
+evidence and also releases its pre-launch lock. The same assignment can retry;
+cleanup cannot release an explicitly superseded replacement holder. Once an
+agent process starts, the existing failure/timeout retention rules apply.
+
+Failed queued wakes retry at most three times, waiting 30 seconds after the
+first failure and 60 seconds after the second. Retry metadata is persisted on
+the signal. Exhausted signals move to `runtime/dispatch/wake_queue/dead_letter/`
+with reason, attempts, and timestamps, and appear in supervisor status
+`wake_alerts`. Each tick re-evaluates blocked builders before scanning eligible
+wakes, skips failed/deferred heads, and starts at most one process. A missing
+primary adapter can resolve to Codex before that start; a failure after a process
+starts follows the condition retry schedule on later ticks.
+
 ## Enforcement
 
 - Assignment `create` and `claim` call the shared lock module.
@@ -86,6 +104,12 @@ a heartbeat. This is a derived observation, never a lease expiry. Acquisition
 cannot steal an old lock. Only an explicit release or supersede can clear or
 transfer ownership; both require an actor and reason and preserve the full prior
 record. Invalid/corrupt records fail closed.
+
+Startup recovery also checks locks against run records and known process
+identities (including assignment leases). A holder without a run record and
+without a known live process is marked stale with `stale_reason: ghost_holder`
+and surfaced in supervisor status `work_lock_alerts`. Recovery never releases
+or steals that holder; an operator must explicitly release or supersede it.
 
 Assignment readers expose the live `work_lock_status` record. The assignment
 CLI includes it in JSON. Within the existing dashboard contract, the assignment
