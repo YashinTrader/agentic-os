@@ -1,4 +1,4 @@
-timestamp: 2026-10-22T02:15:22Z
+timestamp: 2026-10-22T03:59:24Z
 dependency_install: skipped
 dependency_install_reason: cognee==1.1.0 cannot build on this host (Rust/Cargo); see docs/RUN_TESTS_BOOTSTRAP_BLOCKER.md
 known_exempt_failures: []
@@ -7,14 +7,14 @@ artifact_origin_path: C:/Users/gabot/agentic-os-worktrees/m1-integration
 hostname: AIAG
 python_version: 3.11.15
 command_line: ["C:\\Users\\gabot\\AppData\\Local\\hermes\\hermes-agent\\venv\\Scripts\\python.exe", "-m", "unittest", "discover", "-s", "tests", "-p", "test_*.py", "-v"]
-raw_output_sha256: 154e40cc978c883032f79e55e802cb6427841c8f37fc986ec11faccec6d4e58b
+raw_output_sha256: fc8e261cffa26f9b637d7069a8fa370d422fe05b2003f3f73eb0ad29f16a96f5
 repo_root: C:/Users/gabot/agentic-os-worktrees/m1-integration
 commit: unknown
-commit_full: 1f8ba22794dab8631a0c9310416e3a1a2bbde259
+commit_full: 55b6b5ec6210777a10aa3a1248f578ce7fe62639
 python: C:\Users\gabot\AppData\Local\hermes\hermes-agent\venv\Scripts\python.exe
-test_count: 818
+test_count: 835
 exit_code: 0
-evidence_block_sha256: 93befe1296a13857c534e0668a17a339aa6a8c73f01b539f0a8a959b5801002b
+evidence_block_sha256: cb4171a5f0eeea51aca2e07d2e2c873b39421ec78c6cdb7d8d6b1eb456600510
 --- raw output ---
 dependency_install: skipped
 dependency_install_reason: cognee==1.1.0 cannot build on this host (Rust/Cargo); see docs/RUN_TESTS_BOOTSTRAP_BLOCKER.md
@@ -826,6 +826,23 @@ test_missing_skill_cross_reference_fails (test_teams_registry.TeamsRegistryTests
 test_required_team_fields_exist (test_teams_registry.TeamsRegistryTests.test_required_team_fields_exist) ... ok
 test_teams_registry_loads (test_teams_registry.TeamsRegistryTests.test_teams_registry_loads) ... ok
 test_teams_tab_rejects_path_traversal_suggest_task (test_teams_registry.TeamsRegistryTests.test_teams_tab_rejects_path_traversal_suggest_task) ... ok
+test_budget_preserves_destination_and_cleans_tmp (test_windows_write_contention.AtomicContentionTests.test_budget_preserves_destination_and_cleans_tmp) ... ok
+test_concurrent_writers_have_unique_complete_temps (test_windows_write_contention.AtomicContentionTests.test_concurrent_writers_have_unique_complete_temps) ... ok
+test_context_writer_uses_same_retry_and_preserves_utf8 (test_windows_write_contention.AtomicContentionTests.test_context_writer_uses_same_retry_and_preserves_utf8) ... ok
+test_posix_permission_error_is_not_retried (test_windows_write_contention.AtomicContentionTests.test_posix_permission_error_is_not_retried) ... ok
+test_retries_windows_errors_then_succeeds (test_windows_write_contention.AtomicContentionTests.test_retries_windows_errors_then_succeeds) ... ok
+test_heartbeat_failure_is_rate_limited_and_loop_continues (test_windows_write_contention.LoopContentionTests.test_heartbeat_failure_is_rate_limited_and_loop_continues) ... ok
+test_monitor_defers_failed_persist_and_keeps_quota_output (test_windows_write_contention.LoopContentionTests.test_monitor_defers_failed_persist_and_keeps_quota_output) ... ok
+test_authentication_salvage_uses_normal_retry_after (test_windows_write_contention.OrphanContentionTests.test_authentication_salvage_uses_normal_retry_after) ... ok
+test_crash_salvages_quota_then_relaunches_once_with_lock (test_windows_write_contention.OrphanContentionTests.test_crash_salvages_quota_then_relaunches_once_with_lock) ... ok
+test_monitor_write_failure_reaches_normal_quota_schedule (test_windows_write_contention.OrphanContentionTests.test_monitor_write_failure_reaches_normal_quota_schedule) ... ok
+test_orphan_never_touches_replacement_holder (test_windows_write_contention.OrphanContentionTests.test_orphan_never_touches_replacement_holder) ... ok
+test_success_narration_is_not_salvaged_as_provider_failure (test_windows_write_contention.OrphanContentionTests.test_success_narration_is_not_salvaged_as_provider_failure) ... ok
+test_terminal_live_process_is_not_ghost (test_windows_write_contention.OrphanContentionTests.test_terminal_live_process_is_not_ghost) ... ok
+test_terminal_record_is_ghost_alert_without_stealing (test_windows_write_contention.OrphanContentionTests.test_terminal_record_is_ghost_alert_without_stealing) ... ok
+test_terminal_result_without_supervisor_record_is_ghost (test_windows_write_contention.OrphanContentionTests.test_terminal_result_without_supervisor_record_is_ghost) ... ok
+test_unclassifiable_orphan_releases_only_own_lock_with_audit (test_windows_write_contention.OrphanContentionTests.test_unclassifiable_orphan_releases_only_own_lock_with_audit) ... ok
+test_unknown_or_live_pid_remains_running (test_windows_write_contention.OrphanContentionTests.test_unknown_or_live_pid_remains_running) ... ok
 test_configured_fallback_supersedes_with_audit_after_primary_exit (test_work_lock.SupervisorWorkLockTests.test_configured_fallback_supersedes_with_audit_after_primary_exit) ... ok
 test_manual_holder_blocks_supervisor_even_for_already_claimed_assignment (test_work_lock.SupervisorWorkLockTests.test_manual_holder_blocks_supervisor_even_for_already_claimed_assignment) ... ok
 test_supervisor_failed_run_retains_owner_and_state (test_work_lock.SupervisorWorkLockTests.test_supervisor_failed_run_retains_owner_and_state) ... ok
@@ -852,6 +869,6 @@ test_worker_correction_does_not_claim_parent_reservation (test_work_lock.WorkLoc
 test_yaml_followups_inherit_parent_task_and_explicit_split (test_work_lock.WorkLockTests.test_yaml_followups_inherit_parent_task_and_explicit_split) ... ok
 
 ----------------------------------------------------------------------
-Ran 818 tests in 2714.539s
+Ran 835 tests in 2747.143s
 
 OK (skipped=3)
