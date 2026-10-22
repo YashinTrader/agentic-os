@@ -7,10 +7,12 @@ verdicts, and applies resolution via assignment_channel (deterministic).
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import time
 import uuid
-from orchestrator.process_ownership import terminate_owned, ownership_metadata
+from orchestrator.process_ownership import terminate_owned, ownership_metadata, process_start_time
+from orchestrator.consumer_claims import mutation_guard, read_record
 
 from dataclasses import dataclass
 from pathlib import Path
@@ -24,6 +26,7 @@ from dispatch.assignment_channel import (
     resolve_assignment,
     write_assignment,
 )
+from dispatch.work_lock import WorkLockError
 from dispatch.atomic_io import atomic_create_json, atomic_write_json
 from dispatch.orchestrator_pokes import write_orchestrator_poke
 from orchestrator.claude_reviewer_adapter import (
@@ -80,29 +83,33 @@ def try_acquire_review_lease(
 ) -> tuple[bool, str]:
     if max_concurrency < 1:
         return False, "review concurrency must be >= 1"
-    if count_active_review_leases(repo_root) >= max_concurrency:
-        return False, STATE_BLOCKED_CAPACITY + ": review concurrency reached"
-    path = review_lease_path(repo_root, assignment_id)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    payload = {
-        "assignment_id": assignment_id,
-        "review_run_id": review_run_id,
-        "holder": "claude-reviewer",
-        "acquired_at": utc_now(),
-    }
     try:
-        atomic_create_json(path, payload)
+        with mutation_guard(repo_root):
+            if count_active_review_leases(repo_root) >= max_concurrency:
+                return False, STATE_BLOCKED_CAPACITY + ": review concurrency reached"
+            path = review_lease_path(repo_root, assignment_id)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            payload = {
+                "assignment_id": assignment_id,
+                "review_run_id": review_run_id,
+                "holder": "claude-reviewer",
+                "acquired_at": utc_now(),
+                "consumer_pid": os.getpid(),
+                "consumer_start_time": process_start_time(os.getpid()),
+                "consumer_token": uuid.uuid4().hex,
+            }
+            atomic_create_json(path, payload)
     except FileExistsError:
         return False, f"review lease already held for {assignment_id}"
-    except OSError as exc:
+    except (OSError, WorkLockError) as exc:
         return False, str(exc)
     return True, "acquired"
 
 
 def release_review_lease(repo_root: Path, assignment_id: str) -> None:
-    path = review_lease_path(repo_root, assignment_id)
-    if path.exists():
-        path.unlink()
+    with mutation_guard(repo_root):
+        path = review_lease_path(repo_root, assignment_id)
+        path.unlink(missing_ok=True)
 
 
 def _git(repo_root: Path, args: list[str]) -> str:
@@ -355,6 +362,7 @@ def process_one_review(
     inactivity_timeout_seconds: int | None = None,
     monitor: Callable[..., Any] | None = None,
     apply: bool = True,
+    on_review_started: Callable[[int, str | None], None] | None = None,
 ) -> dict[str, Any]:
     """Pick one awaiting_review assignment, run Claude review, optionally apply verdict."""
     targets = [assignment_id] if assignment_id else list_awaiting_review(repo_root)
@@ -413,6 +421,15 @@ def process_one_review(
         )
         reviewer = adapter or ClaudeReviewerAdapter(repo_root, auth_mode=AUTH_MODE_LOCAL)
         state = reviewer.launch_review(req)
+        if state.pid:
+            # Persist the child identity before entering the blocking monitor.
+            with mutation_guard(repo_root):
+                path = review_lease_path(repo_root, aid)
+                lease = read_record(path)
+                lease.update(review_pid=state.pid, review_start_time=state.process_start_time)
+                atomic_write_json(path, lease)
+            if on_review_started:
+                on_review_started(state.pid, state.process_start_time)
         if state.process_state != STATE_RUNNING:
             request_payload["status"] = state.process_state
             request_payload["blocked_reason"] = state.blocked_reason
