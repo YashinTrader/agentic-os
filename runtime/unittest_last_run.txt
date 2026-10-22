@@ -1,4 +1,4 @@
-timestamp: 2026-10-22T03:59:24Z
+timestamp: 2026-10-22T08:20:39Z
 dependency_install: skipped
 dependency_install_reason: cognee==1.1.0 cannot build on this host (Rust/Cargo); see docs/RUN_TESTS_BOOTSTRAP_BLOCKER.md
 known_exempt_failures: []
@@ -7,17 +7,23 @@ artifact_origin_path: C:/Users/gabot/agentic-os-worktrees/m1-integration
 hostname: AIAG
 python_version: 3.11.15
 command_line: ["C:\\Users\\gabot\\AppData\\Local\\hermes\\hermes-agent\\venv\\Scripts\\python.exe", "-m", "unittest", "discover", "-s", "tests", "-p", "test_*.py", "-v"]
-raw_output_sha256: fc8e261cffa26f9b637d7069a8fa370d422fe05b2003f3f73eb0ad29f16a96f5
+raw_output_sha256: ae9dd12d5c0922fe524ab77b760c0e41fa5147a876929e0aa2f01027251df3b4
 repo_root: C:/Users/gabot/agentic-os-worktrees/m1-integration
 commit: unknown
-commit_full: 55b6b5ec6210777a10aa3a1248f578ce7fe62639
+commit_full: cdcba70f32a44fc211ea30de0e3f026870cbfd41
 python: C:\Users\gabot\AppData\Local\hermes\hermes-agent\venv\Scripts\python.exe
-test_count: 835
+test_count: 868
 exit_code: 0
-evidence_block_sha256: cb4171a5f0eeea51aca2e07d2e2c873b39421ec78c6cdb7d8d6b1eb456600510
+evidence_block_sha256: 1eff6384259a769dd68af685cf509e8e112e9a2bea168bcef6f14fd6d1e33aa4
 --- raw output ---
 dependency_install: skipped
 dependency_install_reason: cognee==1.1.0 cannot build on this host (Rust/Cargo); see docs/RUN_TESTS_BOOTSTRAP_BLOCKER.md
+{
+  "status": "idle"
+}
+{
+  "status": "idle"
+}
 {
   "status": "idle"
 }
@@ -139,9 +145,40 @@ test_rejects_partial_local_configuration (test_cognee_local_profile.CogneeLocalP
 test_requirements_declares_cognee_dependency (test_cognee_local_profile.CogneeLocalProfileTests.test_requirements_declares_cognee_dependency) ... ok
 test_script_reports_invalid_profile (test_cognee_local_profile.CogneeLocalProfileTests.test_script_reports_invalid_profile) ... ok
 test_script_validates_profile_without_optional_services (test_cognee_local_profile.CogneeLocalProfileTests.test_script_validates_profile_without_optional_services) ... ok
+test_all_layer_statuses_record_config_sha_and_state_root (test_config_root.ConfigRootTests.test_all_layer_statuses_record_config_sha_and_state_root) ... ok
+test_child_commands_and_environment_use_both_roots (test_config_root.ConfigRootTests.test_child_commands_and_environment_use_both_roots) ... ok
+test_continuous_builder_status_retains_startup_audit (test_config_root.ConfigRootTests.test_continuous_builder_status_retains_startup_audit) ... ok
+test_layer_entrypoints_default_to_code_checkout_and_export_roots (test_config_root.ConfigRootTests.test_layer_entrypoints_default_to_code_checkout_and_export_roots) ... ok
+test_mutable_paths_and_task_lookup_remain_in_state (test_config_root.ConfigRootTests.test_mutable_paths_and_task_lookup_remain_in_state) ... ok
+test_old_state_configuration_cannot_weaken_launch (test_config_root.ConfigRootTests.test_old_state_configuration_cannot_weaken_launch) ... ok
+test_root_validation_and_library_defaults (test_config_root.ConfigRootTests.test_root_validation_and_library_defaults) ... ok
 test_helper_handles_both_streams_and_capture (test_console_encoding.ConsoleEncodingTests.test_helper_handles_both_streams_and_capture) ... ok
 test_list_tasks_cp1252 (test_console_encoding.ConsoleEncodingTests.test_list_tasks_cp1252) ... ok
 test_printing_entrypoints_configure_console_before_main (test_console_encoding.ConsoleEncodingTests.test_printing_entrypoints_configure_console_before_main) ... ok
+test_a_tick_never_launches_a_second_child_after_pid_is_known (test_consumer_claims.FairnessTests.test_a_tick_never_launches_a_second_child_after_pid_is_known) ... ok
+test_auth_deferred_head_skipped (test_consumer_claims.FairnessTests.test_auth_deferred_head_skipped) ... ok
+test_claim_identity_available_during_processor_and_child_callback (test_consumer_claims.FairnessTests.test_claim_identity_available_during_processor_and_child_callback) ... ok
+test_competing_consumer_does_not_launch_owned_fingerprint (test_consumer_claims.FairnessTests.test_competing_consumer_does_not_launch_owned_fingerprint) ... ok
+test_dead_owner_recovered_once (test_consumer_claims.FairnessTests.test_dead_owner_recovered_once) ... ok
+test_dead_owner_without_recorded_child_recovered_once (test_consumer_claims.FairnessTests.test_dead_owner_without_recorded_child_recovered_once) ... ok
+test_empty_tick_clears_previous_running_status (test_consumer_claims.FairnessTests.test_empty_tick_clears_previous_running_status) ... ok
+test_legacy_head_skipped_and_alerted (test_consumer_claims.FairnessTests.test_legacy_head_skipped_and_alerted) ... ok
+test_live_or_unknown_owner_or_child_preserved (test_consumer_claims.FairnessTests.test_live_or_unknown_owner_or_child_preserved) ... ok
+test_resolved_deferred_head_is_archived_and_next_runs (test_consumer_claims.FairnessTests.test_resolved_deferred_head_is_archived_and_next_runs) ... ok
+test_restart_clears_dead_lifecycle (test_consumer_claims.FairnessTests.test_restart_clears_dead_lifecycle) ... ok
+test_stale_alert_excludes_current_token_and_live_foreign_owner (test_consumer_claims.FairnessTests.test_stale_alert_excludes_current_token_and_live_foreign_owner) ... ok
+test_unknown_tokened_owner_is_alerted_without_recovery (test_consumer_claims.FairnessTests.test_unknown_tokened_owner_is_alerted_without_recovery) ... ok
+test_child_exit_does_not_erase_recorded_creation_time (test_consumer_claims.LivenessTests.test_child_exit_does_not_erase_recorded_creation_time) ... ok
+test_current_identity_and_pid_reuse (test_consumer_claims.LivenessTests.test_current_identity_and_pid_reuse) ... ok
+test_invalid_and_inaccessible_identity_is_unknown (test_consumer_claims.LivenessTests.test_invalid_and_inaccessible_identity_is_unknown) ... ok
+test_claim_release_checks_matching_lease_child (test_consumer_claims.OperatorTests.test_claim_release_checks_matching_lease_child) ... ok
+test_cli_list_release_and_bad_key (test_consumer_claims.OperatorTests.test_cli_list_release_and_bad_key) ... ok
+test_lease_release_checks_run_pid_and_audits (test_consumer_claims.OperatorTests.test_lease_release_checks_run_pid_and_audits) ... ok
+test_new_claim_with_incomplete_identity_is_not_operator_released (test_consumer_claims.OperatorTests.test_new_claim_with_incomplete_identity_is_not_operator_released) ... ok
+test_operator_refuses_resolved_live_unknown_and_empty_audit (test_consumer_claims.OperatorTests.test_operator_refuses_resolved_live_unknown_and_empty_audit) ... ok
+test_release_dead_owner_without_child_audits_and_unknown_child_refuses (test_consumer_claims.OperatorTests.test_release_dead_owner_without_child_audits_and_unknown_child_refuses) ... ok
+test_release_legacy_claim_audits_actor_reason (test_consumer_claims.OperatorTests.test_release_legacy_claim_audits_actor_reason) ... ok
+test_resolved_lease_and_blank_reason_are_refused (test_consumer_claims.OperatorTests.test_resolved_lease_and_blank_reason_are_refused) ... ok
 test_markdown_includes_sections (test_context_compiler.ContextCompilerTests.test_markdown_includes_sections) ... ok
 test_writes_markdown_and_json (test_context_compiler.ContextCompilerTests.test_writes_markdown_and_json) ... ok
 test_append_note_event (test_dashboard.TestDashboardParsing.test_append_note_event) ... ok
@@ -223,6 +260,7 @@ test_required_mcp_uses_error_channels (test_failure_classify.StructuredClassific
 test_retry_after_uses_only_error_channels (test_failure_classify.StructuredClassificationTests.test_retry_after_uses_only_error_channels) ... ok
 test_stderr_and_plain_stdout (test_failure_classify.StructuredClassificationTests.test_stderr_and_plain_stdout) ... ok
 test_structured_provider_errors (test_failure_classify.StructuredClassificationTests.test_structured_provider_errors) ... ok
+test_modules_import_in_fresh_interpreters (test_import_guard.ImportGuardTests.test_modules_import_in_fresh_interpreters) ... ok
 test_blocking_wait_ticks_and_honors_stop (test_layer_supervisor.HeartbeatTests.test_blocking_wait_ticks_and_honors_stop) ... ok
 test_idle_and_progress_markers (test_layer_supervisor.HeartbeatTests.test_idle_and_progress_markers) ... ok
 test_monitor_stop_kills_work_process_before_unwinding (test_layer_supervisor.HeartbeatTests.test_monitor_stop_kills_work_process_before_unwinding) ... ok
@@ -733,6 +771,7 @@ test_skip_reason_is_hashed_and_reported (test_provenance_deploy_root.ProvenanceT
 test_unlisted_failure_fails (test_provenance_deploy_root.ProvenanceTests.test_unlisted_failure_fails) ... ok
 test_writer_loader_round_trip_and_raw_hash (test_provenance_deploy_root.ProvenanceTests.test_writer_loader_round_trip_and_raw_hash) ... ok
 test_default_flag_env_and_invalid (test_provenance_deploy_root.StateRootTests.test_default_flag_env_and_invalid) ... ok
+test_entrypoint_environment_is_restored_after_isolation (test_provenance_deploy_root.StateRootTests.test_entrypoint_environment_is_restored_after_isolation) ... ok
 test_entrypoints_select_state_root (test_provenance_deploy_root.StateRootTests.test_entrypoints_select_state_root) ... ok
 test_layer_parent_uses_state_and_children_use_deployed_code (test_provenance_deploy_root.StateRootTests.test_layer_parent_uses_state_and_children_use_deployed_code) ... ok
 test_codex_argv_isolated_and_success_is_structured (test_quota_probe.QuotaProbeTests.test_codex_argv_isolated_and_success_is_structured) ... ok
@@ -869,6 +908,6 @@ test_worker_correction_does_not_claim_parent_reservation (test_work_lock.WorkLoc
 test_yaml_followups_inherit_parent_task_and_explicit_split (test_work_lock.WorkLockTests.test_yaml_followups_inherit_parent_task_and_explicit_split) ... ok
 
 ----------------------------------------------------------------------
-Ran 835 tests in 2747.143s
+Ran 868 tests in 4718.914s
 
 OK (skipped=3)
