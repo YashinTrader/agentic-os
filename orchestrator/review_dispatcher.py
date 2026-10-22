@@ -12,7 +12,7 @@ import subprocess
 import time
 import uuid
 from orchestrator.process_ownership import terminate_owned, ownership_metadata, process_start_time
-from orchestrator.consumer_claims import mutation_guard, read_record
+from orchestrator.consumer_claims import mutation_guard, read_record, recover_review_leases_locked
 
 from dataclasses import dataclass
 from pathlib import Path
@@ -85,6 +85,7 @@ def try_acquire_review_lease(
         return False, "review concurrency must be >= 1"
     try:
         with mutation_guard(repo_root):
+            recover_review_leases_locked(repo_root)
             if count_active_review_leases(repo_root) >= max_concurrency:
                 return False, STATE_BLOCKED_CAPACITY + ": review concurrency reached"
             path = review_lease_path(repo_root, assignment_id)
@@ -100,7 +101,7 @@ def try_acquire_review_lease(
             }
             atomic_create_json(path, payload)
     except FileExistsError:
-        return False, f"review lease already held for {assignment_id}"
+        return False, STATE_BLOCKED_CAPACITY + f": review lease already held for {assignment_id}"
     except (OSError, WorkLockError) as exc:
         return False, str(exc)
     return True, "acquired"
@@ -395,7 +396,9 @@ def process_one_review(
         repo_root, assignment_id=aid, review_run_id=review_run_id, max_concurrency=review_concurrency
     )
     if not ok:
-        return {"status": "deferred", "reason": lease_reason, "assignment_id": aid}
+        return {"status": "deferred", "reason": lease_reason, "blocked_reason": lease_reason,
+                "blocked_on": "capacity:review" if lease_reason.startswith(STATE_BLOCKED_CAPACITY) else None,
+                "assignment_id": aid}
 
     try:
         record, _ = read_assignment(repo_root, aid)

@@ -90,6 +90,65 @@ def claim_liveness(record: dict) -> tuple[bool | None, bool | None]:
             process_liveness(record.get('review_pid'), record.get('review_start_time')))
 
 
+def recovery_reason(root: Path, prior: dict) -> str | None:
+    """Shared automatic recovery fence; callers must hold mutation_guard."""
+    if (not prior.get('consumer_token') or
+            process_liveness(prior.get('consumer_pid'), prior.get('consumer_start_time')) is not False):
+        return None
+    try:
+        children = [(pid, start) for pid, start in _review_evidence(root, prior) if pid is not None]
+    except (OSError, ValueError, TypeError):
+        return None  # Unreadable run evidence cannot prove that its child died.
+    if any(process_liveness(pid, start) is not False for pid, start in children):
+        return None
+    # owned_popen's consumer-owned KILL_ON_JOB_CLOSE job prevents an
+    # unrecorded review child from surviving a provably dead consumer.
+    return ('consumer and review child identities are provably dead' if children else
+            'consumer identity is provably dead; no review child recorded')
+
+
+def recover_review_leases(root: Path) -> list[dict]:
+    with mutation_guard(root):
+        return recover_review_leases_locked(root)
+
+
+def recover_review_leases_locked(root: Path) -> list[dict]:
+    """Recover before counting capacity, in the same mutation transaction."""
+    recovered = []
+    for path in sorted((root / 'runtime/dispatch/supervisor_leases').glob('review-*.json')):
+        try:
+            prior = read_record(path)
+        except (OSError, ValueError):
+            continue
+        reason = recovery_reason(root, prior)
+        if reason:
+            recovered.append(audit(root, 'lease_recovered', prior, actor='consumer', reason=reason))
+            path.unlink()
+    return recovered
+
+
+def stale_review_leases(root: Path, now: datetime) -> list[dict]:
+    result = []
+    for path in sorted((root / 'runtime/dispatch/supervisor_leases').glob('review-*.json')):
+        try:
+            prior = read_record(path)
+        except (OSError, ValueError):
+            prior = {}
+        alive = process_liveness(prior.get('consumer_pid'), prior.get('consumer_start_time'))
+        if prior.get('consumer_token') and alive is True:
+            continue
+        reason = ('legacy or unreadable owner identity' if not prior.get('consumer_token') else
+                  'consumer liveness is unknown' if alive is None else
+                  'consumer identity is provably dead; review child recovery is fenced')
+        try:
+            age = max(0, int((now - datetime.fromisoformat(prior['acquired_at'].replace('Z', '+00:00'))).total_seconds()))
+        except (KeyError, TypeError, ValueError):
+            age = None
+        result.append(dict(key=path.stem, assignment_id=prior.get('assignment_id') or path.stem.removeprefix('review-'),
+                           age_seconds=age, reason=reason))
+    return result
+
+
 def audit(root: Path, event: str, prior: dict, *, actor: str, reason: str) -> dict:
     if not actor.strip() or not reason.strip():
         raise ValueError('actor and reason must be non-empty')
@@ -110,14 +169,9 @@ def acquire(root: Path, fingerprint: str, payload: dict) -> tuple[bool, dict | N
             return False, None
         if path.exists():
             prior = read_record(path)
-            consumer_alive, child_alive = claim_liveness(prior)
-            no_child = prior.get('review_pid') is None
-            if not prior.get('consumer_token') or consumer_alive is not False or (not no_child and child_alive is not False):
+            reason = recovery_reason(root, prior)
+            if not reason:
                 return False, None
-            # owned_popen's consumer-owned KILL_ON_JOB_CLOSE job prevents an
-            # unrecorded review child from surviving a provably dead consumer.
-            reason = ('consumer identity is provably dead; no review child recorded' if no_child
-                      else 'consumer and review child identities are provably dead')
             recovered = audit(root, 'claim_recovered', prior, actor='consumer', reason=reason)
             path.unlink()
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -189,7 +243,7 @@ def _review_evidence(root: Path, prior: dict) -> list[tuple]:
         path = root / 'runtime/dispatch/reviews' / run / 'review_run.json'
         if path.exists():
             state = read_record(path)
-            if state.get('pid'):
+            if state.get('pid') is not None:
                 evidence.append((state['pid'], state.get('process_start_time')))
     return evidence
 
@@ -231,7 +285,16 @@ def release(root: Path, key: str, *, actor: str, reason: str, kind: str = 'claim
 
 
 def list_records(root: Path) -> dict:
-    return {kind: [dict(key=p.stem, **read_record(p)) for p in sorted(folder.glob(pattern))]
-            for kind, folder, pattern in (
-                ('claims', directory(root) / 'claims', '*.json'),
-                ('leases', root / 'runtime/dispatch/supervisor_leases', 'review-*.json'))}
+    result = {}
+    for kind, folder, pattern in (
+            ('claims', directory(root) / 'claims', '*.json'),
+            ('leases', root / 'runtime/dispatch/supervisor_leases', 'review-*.json')):
+        records = []
+        for path in sorted(folder.glob(pattern)):
+            try:
+                prior = read_record(path)
+            except (OSError, ValueError) as exc:
+                prior = {'error': str(exc)}
+            records.append({**prior, 'key': path.stem})
+        result[kind] = records
+    return result

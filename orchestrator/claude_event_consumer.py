@@ -31,6 +31,7 @@ INITIAL_BACKOFF_SECONDS = 300
 MAX_BACKOFF_SECONDS = 6 * 60 * 60
 PROBE_INTERVAL_SECONDS = 10 * 60
 DEFERRED_ALERT_SECONDS = 6 * 60 * 60
+CAPACITY_BACKOFF_SECONDS = 10
 
 
 def _now() -> str:
@@ -79,8 +80,10 @@ def backoff_seconds(attempt: int) -> int:
 
 
 def classify_blocked_on(result: dict[str, Any]) -> str:
-    reason = str(result.get("blocked_reason") or result.get("last_blocker") or result.get("status") or "")
+    reason = str(result.get("blocked_reason") or result.get("reason") or result.get("last_blocker") or result.get("status") or "")
     lowered = reason.lower()
+    if result.get("blocked_on") == "capacity:review" or lowered.startswith("blocked_capacity"):
+        return "capacity:review"
     if any(word in lowered for word in ("auth", "login", "logged in", "credential")):
         return "auth:claude"
     if any(word in lowered for word in ("quota", "rate limit", "capacity", "balance")):
@@ -156,28 +159,37 @@ class ClaudeEventConsumer:
         except (OSError, json.JSONDecodeError):
             return None
 
-    def _record_deferral(self, fingerprint: str, blocked_on: str) -> dict[str, Any]:
+    def _record_deferral(self, fingerprint: str, blocked_on: str, reason: str) -> dict[str, Any]:
         now = self.now()
         previous = self._load_deferred(fingerprint) or {}
         same_reason = previous.get("blocked_on") == blocked_on
+        capacity = blocked_on == "capacity:review"
         attempt = int(previous.get("attempt_count", 0)) + 1 if same_reason else 1
+        if capacity:
+            attempt = 0
+        delay = CAPACITY_BACKOFF_SECONDS if capacity else backoff_seconds(attempt)
         state = {
             "fingerprint": fingerprint,
             "blocked_on": blocked_on,
+            "reason": reason,
             "deferred_since": previous.get("deferred_since") if same_reason else _format_time(now),
-            "next_eligible_at": _format_time(now + timedelta(seconds=backoff_seconds(attempt))),
+            "next_eligible_at": _format_time(now + timedelta(seconds=delay)),
             "attempt_count": attempt,
             "last_probe_at": previous.get("last_probe_at") if same_reason else None,
         }
         path = deferred_path(self.repo_root, fingerprint)
         path.parent.mkdir(parents=True, exist_ok=True)
         atomic_write_json(path, state)
-        if not previous or not same_reason:
-            self._emit("deferred", fingerprint=fingerprint, blocked_on=blocked_on)
+        self._emit("deferred", fingerprint=fingerprint, blocked_on=blocked_on, reason=reason)
         return state
 
     def _deferred_is_eligible(self, state: dict[str, Any]) -> bool:
         now = self.now()
+        if state.get("blocked_on") == "capacity:review":
+            from orchestrator.review_dispatcher import count_active_review_leases
+            if count_active_review_leases(self.repo_root) == 0:
+                return True
+            return now >= _parse_time(str(state["next_eligible_at"]))
         if now >= _parse_time(str(state["next_eligible_at"])):
             return True
         last_probe = state.get("last_probe_at")
@@ -207,12 +219,17 @@ class ClaudeEventConsumer:
         ]
         was_escalated = bool(current.get("deferred_escalation_active"))
         stale = consumer_claims.stale_claims(self.repo_root, now, consumer_token=self.consumer_token)
+        stale_leases = consumer_claims.stale_review_leases(self.repo_root, now)
+        if stale_leases and updates.get("lifecycle_state") in {"idle", "blocked_capacity"}:
+            updates["lifecycle_state"] = "blocked_stale_lease"
         current.update({
             **self.root_audit,
             "schema_version": "1.0",
             "heartbeat_at": _now(),
             "oldest_pending_poke_age_seconds": max(ages, default=0),
-            "alert_active": max(ages, default=0) > UNHANDLED_ALERT_SECONDS or bool(escalated) or bool(stale),
+            "alert_active": max(ages, default=0) > UNHANDLED_ALERT_SECONDS or bool(escalated) or bool(stale) or bool(stale_leases),
+            "stale_review_leases": stale_leases,
+            "stale_review_lease_alert_active": bool(stale_leases),
             "stale_claim_alert_active": bool(stale),
             "stale_claims": stale,
             "deferred_escalation_active": bool(escalated),
@@ -233,6 +250,8 @@ class ClaudeEventConsumer:
         source.replace(target)
 
     def process_once(self) -> dict[str, Any]:
+        for recovered in consumer_claims.recover_review_leases(self.repo_root):
+            self._emit("lease_recovered", reason=recovered["reason"], prior_owner=recovered["prior_owner"])
         # Reset process-local lifecycle every tick; persisted status is diagnostic history.
         self._status(lifecycle_state="idle", active_review_assignment=None, pid=None,
                      claude_session_id=None, last_blocker=None)
@@ -278,9 +297,10 @@ class ClaudeEventConsumer:
         else:
             current = load_watcher_status(self.repo_root)
             stale = consumer_claims.stale_claims(self.repo_root, self.now(), consumer_token=self.consumer_token)
-            self._status(lifecycle_state="blocked_stale_claim" if stale else "idle",
+            self._status(lifecycle_state="blocked_stale_claim" if stale else
+                         "blocked_capacity" if (skipped or {}).get("blocked_on") == "capacity:review" else "idle",
                          active_review_assignment=None, pid=None,
-                         last_blocker=(skipped or {}).get("blocked_on") or (skipped or {}).get("last_blocker"),
+                         last_blocker=(skipped or {}).get("reason") or (skipped or {}).get("last_blocker") or (skipped or {}).get("blocked_on"),
                          idle_ticks=int(current.get("idle_ticks", 0)) + 1)
             return skipped or deduplicated or {"status": "idle", "errors": errors}
 
@@ -313,6 +333,8 @@ class ClaudeEventConsumer:
                 except Exception as exc:
                     last = {"status": "failed_launch", "blocked_reason": str(exc)}
 
+                if classify_blocked_on(last) == "capacity:review":
+                    break  # Capacity is scheduling, not a failed launch/watchdog attempt.
                 pid = last.get("pid")
                 if pid:
                     review_started(pid, last.get("process_start_time") or process_start_time(pid))
@@ -361,18 +383,22 @@ class ClaudeEventConsumer:
                 if last.get("status") != "failed_launch" or child_pid:
                     break
 
-            blocker = str(last.get("blocked_reason") or last.get("status") or "review failed")
+            blocker = str(last.get("blocked_reason") or last.get("reason") or last.get("status") or "review failed")
             blocked_on = classify_blocked_on(last)
-            deferred = self._record_deferral(fingerprint, blocked_on)
+            deferred = self._record_deferral(fingerprint, blocked_on, blocker)
+            capacity = blocked_on == "capacity:review"
+            lifecycle = last.get("status") if last.get("status") in {"stalled", "timed_out"} else "failed_launch"
+            if capacity:
+                lifecycle = "blocked_capacity"
             self._status(
-                lifecycle_state=last.get("status") if last.get("status") in {"stalled", "timed_out"} else "failed_launch", active_review_assignment=None,
-                attempt_count=attempt, last_blocker=blocker,
+                lifecycle_state=lifecycle, active_review_assignment=None,
+                attempt_count=0 if capacity else attempt, last_blocker=blocker,
                 pid=last.get("pid"), claude_session_id=last.get("session_id"), blocked_on=blocked_on,
             )
             return {
                 "status": "deferred", "fingerprint": fingerprint, "blocked_on": blocked_on,
                 "deferred_since": deferred["deferred_since"], "next_eligible_at": deferred["next_eligible_at"],
-                "attempt_count": attempt, "last_blocker": blocker,
+                "attempt_count": 0 if capacity else attempt, "last_blocker": blocker, "reason": blocker,
                 "transitions": transitions,
             }
         finally:
