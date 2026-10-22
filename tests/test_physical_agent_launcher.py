@@ -173,7 +173,8 @@ class PhysicalLauncherFixture(unittest.TestCase):
         self.tmp.cleanup()
 
     def _fake_popen_success(self, *args, **kwargs):
-        del args, kwargs
+        kwargs['stdout'].write('{"type":"end","stopReason":"end_turn"}\n')
+        kwargs['stdout'].flush()
         return FakeProcess(pid=7777, exit_code=0, polls_before_exit=2)
 
     def _plan_ok(self, **kwargs):
@@ -188,6 +189,12 @@ class PhysicalLauncherFixture(unittest.TestCase):
 
 
 class GrokArgvTests(unittest.TestCase):
+    def test_buffered_json_format_is_rejected(self) -> None:
+        plan = build_grok_launch_plan(worktree=Path('C:/tmp/wt'), prompt='test',
+                                      grok_executable=sys.executable, output_format='json')
+        self.assertFalse(plan.ok)
+        self.assertEqual(plan.argv, [])
+
     def test_grok_argv_construction_shell_false_safe_flags(self) -> None:
         plan = build_grok_launch_plan(
             worktree=Path("C:/tmp/wt"),
@@ -200,6 +207,7 @@ class GrokArgvTests(unittest.TestCase):
         self.assertEqual(plan.argv[0], "C:/tools/grok.exe")
         self.assertIn("--cwd", plan.argv)
         self.assertIn("--single", plan.argv)
+        self.assertEqual(plan.argv[plan.argv.index('--output-format') + 1], 'streaming-json')
         self.assertIn("--max-turns", plan.argv)
         self.assertNotIn("--always-approve", plan.argv)
         for flag in plan.argv:
@@ -285,7 +293,8 @@ class SupervisorFlowTests(PhysicalLauncherFixture):
         seen_states: list[str] = []
 
         def tracking_popen(*args, **kwargs):
-            del args, kwargs
+            kwargs['stdout'].write('{"type":"end","stopReason":"end_turn"}\n')
+            kwargs['stdout'].flush()
             # When popen is called, state should already be launching, not running.
             return FakeProcess(pid=5555, exit_code=0, polls_before_exit=2)
 

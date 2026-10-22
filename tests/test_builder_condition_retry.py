@@ -51,7 +51,7 @@ def _monitor(stderr: str, *, exit_code: int = 1, activity: int = 0):
         return SimpleNamespace(
             exit_code=exit_code,
             timed_out=False,
-            stdout="",
+            stdout='{"type":"end","stopReason":"end_turn"}\n' if exit_code == 0 else "",
             stderr=stderr,
             orphaned=False,
             deadline_state=None,
@@ -409,7 +409,8 @@ class RecoveryTests(ConditionRetryFixture):
             if state.condition_retry_from_run_id:
                 state.activity_events = 1
                 return SimpleNamespace(
-                    exit_code=0, timed_out=False, stdout="resumed", stderr="",
+                    exit_code=0, timed_out=False,
+                    stdout='{"type":"text","data":"resumed"}\n{"type":"end","stopReason":"end_turn"}', stderr="",
                     orphaned=False, deadline_state=None,
                 )
             return SimpleNamespace(

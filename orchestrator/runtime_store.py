@@ -98,6 +98,9 @@ class RunState:
     process_start_time: str | None = None
     process_identity: str = ""
     session_id: str | None = None
+    stop_reason: str | None = None
+    token_usage: dict[str, int] = field(default_factory=dict)
+    liveness_events: int = 0
     worktree: str = ""
     branch: str = ""
     base_sha: str = ""
@@ -184,6 +187,9 @@ def save_run_state(repo_root: Path, state: RunState, *, refresh_work_lock: bool 
             "process_start_time": state.process_start_time,
             "process_identity": state.process_identity,
             "session_id": state.session_id,
+            "stop_reason": state.stop_reason,
+            "token_usage": state.token_usage,
+            "liveness_events": state.liveness_events,
             "worktree_path": state.worktree,
             "branch": state.branch,
             "base_sha": state.base_sha,

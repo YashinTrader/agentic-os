@@ -519,7 +519,10 @@ def _process_wake_signal(
     # Reload state after monitor heartbeats.
     state.exit_code = mon.exit_code
     state.completed_at = utc_now()
-    if not state.session_id:
+    if state.adapter == "composer-restricted":
+        from orchestrator.grok_stream import record_terminal
+        record_terminal(state, mon.stdout)
+    elif not state.session_id:
         state.session_id = extract_session_id(mon.stdout, mon.stderr)
 
     classification = classify_process_output(

@@ -60,7 +60,7 @@ environment_denylist:
   - AGENTIC_OS_REVIEWER_APPROVAL_KEY
   - GITHUB_TOKEN
   - SUPABASE_KEY
-output_format: json
+output_format: streaming-json
 context_bundle_required: true
 handoff_required: true
 rollback_required: true

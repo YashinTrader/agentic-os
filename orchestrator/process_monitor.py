@@ -100,7 +100,8 @@ def monitor_process(
             if last_warning is None or now - last_warning >= 60:
                 logging.getLogger(__name__).warning('Run %s persistence deferred: %.300s', current.run_id, exc)
                 last_warning = now
-    activity = StreamActivity(stdout_path)
+    grok_stream = getattr(state, "adapter", "") == "composer-restricted"
+    activity = StreamActivity(stdout_path, grok_stream=grok_stream)
     if worktree is None and getattr(state, "worktree", ""):
         worktree = Path(state.worktree)
     excluded = (stdout_path, stderr_path)
@@ -116,6 +117,8 @@ def monitor_process(
             now = clock()
             fired = deadlines.expired(now)
             events = activity.poll()
+            if grok_stream:
+                state.liveness_events = activity.liveness_events
             current = worktree_snapshot(worktree, excluded)
             events += sum(snapshot.get(path) != value for path, value in current.items())
             snapshot = current
