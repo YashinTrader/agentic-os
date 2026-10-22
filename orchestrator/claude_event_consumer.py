@@ -4,15 +4,20 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import subprocess
 import time
+import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
 
+from orchestrator import consumer_claims
+from dispatch.work_lock import WorkLockError
+from orchestrator.process_ownership import process_start_time
 from orchestrator.layer_heartbeat import tick
 from dispatch.roots import root_metadata
-from dispatch.atomic_io import atomic_create_json, atomic_write_json
+from dispatch.atomic_io import atomic_write_json
 from dispatch.orchestrator_pokes import list_orchestrator_pokes
 from orchestrator.agent_launcher import resolve_executable
 from orchestrator.review_schema import VALID_VERDICTS
@@ -112,6 +117,7 @@ def _default_processor(repo_root: Path, **kwargs: Any) -> dict[str, Any]:
         timeout_seconds=1800,
         activity_timeout_seconds=int(kwargs.get("activity_timeout_seconds") or STARTUP_ACTIVITY_TIMEOUT_SECONDS),
         apply=True,
+        on_review_started=kwargs.get("on_review_started"),
     )
 
 
@@ -130,6 +136,9 @@ class ClaudeEventConsumer:
         self.condition_probe = condition_probe or default_condition_probe
         self.now = now or (lambda: datetime.now(timezone.utc))
         self.state_logger = state_logger
+        self.consumer_token = uuid.uuid4().hex
+        self.consumer_pid = os.getpid()
+        self.consumer_start_time = process_start_time(self.consumer_pid)
 
     def _emit(self, event: str, **details: Any) -> None:
         if event == "claimed":
@@ -197,12 +206,15 @@ class ClaudeEventConsumer:
             (now - _parse_time(str(state["deferred_since"]))).total_seconds() > DEFERRED_ALERT_SECONDS
         ]
         was_escalated = bool(current.get("deferred_escalation_active"))
+        stale = consumer_claims.stale_claims(self.repo_root, now, consumer_token=self.consumer_token)
         current.update({
             **self.root_audit,
             "schema_version": "1.0",
             "heartbeat_at": _now(),
             "oldest_pending_poke_age_seconds": max(ages, default=0),
-            "alert_active": max(ages, default=0) > UNHANDLED_ALERT_SECONDS or bool(escalated),
+            "alert_active": max(ages, default=0) > UNHANDLED_ALERT_SECONDS or bool(escalated) or bool(stale),
+            "stale_claim_alert_active": bool(stale),
+            "stale_claims": stale,
             "deferred_escalation_active": bool(escalated),
             "deferred_blocked_on": sorted({str(state["blocked_on"]) for state in escalated}),
             "last_tick_at": _format_time(now),
@@ -221,44 +233,63 @@ class ClaudeEventConsumer:
         source.replace(target)
 
     def process_once(self) -> dict[str, Any]:
+        # Reset process-local lifecycle every tick; persisted status is diagnostic history.
+        self._status(lifecycle_state="idle", active_review_assignment=None, pid=None,
+                     claude_session_id=None, last_blocker=None)
         pokes, errors = list_orchestrator_pokes(self.repo_root)
-        if not pokes:
-            current = load_watcher_status(self.repo_root)
-            self._status(active_review_assignment=None, pid=None, idle_ticks=int(current.get("idle_ticks", 0)) + 1)
-            return {"status": "idle", "errors": errors}
-
-        eligible = [
-            item for item in pokes
-            if item.get("event") == "assignment_completed" and item.get("source") != "claude"
-        ]
-        if not eligible:
-            self._status(active_review_assignment=None, last_blocker=None)
-            return {"status": "idle", "reason": "no terminal builder pokes", "errors": errors}
-
-        poke = eligible[0]
-        fingerprint = event_fingerprint(poke)
-        deferred = self._load_deferred(fingerprint)
-        if deferred and not self._deferred_is_eligible(deferred):
-            self._status(last_blocker=deferred["blocked_on"], last_event_fingerprint=fingerprint)
-            return {"status": "deferred", **deferred, "transitions": ["pending"]}
-        resolved_path = watcher_dir(self.repo_root) / "resolved" / f"{fingerprint}.json"
-        transitions = ["pending"]
-        if resolved_path.is_file():
-            self._archive(poke)
-            self._status(last_event_fingerprint=fingerprint)
-            return {"status": "deduplicated", "fingerprint": fingerprint, "transitions": transitions}
-
-        claim_path = watcher_dir(self.repo_root) / "claims" / f"{fingerprint}.json"
-        claim_path.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            atomic_create_json(claim_path, {
+        eligible = [item for item in pokes
+                    if item.get("event") == "assignment_completed" and item.get("source") != "claude"]
+        skipped = None
+        deduplicated = None
+        for poke in eligible:
+            fingerprint = event_fingerprint(poke)
+            resolved_path = watcher_dir(self.repo_root) / "resolved" / f"{fingerprint}.json"
+            transitions = ["pending"]
+            if resolved_path.is_file():
+                try:
+                    self._archive(poke)
+                except FileNotFoundError:
+                    pass  # Another consumer archived the same conclusive event.
+                deduplicated = {"status": "deduplicated", "fingerprint": fingerprint, "transitions": transitions}
+                continue
+            deferred = self._load_deferred(fingerprint)
+            if deferred and not self._deferred_is_eligible(deferred):
+                skipped = {"status": "deferred", **deferred, "transitions": transitions}
+                continue
+            payload = {
                 "fingerprint": fingerprint, "poke_id": poke.get("poke_id"),
-                "assignment_id": poke.get("assignment_id"), "claimed_at": _now(),
-            })
+                "assignment_id": poke.get("assignment_id"), "claimed_at": _format_time(self.now()),
+                "consumer_pid": self.consumer_pid, "consumer_start_time": self.consumer_start_time,
+                "consumer_token": self.consumer_token, "review_pid": None, "review_start_time": None,
+            }
+            try:
+                acquired, recovered = consumer_claims.acquire(self.repo_root, fingerprint, payload)
+            except (OSError, ValueError, WorkLockError):
+                acquired, recovered = False, None
+            if not acquired:
+                skipped = {"status": "deferred", "fingerprint": fingerprint,
+                           "last_blocker": "event already claimed", "transitions": transitions}
+                continue
+            if recovered:
+                self._emit("claim_recovered", reason=recovered["reason"], prior_owner=recovered["prior_owner"],
+                           fingerprint=fingerprint)
             self._emit("claimed", fingerprint=fingerprint, assignment_id=poke.get("assignment_id"))
-        except FileExistsError:
-            self._status(last_blocker="event already claimed", last_event_fingerprint=fingerprint)
-            return {"status": "deferred", "fingerprint": fingerprint, "transitions": transitions}
+            break
+        else:
+            current = load_watcher_status(self.repo_root)
+            stale = consumer_claims.stale_claims(self.repo_root, self.now(), consumer_token=self.consumer_token)
+            self._status(lifecycle_state="blocked_stale_claim" if stale else "idle",
+                         active_review_assignment=None, pid=None,
+                         last_blocker=(skipped or {}).get("blocked_on") or (skipped or {}).get("last_blocker"),
+                         idle_ticks=int(current.get("idle_ticks", 0)) + 1)
+            return skipped or deduplicated or {"status": "idle", "errors": errors}
+
+        child_pid = None
+
+        def review_started(pid, start):
+            nonlocal child_pid
+            child_pid = pid
+            consumer_claims.update_child(self.repo_root, fingerprint, self.consumer_token, pid, start)
 
         transitions.append("claimed")
         last: dict[str, Any] = {}
@@ -275,6 +306,7 @@ class ClaudeEventConsumer:
                     last = self.processor(
                         assignment_id=str(poke.get("assignment_id") or ""),
                         poke=poke,
+                        on_review_started=review_started,
                         pid_timeout_seconds=STARTUP_PID_TIMEOUT_SECONDS,
                         activity_timeout_seconds=STARTUP_ACTIVITY_TIMEOUT_SECONDS,
                     )
@@ -282,6 +314,8 @@ class ClaudeEventConsumer:
                     last = {"status": "failed_launch", "blocked_reason": str(exc)}
 
                 pid = last.get("pid")
+                if pid:
+                    review_started(pid, last.get("process_start_time") or process_start_time(pid))
                 verdict = last.get("verdict")
                 session_id = last.get("session_id")
                 valid_verdict = verdict in VALID_VERDICTS
@@ -322,7 +356,9 @@ class ClaudeEventConsumer:
                     )
                     return {"status": "resolved", "transitions": transitions, **resolution}
 
-                if last.get("status") != "failed_launch":
+                # Retry only pre-PID startup failures. One observed child is the
+                # tick's review launch, even if it never produces activity.
+                if last.get("status") != "failed_launch" or child_pid:
                     break
 
             blocker = str(last.get("blocked_reason") or last.get("status") or "review failed")
@@ -330,18 +366,17 @@ class ClaudeEventConsumer:
             deferred = self._record_deferral(fingerprint, blocked_on)
             self._status(
                 lifecycle_state=last.get("status") if last.get("status") in {"stalled", "timed_out"} else "failed_launch", active_review_assignment=None,
-                attempt_count=MAX_ATTEMPTS, last_blocker=blocker,
+                attempt_count=attempt, last_blocker=blocker,
                 pid=last.get("pid"), claude_session_id=last.get("session_id"), blocked_on=blocked_on,
             )
             return {
                 "status": "deferred", "fingerprint": fingerprint, "blocked_on": blocked_on,
                 "deferred_since": deferred["deferred_since"], "next_eligible_at": deferred["next_eligible_at"],
-                "attempt_count": MAX_ATTEMPTS, "last_blocker": blocker,
+                "attempt_count": attempt, "last_blocker": blocker,
                 "transitions": transitions,
             }
         finally:
-            if claim_path.exists():
-                claim_path.unlink()
+            consumer_claims.finish(self.repo_root, fingerprint, self.consumer_token)
 
     def run_forever(self, *, poll_seconds: float = 5.0) -> int:
         while True:

@@ -32,7 +32,7 @@ class ConfigRootTests(unittest.TestCase):
         self.state = Path(self.tmp.name) / "state"
         (self.state / "runtime").mkdir(parents=True)
         self.env = patch.dict(os.environ, {"AGENTIC_OS_CONFIG_ROOT": str(CODE),
-                                          "AGENTIC_OS_STATE_ROOT": str(self.state)})
+                                          "AGENTIC_OS_STATE_ROOT": str(self.state)}, clear=False)
         self.env.start()
         self.addCleanup(self.env.stop)
 

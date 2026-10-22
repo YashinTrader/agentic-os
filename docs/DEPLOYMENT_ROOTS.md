@@ -37,3 +37,9 @@ its status: `runtime/dispatch/layer_supervisor/status.json`,
 `runtime/dispatch/claude_event_consumer/status.json`. A non-Git config directory
 or failed local Git query reports a null SHA. The SHA identifies HEAD, not
 uncommitted changes; deploy a clean pinned checkout for reproducible config.
+
+For deployment checks against old runtime state, inspect the consumer's current
+`lifecycle_state` and `stale_claims` independently. Legacy claims remain fenced
+and alert even while newer work resolves. See
+[consumer claim recovery](CONSUMER_CLAIM_RECOVERY.md) for the audited claim and
+review-lease operator commands; run them against the selected state root.

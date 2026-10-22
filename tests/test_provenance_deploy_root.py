@@ -77,6 +77,7 @@ class ProvenanceTests(unittest.TestCase):
             tampered, _ = rv.load_unittest_artifact(root)
             self.assertNotEqual(tampered["raw_output_sha256"], tampered["computed_output_sha256"])
 
+    @patch.dict(os.environ, {}, clear=False)
     def test_skip_install_requires_reason(self):
         for extra in ([], ["--skip-install-reason", " "],
                       ["--skip-install-reason", "bad\nreason"]):
@@ -86,6 +87,7 @@ class ProvenanceTests(unittest.TestCase):
                 self.assertEqual(raised.exception.code, 2)
                 run.assert_not_called()
 
+    @patch.dict(os.environ, {}, clear=False)
     def test_main_install_and_skip_paths(self):
         for skip in (False, True):
             with self.subTest(skip=skip):
@@ -171,6 +173,30 @@ class ProvenanceTests(unittest.TestCase):
 
 
 class StateRootTests(unittest.TestCase):
+    def test_entrypoint_environment_is_restored_after_isolation(self):
+        root = Path(__file__).resolve().parents[1]
+        keys = ("AGENTIC_OS_STATE_ROOT", "AGENTIC_OS_CONFIG_ROOT")
+        for preexisting in (False, True):
+            with self.subTest(preexisting=preexisting), patch.dict(os.environ, {}, clear=False):
+                for key in keys:
+                    os.environ.pop(key, None)
+                    if preexisting:
+                        os.environ[key] = "original-" + key
+                before = dict(os.environ)
+                with patch.dict(os.environ, {}, clear=False), patch("sys.argv", [
+                        "run_orchestrator", "--once", "--state-root", str(root),
+                        "--config-root", str(root)]), patch.object(
+                            run_orchestrator, "process_once", return_value={"status": "idle"}), redirect_stdout(io.StringIO()):
+                    self.assertEqual(run_orchestrator.main(), 0)
+                    for key in keys:
+                        self.assertEqual(os.environ[key], str(root))
+                self.assertEqual(dict(os.environ), before)
+                for key in keys:
+                    if preexisting:
+                        self.assertEqual(os.environ[key], before[key])
+                    else:
+                        self.assertNotIn(key, os.environ)
+
     def test_default_flag_env_and_invalid(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -185,6 +211,7 @@ class StateRootTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     resolve_state_root(root / "default", root / "missing")
 
+    @patch.dict(os.environ, {}, clear=False)
     def test_layer_parent_uses_state_and_children_use_deployed_code(self):
         root = Path(__file__).resolve().parents[1]
         with patch("sys.argv", ["run_supervisor_layers", "--state-root", str(root)]), patch.object(run_supervisor_layers, "LayerSupervisor") as supervisor:
@@ -193,9 +220,10 @@ class StateRootTests(unittest.TestCase):
             selected, commands = supervisor.call_args.args
             self.assertEqual(selected, root)
             for command in commands.values():
-                self.assertEqual(command[-2:], ["--state-root", str(root)])
+                self.assertEqual(command[-4:], ["--state-root", str(root), "--config-root", str(run_supervisor_layers.REPO_ROOT)])
                 self.assertTrue(command[1].startswith(str(run_supervisor_layers.REPO_ROOT)))
 
+    @patch.dict(os.environ, {}, clear=False)
     def test_entrypoints_select_state_root(self):
         root = Path(__file__).resolve().parents[1]
         with patch("sys.argv", ["run_orchestrator", "--once", "--state-root", str(root)]), patch.object(run_orchestrator, "process_once", return_value={"status": "idle"}) as process:

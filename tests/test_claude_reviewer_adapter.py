@@ -437,13 +437,24 @@ class ReviewFlowFixture(unittest.TestCase):
         adapter = ClaudeReviewerAdapter(
             self.root, claude_executable=sys.executable, popen=popen
         )
+        started = []
+
+        def on_started(pid, start):
+            lease = json.loads((self.root / 'runtime/dispatch/supervisor_leases' /
+                                f'review-{self.assignment_id}.json').read_text())
+            self.assertEqual(lease['review_pid'], pid)
+            self.assertEqual(lease['review_start_time'], start)
+            started.append(pid)
+
         report = process_one_review(
             self.root,
             assignment_id=self.assignment_id,
             adapter=adapter,
             timeout_seconds=30,
             apply=True,
+            on_review_started=on_started,
         )
+        self.assertEqual(started, [9090])
         self.assertEqual(report["status"], "completed")
         self.assertEqual(report["pid"], 9090)
         self.assertEqual(report["verdict"], "accepted")

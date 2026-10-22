@@ -23,6 +23,7 @@ UNITTEST_ARTIFACT_REL = "runtime/unittest_last_run.txt"
 # Explicit post-test allowlist — no broad directory prefixes.
 POST_TEST_ALLOWLIST_EXACT = frozenset(
     {
+        "handoffs/T-M1-18-CONSUMER-FAIRNESS-STALE-CLAIMS__codex__to__claude.md",
         "handoffs/T-M1-17-CONFIG-ROOT__codex__to__claude.md",
         "handoffs/T-M1-16-WINDOWS-WRITE-CONTENTION__codex__to__claude.md",
         "handoffs/T-M1-15-PRELAUNCH-FAILURE-ISOLATION__codex__to__claude.md",
