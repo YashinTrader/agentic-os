@@ -1,4 +1,4 @@
-# Consumer fairness and abandoned claims
+# Consumer fairness and abandoned review ownership
 
 The event consumer scans builder completions in queue order. Resolved events are
 archived even if an obsolete deferral exists. A claimed or ineligible deferred
@@ -35,21 +35,39 @@ python scripts/consumer_claims.py --root <state-root> release review-<assignment
 
 `list` includes both claims and review leases. A lease key is its basename without
 `.json`. Claim and lease releases are separate explicit operations. Neither age
-nor a stale alert authorizes release. A lease can still consume review capacity
-after its claim is recovered, so inspect both kinds before retrying.
+nor a stale alert authorizes release. Legacy or unknown-owner leases still consume
+capacity after claim recovery, so inspect both kinds before retrying.
+
+Each consumer tick and each lease acquisition recover abandoned review leases
+under the shared mutation guard, before checking capacity. The same recovery
+helper checks consumer creation identity and every recorded child (including
+review run state). A tokened lease is removed only when its consumer is provably
+dead and all recorded children are provably dead, or no child was recorded.
+The request and its run ID remain intact; fingerprint claims still serialize
+event processing, and resolved fingerprints are archived without another launch.
+
+Consumer status includes `stale_review_leases` (key, assignment, age, reason) and
+`stale_review_lease_alert_active`. Legacy/unreadable and unknown owners alert;
+live tokened owners do not. Capacity blocked by a stale lease reports
+`blocked_stale_lease`. Review concurrency refusals defer on `capacity:review`
+for ten seconds with attempt count zero. They bypass launch-failure retries and
+failure fingerprints. The next tick retries immediately if no review leases
+remain. Every deferral record and emitted `deferred` event includes its readable
+`reason`; authentication and failure backoff retain their existing behavior.
 
 Releases refuse fingerprint/assignment resolutions and any recorded live or
 unknown owner/child identity. Lease checks include the referenced
 `runtime/dispatch/reviews/<run>/review_run.json`; claim checks also inspect the
 matching lease. A legacy record without process identity may be explicitly
-released after operator investigation. Missing child identity on a new claim is
-unknown, not proof of death, and intentionally prevents automatic recovery.
+released after operator investigation. A recorded child PID without creation
+identity is unknown and prevents automatic recovery. A child PID that was never
+recorded is covered by the consumer-owned KILL_ON_JOB_CLOSE job.
 
 Every release/recovery writes an atomic, unique audit JSON under
 `runtime/dispatch/claude_event_consumer/audit` **before** removing the record. It
-contains the event (`claim_recovered`, `claim_released`, or `lease_released`),
+contains the event (`claim_recovered`, `lease_recovered`, `claim_released`, or `lease_released`),
 actor, reason, timestamp, and full prior owner. Recovery also emits the
-`claim_recovered` state event. New leases record the dispatcher's owner identity,
+`claim_recovered` or `lease_recovered` state event on consumer ticks. New leases record the dispatcher's owner identity,
 protecting the interval before its review child is known. The consumer, lease
 writer, and operator CLI serialize mutations using the same OS guard; a crash
 releases that guard without expiring durable ownership.
