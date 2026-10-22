@@ -16,7 +16,7 @@ from orchestrator import consumer_claims
 from dispatch.work_lock import WorkLockError
 from orchestrator.process_ownership import process_start_time
 from orchestrator.layer_heartbeat import tick
-from dispatch.roots import root_metadata
+from root_paths import root_metadata
 from dispatch.atomic_io import atomic_write_json
 from dispatch.orchestrator_pokes import list_orchestrator_pokes
 from orchestrator.agent_launcher import resolve_executable

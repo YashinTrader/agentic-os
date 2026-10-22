@@ -36,7 +36,7 @@ ALLOWED_SKILL_APPROVAL_LEVELS = {"none", "reviewer", "human", "blocked"}
 
 
 def load_skills_registry(root: Path) -> dict[str, Any]:
-    from dispatch.roots import resolve_config_root
+    from root_paths import resolve_config_root
 
     path = resolve_config_root(root) / "skills" / "registry.yaml"
     if not path.exists():

@@ -14,7 +14,7 @@ isolation flags, execution policy, quota-probe authorization, and deadlines.
 Registries in `roles/`, `teams/`, `skills/`, and `mcps/` follow the same root.
 There are currently no runtime disk readers for `prompts/` or `schemas/` in
 the supervisor layers; reviewer prompts and schemas are Python code constants.
-Any new versioned configuration reader must use `dispatch.roots.resolve_config_root`.
+Any new versioned configuration reader must use `root_paths.resolve_config_root`.
 
 Mutable `runtime/`, `logs/`, `tasks/`, and `handoffs/`, assignment/wake queues,
 runs, locks, and the Git repository used as the base for worktree allocation

@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from dispatch.roots import resolve_config_root
+from root_paths import resolve_config_root
 from uuid import uuid4
 
 import yaml

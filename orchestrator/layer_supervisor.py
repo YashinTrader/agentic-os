@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
-from dispatch.roots import root_metadata
+from root_paths import root_metadata
 from dispatch.atomic_io import atomic_write_json
 from orchestrator.process_ownership import owned_popen, terminate_owned, ownership_metadata
 from orchestrator.layer_heartbeat import read_heartbeat, timestamp

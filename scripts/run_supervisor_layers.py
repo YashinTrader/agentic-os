@@ -12,7 +12,7 @@ sys.path.insert(0, str(REPO_ROOT))
 from orchestrator.layer_supervisor import LayerSupervisor
 
 
-from dispatch.roots import resolve_state_root, resolve_config_root, export_roots
+from root_paths import resolve_state_root, resolve_config_root, export_roots
 
 
 def main() -> int:

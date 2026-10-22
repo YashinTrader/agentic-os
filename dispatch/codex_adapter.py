@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from dispatch.roots import resolve_config_root
+from root_paths import resolve_config_root
 
 from dispatch.agent_context_bundle import bundle_root, compute_bundle_hash
 from dispatch.agent_environment import environment_preview
