@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from dispatch.roots import resolve_config_root
+
 import yaml
 
 from dispatch.atomic_io import atomic_write_json
@@ -31,12 +33,12 @@ class WakeOutcome:
 
 
 def _load_wake_config(repo_root: Path, adapter_id: str) -> dict[str, Any]:
-    adapter_file = repo_root / "agents" / f"{adapter_id.replace('-', '_')}_adapter.yaml"
+    adapter_file = resolve_config_root(repo_root) / "agents" / f"{adapter_id.replace('-', '_')}_adapter.yaml"
     if adapter_file.is_file():
         data = yaml.safe_load(adapter_file.read_text(encoding="utf-8")) or {}
         if isinstance(data.get("wake"), dict):
             return dict(data["wake"])
-    registry = yaml.safe_load((repo_root / "agents" / "adapter_registry.yaml").read_text(encoding="utf-8")) or {}
+    registry = yaml.safe_load((resolve_config_root(repo_root) / "agents" / "adapter_registry.yaml").read_text(encoding="utf-8")) or {}
     for adapter in registry.get("adapters", []):
         if adapter.get("id") == adapter_id and isinstance(adapter.get("wake"), dict):
             return dict(adapter["wake"])

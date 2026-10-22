@@ -22,12 +22,13 @@ from orchestrator.supervisor import SupervisorConfig, process_once, run_forever 
 from orchestrator.rotating_log import RotatingLogWriter  # noqa: E402
 
 
-from scripts.state_root import resolve_state_root
+from dispatch.roots import resolve_state_root, resolve_config_root, export_roots
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Physical agent supervisor (Grok primary, Codex fallback)")
     parser.add_argument("--state-root", default=None)
+    parser.add_argument("--config-root", default=None)
     parser.add_argument("--root", default=str(REPO_ROOT), help="Repository root")
     parser.add_argument("--agent", default="composer", help="Wake queue agent id")
     parser.add_argument("--once", action="store_true", help="Process at most one wake and exit")
@@ -44,6 +45,8 @@ def main() -> int:
 
     try:
         root = resolve_state_root(args.root, args.state_root)
+        config_root = resolve_config_root(REPO_ROOT, args.config_root, validate=True)
+        export_roots(root, config_root)
     except ValueError as exc:
         parser.error(str(exc))
     config = SupervisorConfig(

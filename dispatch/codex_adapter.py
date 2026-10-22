@@ -10,6 +10,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from dispatch.roots import resolve_config_root
+
 from dispatch.agent_context_bundle import bundle_root, compute_bundle_hash
 from dispatch.agent_environment import environment_preview
 from dispatch.mcp_isolation import (
@@ -79,7 +81,7 @@ def version_at_least(installed: str, minimum: str) -> bool:
 
 
 def load_codex_restricted_adapter(repo_root: Path) -> dict[str, Any]:
-    path = repo_root / "agents" / "codex_restricted_adapter.yaml"
+    path = resolve_config_root(repo_root) / "agents" / "codex_restricted_adapter.yaml"
     if not path.exists():
         raise FileNotFoundError(f"codex restricted adapter config missing: {path}")
     import yaml

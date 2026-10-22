@@ -7,6 +7,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+from dispatch.roots import resolve_config_root
+
 import yaml
 
 
@@ -44,7 +46,7 @@ def load_task_yaml(path: Path) -> dict[str, Any]:
 
 
 def load_registry_list(repo_root: Path, rel_path: str, key: str) -> list[dict[str, Any]]:
-    path = repo_root / rel_path
+    path = resolve_config_root(repo_root) / rel_path
     if not path.exists():
         return []
     try:

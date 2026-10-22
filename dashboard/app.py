@@ -8,6 +8,7 @@ import subprocess
 import sys
 import urllib.parse
 from pathlib import Path
+
 from typing import Any
 
 import yaml
@@ -19,6 +20,8 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 # and `python -m dashboard.app` alike. Mirrors tests/sys.path setup.
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
+
+from dispatch.roots import resolve_config_root
 
 
 # ==========================================
@@ -168,7 +171,7 @@ def load_cli_inventory(root_dir: Path) -> tuple[dict | None, list[str]]:
 def load_skills_registry(root_dir: Path) -> tuple[dict | None, list[str]]:
     """Load skills/registry.yaml for the Skills dashboard tab."""
     errors: list[str] = []
-    registry_path = root_dir / "skills" / "registry.yaml"
+    registry_path = resolve_config_root(root_dir) / "skills" / "registry.yaml"
     if not registry_path.exists():
         return None, ["skills/registry.yaml: file does not exist"]
     try:
@@ -188,7 +191,7 @@ def load_skills_registry(root_dir: Path) -> tuple[dict | None, list[str]]:
 def load_teams_registry(root_dir: Path) -> tuple[dict | None, list[str]]:
     """Load teams/registry.yaml for the Teams dashboard tab."""
     errors: list[str] = []
-    registry_path = root_dir / "teams" / "registry.yaml"
+    registry_path = resolve_config_root(root_dir) / "teams" / "registry.yaml"
     if not registry_path.exists():
         return None, ["teams/registry.yaml: file does not exist"]
     try:
@@ -857,7 +860,7 @@ def count_obsidian_notes_planned(root_dir: Path) -> int | None:
 def load_roles_registry(root_dir: Path) -> tuple[dict | None, list[str]]:
     """Load roles/registry.yaml for the Roles dashboard tab."""
     errors: list[str] = []
-    registry_path = root_dir / "roles" / "registry.yaml"
+    registry_path = resolve_config_root(root_dir) / "roles" / "registry.yaml"
     if not registry_path.exists():
         return None, ["roles/registry.yaml: file does not exist"]
     try:
@@ -877,7 +880,7 @@ def load_roles_registry(root_dir: Path) -> tuple[dict | None, list[str]]:
 def load_mcps_registry(root_dir: Path) -> tuple[dict | None, list[str]]:
     """Load mcps/registry.yaml for the MCPs dashboard tab."""
     errors: list[str] = []
-    registry_path = root_dir / "mcps" / "registry.yaml"
+    registry_path = resolve_config_root(root_dir) / "mcps" / "registry.yaml"
     if not registry_path.exists():
         return None, ["mcps/registry.yaml: file does not exist"]
     try:

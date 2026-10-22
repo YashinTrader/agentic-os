@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
+from dispatch.roots import root_metadata
 from dispatch.atomic_io import atomic_write_json
 from orchestrator.process_ownership import owned_popen, terminate_owned, ownership_metadata
 from orchestrator.layer_heartbeat import read_heartbeat, timestamp
@@ -77,6 +78,7 @@ class LayerSupervisor:
                  poll_seconds: float = 5, popen=subprocess.Popen,
                  clock: Callable[[], float] = time.monotonic):
         self.root = root
+        self.root_audit = root_metadata(root)
         self.path = root / "runtime/dispatch/layer_supervisor/status.json"
         self.children = {
             name: Child(command, self.path.parent / f"{name}.heartbeat.json")
@@ -109,6 +111,7 @@ class LayerSupervisor:
 
     def save(self):
         atomic_write_json(self.path, {
+            **self.root_audit,
             "updated_at": timestamp(),
             "state": "stopped" if self.stop_requested else "running",
             "children": {name: child.status for name, child in self.children.items()},
@@ -117,7 +120,8 @@ class LayerSupervisor:
     def start(self, child: Child, now: float):
         child.heartbeat.unlink(missing_ok=True)
         child.token = uuid.uuid4().hex
-        env = {**os.environ, "AGENTIC_LAYER_HEARTBEAT": str(child.heartbeat),
+        env = {**os.environ, "AGENTIC_OS_STATE_ROOT": str(self.root.resolve()),
+               "AGENTIC_OS_CONFIG_ROOT": self.root_audit["config_root"], "AGENTIC_LAYER_HEARTBEAT": str(child.heartbeat),
                "AGENTIC_LAYER_TOKEN": child.token}
         options = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == "nt" else {}
         try:

@@ -14,6 +14,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
+from dispatch.roots import resolve_config_root
+
 from dispatch.atomic_io import atomic_create_json, atomic_write_json
 from dispatch import work_lock
 from dispatch.completion_fence import fenced_completion
@@ -236,7 +238,7 @@ def resolve_builder_profile(
     if requested in BUILTIN_BUILDER_PROFILES:
         return BUILTIN_BUILDER_PROFILES[requested], []
 
-    registry_path = repo_root / "agents" / "adapter_registry.yaml"
+    registry_path = resolve_config_root(repo_root) / "agents" / "adapter_registry.yaml"
     if registry_path.is_file():
         try:
             import yaml

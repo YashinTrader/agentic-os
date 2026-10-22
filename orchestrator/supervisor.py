@@ -11,6 +11,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable
 
+from dispatch.roots import root_metadata
+
 from orchestrator import layer_heartbeat
 from dispatch import work_lock
 from dispatch.atomic_io import atomic_write_json
@@ -893,6 +895,7 @@ def _dead_letter_wake(repo_root: Path, path: Path, signal: dict[str, Any], *, no
 
 def process_once(repo_root: Path, *, config: SupervisorConfig | None = None, **kwargs: Any) -> dict[str, Any]:
     cfg = config or SupervisorConfig()
+    _update_status(repo_root, **root_metadata(repo_root))
     recover_orphans(repo_root, config=cfg)
     # Re-evaluate every tick, before waking new work, so due retries cannot starve.
     report = reevaluate_blocked_builders(
@@ -951,6 +954,9 @@ def run_forever(
                 status.update(loaded)
         except (OSError, json.JSONDecodeError):
             pass
+
+    status.update(root_metadata(repo_root))
+    atomic_write_json(status_path, status)
 
     while not STOP_REQUESTED:
         layer_heartbeat.tick()

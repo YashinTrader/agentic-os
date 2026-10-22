@@ -7,6 +7,8 @@ import shlex
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+from dispatch.roots import resolve_config_root
 from uuid import uuid4
 
 import yaml
@@ -65,7 +67,7 @@ def command_tokens(command: str) -> tuple[list[str], list[str]]:
 
 
 def load_adapter_registry(repo_root: Path) -> dict[str, Any]:
-    path = repo_root / "agents" / "adapter_registry.yaml"
+    path = resolve_config_root(repo_root) / "agents" / "adapter_registry.yaml"
     if not path.exists():
         raise FileNotFoundError(f"adapter registry not found: {path}")
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
