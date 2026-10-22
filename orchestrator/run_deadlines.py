@@ -77,8 +77,10 @@ def genuine_event(event: object) -> bool:
 
 class StreamActivity:
     """Read only new JSONL bytes; retain incomplete lines until the next poll."""
-    def __init__(self, path: Path):
+    def __init__(self, path: Path, *, grok_stream: bool = False):
         self.path = path
+        self.grok_stream = grok_stream
+        self.liveness_events = 0
         self.offset = 0
         self.pending = b""
 
@@ -105,8 +107,12 @@ class StreamActivity:
             self.pending = b""
         count = 0
         for line in lines:
+            if self.grok_stream and line.strip():
+                self.liveness_events += 1
             try:
-                count += int(genuine_event(json.loads(line)))
+                event = json.loads(line)
+                count += int((isinstance(event, dict) and isinstance(event.get("type"), str))
+                             if self.grok_stream else genuine_event(event))
             except (ValueError, UnicodeDecodeError):
                 pass
         return count

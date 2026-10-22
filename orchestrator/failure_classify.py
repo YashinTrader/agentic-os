@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from dispatch.mcp_isolation import classify_required_mcp_failure
+from orchestrator.grok_stream import terminal_event
 from orchestrator.runtime_store import (
     STATE_BLOCKED_AUTHENTICATION,
     STATE_BLOCKED_EXTERNAL,
@@ -135,9 +136,9 @@ def _error_signals(stdout: str, stderr: str, *, failed_exit: bool, unknown_exit:
             if kind is None and "result" in event and ("is_error" in event or "error" in event):
                 kind = "result"
             # Do not recurse: nested events/errors can be quoted tool output.
-            if not isinstance(kind, str) or kind not in {"error", "turn.failed", "result", "turn.completed"}:
+            if not isinstance(kind, str) or kind not in {"error", "turn.failed", "result", "turn.completed", "end"}:
                 continue
-            reasons = [event.get("stop_reason"), event.get("subtype"), event.get("code")]
+            reasons = [event.get("stop_reason"), event.get("stopReason"), event.get("subtype"), event.get("code")]
             bounded = any(isinstance(reason, str) and reason.lower().replace("-", "_").replace(" ", "_")
                           in _MAX_TURN_REASONS for reason in reasons)
             turns, maximum = event.get("num_turns"), event.get("max_turns")
@@ -145,15 +146,18 @@ def _error_signals(stdout: str, stderr: str, *, failed_exit: bool, unknown_exit:
                                   and maximum > 0 and turns == maximum)
             max_turns = max_turns or bounded
             subtype = event.get("subtype")
+            stop = event.get("stopReason")
             is_error = (kind in {"error", "turn.failed"} or event.get("is_error") is True
                         or bool(event.get("error")) or event.get("status") == "error"
-                        or (isinstance(subtype, str) and subtype.startswith("error")))
+                        or (isinstance(subtype, str) and subtype.startswith("error"))
+                        or (kind == "end" and isinstance(stop, str) and
+                            (stop.lower().startswith("error") or stop.lower() in {"failed", "failure"})))
             if not is_error:
                 continue
             failed = True
             # These fields belong to the provider error envelope. Exclude paths,
             # tool payloads, usage counters, and successful result narration.
-            for key in ("error", "message", "code", "status", "subtype", "stop_reason", "retry_after"):
+            for key in ("error", "message", "code", "status", "subtype", "stop_reason", "stopReason", "retry_after"):
                 value = event.get(key)
                 if value is not None:
                     diagnostics.append(f"retry-after: {value}" if key == "retry_after" else
@@ -163,6 +167,8 @@ def _error_signals(stdout: str, stderr: str, *, failed_exit: bool, unknown_exit:
                     value = event.get(key)
                     if value is not None:
                         diagnostics.append(_diagnostic_text(value))
+            if kind in {"error", "end"} and event.get("data") is not None:
+                diagnostics.append(_diagnostic_text(event["data"]))
     return "\n".join(diagnostics), failed, max_turns
 
 
@@ -202,6 +208,12 @@ def classify_process_output(
         stdout, stderr, failed_exit=exit_code not in (0, None), unknown_exit=exit_code is None,
     )
     if exit_code in (0, None) and not provider_failed and not max_turns:
+        if adapter == "composer-restricted" and (exit_code != 0 or terminal_event(stdout) is None):
+            return Classification(
+                process_state=STATE_FAILED, category="failed",
+                detail="Grok completion requires exit code 0 and a streaming end event",
+                retry_eligible=False,
+            )
         return Classification(
             process_state="completed", category="completed",
             detail="process completed successfully", retry_eligible=False,

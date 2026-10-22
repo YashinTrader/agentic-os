@@ -132,7 +132,7 @@ def build_grok_launch_plan(
     max_turns: int = 30,
     timeout_hint_seconds: int = 1800,
     grok_executable: str | None = None,
-    output_format: str = "json",
+    output_format: str = "streaming-json",
     version_runner: Callable[..., subprocess.CompletedProcess[str]] | None = None,
     required_mcp_servers: list[str] | None = None,
 ) -> LaunchPlan:
@@ -152,6 +152,13 @@ def build_grok_launch_plan(
             mcp_isolation=mcp_note,
         )
 
+    if output_format != "streaming-json":
+        return LaunchPlan(
+            agent="composer", adapter="composer-restricted", argv=[],
+            cwd=str(worktree), executable=executable,
+            blocked_reasons=["Grok run monitoring requires streaming-json output"],
+            required_mcp_servers=required, mcp_isolation=mcp_note,
+        )
     if max_turns < 1 or max_turns > 200:
         return LaunchPlan(
             agent="composer",
@@ -165,7 +172,7 @@ def build_grok_launch_plan(
         )
 
     # Prefer non-interactive single-task form supported by Grok Build 0.2.x:
-    #   grok --cwd <dir> --max-turns N --output-format json --single "<prompt>"
+    #   grok --cwd <dir> --max-turns N --output-format streaming-json --single "<prompt>"
     # MCP isolation gap: no equivalent of Codex `-c mcp_servers={}` is available.
     argv = [
         executable,
