@@ -99,7 +99,8 @@ def default_condition_probe(blocked_on: str) -> bool:
         executable = resolve_executable("claude")
         if not executable:
             return False
-        completed = subprocess.run(
+        from orchestrator.process_ownership import owned_run
+        completed = owned_run(
             [executable, "auth", "status"], capture_output=True, text=True,
             timeout=15, check=False, shell=False,
         )

@@ -108,21 +108,42 @@ def resolve_executable(name: str, explicit: str | None = None) -> str | None:
     return shutil.which(name)
 
 
-def probe_version(executable: str, *, runner: Callable[..., subprocess.CompletedProcess[str]] | None = None) -> str:
-    run = runner or subprocess.run
+_VERSION_CACHE: dict[tuple[str, int], str] = {}
+
+
+def probe_version(executable: str, *, runner: Callable[..., subprocess.CompletedProcess[str]] | None = None,
+                  timeout: float = 15) -> str:
+    from orchestrator.process_ownership import owned_run
+
+    key = None
+    if runner is None:
+        try:
+            path = Path(executable).resolve()
+            key = (str(path), path.stat().st_mtime_ns)
+            if key in _VERSION_CACHE:
+                return _VERSION_CACHE[key]
+        except OSError:
+            pass
     try:
-        proc = run(
-            [executable, "--version"],
-            capture_output=True,
-            text=True,
-            shell=False,
-            timeout=15,
-            check=False,
-        )
+        if runner is not None:
+            # Explicit injection is for deterministic command-plan tests only.
+            proc = runner([executable, "--version"], capture_output=True, text=True,
+                          shell=False, timeout=timeout, check=False)
+            output = proc.stdout or proc.stderr or ""
+        else:
+            proc = owned_run([executable, "--version"], timeout=timeout)
+            output = proc.stdout or proc.stderr or ""
     except (OSError, subprocess.TimeoutExpired):
         return "unknown"
-    text = (proc.stdout or proc.stderr or "").strip().splitlines()
-    return text[0][:120] if text else "unknown"
+    lines = output.strip().splitlines()
+    version = lines[0][:120] if lines else "unknown"
+    if key is not None:
+        # One entry per path; an updated executable invalidates the old result.
+        for old in list(_VERSION_CACHE):
+            if old[0] == key[0]:
+                del _VERSION_CACHE[old]
+        _VERSION_CACHE[key] = version
+    return version
 
 
 def build_grok_launch_plan(

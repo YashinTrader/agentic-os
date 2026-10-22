@@ -16,7 +16,7 @@ from orchestrator.rotating_log import RotatingLogWriter
 
 
 class DefaultConditionProbeTests(unittest.TestCase):
-    @patch("orchestrator.claude_event_consumer.subprocess.run", side_effect=OSError)
+    @patch("orchestrator.process_ownership.owned_run", side_effect=OSError)
     @patch("orchestrator.claude_event_consumer.resolve_executable", return_value="claude")
     def test_default_condition_probe_returns_false_when_bare_name_cannot_launch(
         self, _resolve, run
@@ -25,7 +25,7 @@ class DefaultConditionProbeTests(unittest.TestCase):
         self.assertEqual(run.call_args.args[0], ["claude", "auth", "status"])
         self.assertFalse(run.call_args.kwargs["shell"])
 
-    @patch("orchestrator.claude_event_consumer.subprocess.run")
+    @patch("orchestrator.process_ownership.owned_run")
     @patch(
         "orchestrator.claude_event_consumer.resolve_executable",
         return_value=r"C:\\Tools\\claude.CMD",
@@ -40,7 +40,7 @@ class DefaultConditionProbeTests(unittest.TestCase):
         )
         self.assertFalse(run.call_args.kwargs["shell"])
 
-    @patch("orchestrator.claude_event_consumer.subprocess.run")
+    @patch("orchestrator.process_ownership.owned_run")
     @patch("orchestrator.claude_event_consumer.resolve_executable", return_value="claude.CMD")
     def test_default_condition_probe_rejects_logged_out_status(self, _resolve, run):
         run.return_value.returncode = 0
@@ -48,7 +48,7 @@ class DefaultConditionProbeTests(unittest.TestCase):
 
         self.assertFalse(default_condition_probe("auth:claude"))
 
-    @patch("orchestrator.claude_event_consumer.subprocess.run")
+    @patch("orchestrator.process_ownership.owned_run")
     @patch("orchestrator.claude_event_consumer.resolve_executable", return_value="claude.CMD")
     def test_default_condition_probe_rejects_malformed_status(self, _resolve, run):
         run.return_value.returncode = 0

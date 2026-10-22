@@ -168,12 +168,14 @@ with patch.object(qp, 'run_quota_probe') as run:
         self.assertEqual(final["classification"], "probe_error")
 
     def fake_probe(self, provider, stdout, stderr="", code=0, hung=False):
+        clock = qp.time.monotonic
         proc = Mock(returncode=code)
         proc.communicate.side_effect = subprocess.TimeoutExpired("fake", 120) if hung else None
         proc.communicate.return_value = (stdout, stderr)
         with patch.object(qp, "resolve_executable", return_value="fake-cli"), \
              patch.object(qp, "owned_popen", return_value=proc) as spawn, \
-             patch.object(qp, "terminate_owned") as kill:
+             patch.object(qp, "terminate_owned") as kill, \
+             patch.object(qp.time, "monotonic", side_effect=[0, 0, 121] if hung else clock):
             result = qp.run_quota_probe(provider, config=qp.load_config(self.root))
         return result, spawn.call_args, kill
 

@@ -84,7 +84,21 @@ def pid_is_alive(pid: int, expected_start_time: str | None = None) -> bool | Non
     # Historical bare PIDs are deliberately not trusted during recovery.
     if not expected_start_time:
         return None
-    return process_start_time(pid) == expected_start_time
+    current = process_start_time(pid)
+    if current is not None:
+        return current == expected_start_time
+    if os.name == "nt":
+        handle = kernel.OpenProcess(0x1000, False, pid)
+        if not handle:
+            return False if ctypes.get_last_error() == 87 else None
+        try:
+            code = wintypes.DWORD()
+            if not kernel.GetExitCodeProcess(handle, ctypes.byref(code)):
+                return None
+            return False if code.value != 259 else None
+        finally:
+            kernel.CloseHandle(handle)
+    return False
 
 
 @dataclass
@@ -185,3 +199,29 @@ def terminate_owned(process) -> bool:
     except ProcessLookupError:
         return False
     return True
+
+
+def owned_run(argv, *, timeout: float, cwd=None, env=None, capture_output=True,
+              text=True, check=False, shell=False):
+    """Bound a short helper and its descendants without inherited pipe waits."""
+    import tempfile
+    from orchestrator.layer_heartbeat import wait_with_heartbeat
+
+    if shell or not capture_output or not text:
+        raise ValueError("owned_run requires text capture and shell=False")
+    with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
+        proc = owned_popen(argv, stdout=stdout, stderr=stderr, stdin=subprocess.DEVNULL,
+                           shell=False, cwd=cwd, env=env)
+        try:
+            wait_with_heartbeat(proc, timeout)
+        finally:
+            terminate_owned(proc)
+            proc.wait(timeout=2)
+        stdout.seek(0)
+        stderr.seek(0)
+        result = subprocess.CompletedProcess(argv, proc.returncode,
+                    stdout.read().decode("utf-8", errors="replace"),
+                    stderr.read().decode("utf-8", errors="replace"))
+        if check:
+            result.check_returncode()
+        return result
