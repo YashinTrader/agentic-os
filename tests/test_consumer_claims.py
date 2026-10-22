@@ -1,5 +1,6 @@
 """Offline recovery and fairness regressions; no providers or OS signals."""
 import json
+import os
 import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -85,16 +86,51 @@ class FairnessTests(unittest.TestCase):
         self.assertEqual(recovered[0]['prior_owner']['consumer_token'], 'dead')
         self.assertEqual(len(list((self.base / 'audit').glob('*.json'))), 1)
 
+    def test_dead_owner_without_recorded_child_recovered_once(self):
+        self.legacy(consumer_pid=111, consumer_start_time='old', consumer_token='dead',
+                    review_pid=None, review_start_time=None)
+        with patch('orchestrator.consumer_claims.process_start_time', return_value='reused-start'):
+            self.consumer.process_once()
+            self.consumer.process_once()
+        self.assertEqual(self.calls, ['old'])
+        recovered = [e for e in self.events if e['event'] == 'claim_recovered']
+        self.assertEqual(len(recovered), 1)
+        self.assertIn('no review child recorded', recovered[0]['reason'])
+        self.assertEqual(len(list((self.base / 'audit').glob('*.json'))), 1)
+
+    def test_unknown_tokened_owner_is_alerted_without_recovery(self):
+        self.legacy(consumer_pid=111, consumer_start_time='old', consumer_token='unknown',
+                    review_pid=None)
+        before = self.claim.read_bytes()
+        with patch('orchestrator.consumer_claims.process_liveness', return_value=None):
+            self.consumer.process_once()
+        self.assertEqual(self.calls, [])
+        self.assertEqual(self.claim.read_bytes(), before)
+        status = load_watcher_status(self.root)
+        self.assertTrue(status['stale_claim_alert_active'])
+        self.assertEqual(status['stale_claims'][0]['fingerprint'], self.fp)
+
     def test_live_or_unknown_owner_or_child_preserved(self):
         for owner, child in [(True, False), (None, False), (False, True), (False, None)]:
             with self.subTest(owner=owner, child=child):
                 self.legacy(consumer_pid=111, consumer_start_time='old', consumer_token='dead',
                             review_pid=222, review_start_time='child')
                 before = self.claim.read_bytes()
-                with patch('orchestrator.consumer_claims.process_liveness', side_effect=[owner, child]):
+                with patch('orchestrator.consumer_claims.process_liveness', side_effect=lambda pid, start: owner if pid == 111 else child):
                     self.consumer.process_once()
                 self.assertEqual(self.claim.read_bytes(), before)
         self.assertEqual(self.calls, [])
+
+    def test_stale_alert_excludes_current_token_and_live_foreign_owner(self):
+        from orchestrator.consumer_claims import stale_claims
+        self.legacy(consumer_pid=111, consumer_start_time='old', consumer_token='foreign')
+        for alive, expected in [(True, False), (False, True), (None, True)]:
+            with self.subTest(alive=alive), patch(
+                    'orchestrator.consumer_claims.process_liveness', return_value=alive):
+                self.assertEqual(bool(stale_claims(self.root, datetime.now(timezone.utc),
+                                                  consumer_token=self.consumer.consumer_token)), expected)
+                self.assertEqual(stale_claims(self.root, datetime.now(timezone.utc),
+                                              consumer_token='foreign'), [])
 
     def test_claim_identity_available_during_processor_and_child_callback(self):
         def processor(**kw):
@@ -172,6 +208,25 @@ class OperatorTests(unittest.TestCase):
         self.assertEqual(record['reason'], 'confirmed abandoned')
         self.assertEqual(record['prior_owner']['assignment_id'], 'old')
 
+    def test_release_dead_owner_without_child_audits_and_unknown_child_refuses(self):
+        from orchestrator.consumer_claims import release
+        self.legacy(consumer_pid=111, consumer_start_time='old', consumer_token='dead',
+                    review_pid=None)
+        with patch('orchestrator.consumer_claims.process_start_time', return_value='reused-start'):
+            record = release(self.root, self.fp, actor='op', reason='abandoned before child recorded')
+        self.assertFalse(self.claim.exists())
+        self.assertEqual(record['event'], 'claim_released')
+        self.assertEqual(record['actor'], 'op')
+        self.assertIsNone(record['prior_owner']['review_pid'])
+        self.legacy(consumer_pid=111, consumer_start_time='old', consumer_token='dead',
+                    review_pid=222, review_start_time='child')
+        with patch('orchestrator.consumer_claims.process_liveness',
+                   side_effect=lambda pid, start: False if pid == 111 else None):
+            with self.assertRaisesRegex(ValueError, 'live or unknown'):
+                release(self.root, self.fp, actor='op', reason='abandoned')
+        self.assertTrue(self.claim.exists())
+        self.assertEqual(len(list((self.base / 'audit').glob('*.json'))), 1)
+
     def test_operator_refuses_resolved_live_unknown_and_empty_audit(self):
         from orchestrator.consumer_claims import release
         self.legacy(consumer_pid=111, consumer_start_time='start', consumer_token='owner')
@@ -226,10 +281,11 @@ class OperatorTests(unittest.TestCase):
 
     def test_new_claim_with_incomplete_identity_is_not_operator_released(self):
         from orchestrator.consumer_claims import release
-        self.legacy(consumer_token='owner', consumer_pid=None)
+        self.legacy(consumer_token='owner', consumer_pid=111)
         with self.assertRaisesRegex(ValueError, 'live or unknown'):
             release(self.root, self.fp, actor='op', reason='abandoned')
 
+    @patch.dict(os.environ, {}, clear=False)
     def test_cli_list_release_and_bad_key(self):
         from scripts.consumer_claims import main
         from contextlib import redirect_stdout, redirect_stderr

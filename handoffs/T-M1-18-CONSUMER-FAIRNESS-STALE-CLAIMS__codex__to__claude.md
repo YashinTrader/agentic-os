@@ -77,3 +77,82 @@ raw_output_sha256: c9fa8948b53d07ddead182803eed868163731c4effb7d6c7e8b5f4a64abd6
 dependency_install: skipped
 dependency_install_reason: Network forbidden; dependencies unchanged; existing local Python environment used
 artifact_origin_path: C:/Users/gabot/agentic-os-worktrees/m1-18-consumerfairness
+
+
+## T-M1-18B
+
+Review follow-up F1/F2 implemented in this isolated clone. This section supersedes
+above caveats about no-child recovery and the provenance assertion.
+
+- `acquire` recovers a tokened claim only when its consumer is provably dead and
+  either no child PID was recorded or the recorded child is provably dead. Audit
+  reasons distinguish these cases. The consumer-owned KILL_ON_JOB_CLOSE job
+  prevents an unrecorded review child from surviving its consumer.
+- `stale_claims` alerts on foreign tokened claims whose consumer is dead or
+  unknown; both consumer call sites supply the current token to exclude their
+  own claim. Live foreign consumers remain excluded.
+- `release` skips evidence with PID None as no process recorded. Recorded PIDs
+  with missing creation identity or unknown liveness still refuse release.
+- The provenance test now pins the last four arguments to state root and deployed
+  config root; its other assertions are unchanged. Recovery documentation updated.
+- Regressions verify start-time-validated no-child recovery and exactly one review,
+  unknown-owner alerts without recovery, current-token/live-owner alert exclusion,
+  audited no-child release, and recorded unknown-child refusal. Existing recorded
+  alive/unknown child recovery fences remain covered.
+
+Verification: new regressions first reproduced two failures and one error; all
+24 claim tests now pass. The initial direct unittest invocation hit sandbox ACL
+errors in TemporaryDirectory; the existing clone-local run_focused.py runner
+uses inherited ACLs and clone-local fixtures without changing production code.
+The combined suite hit a config-root environment leak into the work-lock fixture;
+required modules are rerun in separate processes, preserving test isolation.
+Artifacts: runtime/dispatch/m1-18/followup-test_*.txt and followup-claims.txt.
+Offline trace run: 66 tests passed; consumer_claims statement coverage 81.3%,
+claude_event_consumer 90.1%, claims CLI 90.0% (coverage.json).
+`python scripts/validate.py`: exit 0, existing deprecated-log warnings only.
+`git diff --check`: exit 0.
+
+No push, merge, network, process termination, dependency installation, or commands
+against the canonical checkout. Git metadata is read-only in this sandbox, so no
+TDD checkpoint or implementation commits were made. Changes remain reviewable in
+the working tree on the existing branch. No dependency audit was run because
+network is forbidden and dependencies are unchanged.
+
+Final required-module results (separate processes, all exit 0): consumer_claims
+24, claude_reviewer_adapter 25, provenance_deploy_root 16, config_root 7,
+claude_event_consumer 17, layer_supervisor 19, windows_write_contention 17,
+prelaunch_failure_isolation 15, work_lock 24: total 164 tests, 162 passed and
+2 skipped. Skips are test_shutdown_terminates_owned_tree and
+test_real_dummy_crash_restarts_with_bounded_stderr_and_recovery, because the
+task forbids killing processes. The work-lock failure from the combined run
+passes under module process isolation; no work-lock code or tests were changed.
+
+## T-M1-18C
+
+Fixed entrypoint test environment isolation while preserving all T-M1-18B
+working-tree changes and assertions. Searched all tests/ for direct main()
+calls: provenance tests, the achievable evidence seal test (including its
+nested verifier invocation), and the claims CLI test now use
+patch.dict(os.environ, {}, clear=False). ConfigRootTests already restores the
+environment through setUp/addCleanup; clear=False is now explicit there.
+
+Added a guard invoking the real orchestrator main with process_once mocked.
+It verifies both roots are exported inside isolation, then checks the entire
+environment is restored, including absent roots and pre-existing root values.
+
+Verification uses the existing clone-local ACL-compatible run_focused.py runner:
+the literal python -m unittest tests.test_provenance_deploy_root tests.test_work_lock
+command encountered sandbox TemporaryDirectory permission errors. The same two
+modules pass together: 41 tests, exit 0. Claims plus work_lock also pass together:
+48 tests, exit 0. No assertions were weakened and no production code was changed
+for T-M1-18C. The full suite was not run, as instructed.
+
+python scripts/validate.py: exit 0 (existing deprecated-log warnings only).
+No push, merge, network, process termination, or canonical-checkout commands.
+
+Combined importer check: test_achievable_evidence_seal, test_config_root,
+test_provenance_deploy_root, and test_work_lock, plus changed test_consumer_claims:
+76 tests passed together in one process. This covers every test module importing
+scripts.run_* (including from scripts import run_*) or dispatch.roots.
+Output: runtime/dispatch/m1-18/isolation-combined.txt.
+git diff --check: exit 0.

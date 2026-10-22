@@ -10,15 +10,18 @@ observed, the tick does not launch another child, even if activity is missing.
 New claims in `runtime/dispatch/claude_event_consumer/claims` contain
 `consumer_pid`, `consumer_start_time`, a unique `consumer_token`, and
 `review_pid`/`review_start_time`. The dispatcher records child identity before
-monitoring the review. Missing identity or inaccessible process information is
-unknown and prevents automatic release. PID reuse is checked against OS creation
-time. Automatic recovery requires both recorded identities to be provably dead,
-and no fingerprint resolution; acquisition and recovery share a short OS lock.
+monitoring the review. Missing creation identity for a recorded PID or inaccessible
+process information is unknown and prevents automatic release. PID reuse is checked against OS creation
+time. Automatic recovery requires a provably dead consumer and either no recorded
+review child or a provably dead recorded child, and no fingerprint resolution.
+The consumer-owned KILL_ON_JOB_CLOSE job prevents an unrecorded child from
+outliving its consumer. Acquisition and recovery share a short OS lock.
 The token also fences child updates and normal claim cleanup.
 
 Legacy claims remain in place. Consumer status exposes `stale_claims` with
 fingerprint, assignment, age in seconds (null for unreadable timestamps), and
-`stale_claim_alert_active`. Idle ticks clear inherited review lifecycle fields;
+`stale_claim_alert_active`. Tokened claims owned by another consumer also alert
+when their consumer liveness is dead or unknown. Idle ticks clear inherited review lifecycle fields;
 an idle consumer with legacy claims reports `blocked_stale_claim`. A completed
 review can still report `resolved` while the stale-claim alert remains active.
 

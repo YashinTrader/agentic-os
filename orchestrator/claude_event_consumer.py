@@ -206,7 +206,7 @@ class ClaudeEventConsumer:
             (now - _parse_time(str(state["deferred_since"]))).total_seconds() > DEFERRED_ALERT_SECONDS
         ]
         was_escalated = bool(current.get("deferred_escalation_active"))
-        stale = consumer_claims.stale_claims(self.repo_root, now)
+        stale = consumer_claims.stale_claims(self.repo_root, now, consumer_token=self.consumer_token)
         current.update({
             **self.root_audit,
             "schema_version": "1.0",
@@ -277,7 +277,7 @@ class ClaudeEventConsumer:
             break
         else:
             current = load_watcher_status(self.repo_root)
-            stale = consumer_claims.stale_claims(self.repo_root, self.now())
+            stale = consumer_claims.stale_claims(self.repo_root, self.now(), consumer_token=self.consumer_token)
             self._status(lifecycle_state="blocked_stale_claim" if stale else "idle",
                          active_review_assignment=None, pid=None,
                          last_blocker=(skipped or {}).get("blocked_on") or (skipped or {}).get("last_blocker"),

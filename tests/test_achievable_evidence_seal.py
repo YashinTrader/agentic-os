@@ -1,6 +1,7 @@
 """Exercise closeout ordering with real Git and only the unittest child mocked."""
 
 import io
+import os
 import subprocess
 import sys
 import tempfile
@@ -17,6 +18,7 @@ from tests.test_phase3_4_1_integrity_closeout import _artifact, _verification, _
 
 
 class AchievableSealTests(unittest.TestCase):
+    @patch.dict(os.environ, {}, clear=False)
     def test_real_git_closeout_and_every_sealed_field_tamper(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp).resolve()

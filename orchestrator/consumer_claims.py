@@ -110,10 +110,15 @@ def acquire(root: Path, fingerprint: str, payload: dict) -> tuple[bool, dict | N
             return False, None
         if path.exists():
             prior = read_record(path)
-            if not prior.get('consumer_token') or claim_liveness(prior) != (False, False):
+            consumer_alive, child_alive = claim_liveness(prior)
+            no_child = prior.get('review_pid') is None
+            if not prior.get('consumer_token') or consumer_alive is not False or (not no_child and child_alive is not False):
                 return False, None
-            recovered = audit(root, 'claim_recovered', prior, actor='consumer',
-                              reason='consumer and review child identities are provably dead')
+            # owned_popen's consumer-owned KILL_ON_JOB_CLOSE job prevents an
+            # unrecorded review child from surviving a provably dead consumer.
+            reason = ('consumer identity is provably dead; no review child recorded' if no_child
+                      else 'consumer and review child identities are provably dead')
+            recovered = audit(root, 'claim_recovered', prior, actor='consumer', reason=reason)
             path.unlink()
         path.parent.mkdir(parents=True, exist_ok=True)
         atomic_create_json(path, payload)
@@ -139,21 +144,27 @@ def finish(root: Path, fingerprint: str, token: str) -> None:
             path.unlink()
 
 
-def stale_claims(root: Path, now: datetime) -> list[dict]:
+def stale_claims(root: Path, now: datetime, *, consumer_token: str | None = None) -> list[dict]:
     result = []
     for path in sorted((directory(root) / 'claims').glob('*.json')):
         try:
             prior = read_record(path)
         except (OSError, ValueError):
             prior = {}
-        if prior.get('consumer_token') and prior.get('consumer_pid') and prior.get('consumer_start_time'):
-            continue
+        reason = 'legacy or unreadable owner identity'
+        if prior.get('consumer_token'):
+            if prior['consumer_token'] == consumer_token:
+                continue
+            alive = process_liveness(prior.get('consumer_pid'), prior.get('consumer_start_time'))
+            if alive is True:
+                continue
+            reason = 'consumer liveness is unknown' if alive is None else 'consumer identity is provably dead'
         try:
             age = max(0, int((now - datetime.fromisoformat(prior['claimed_at'].replace('Z', '+00:00'))).total_seconds()))
         except (KeyError, TypeError, ValueError):
             age = None
         result.append(dict(fingerprint=path.stem, assignment_id=prior.get('assignment_id'),
-                           age_seconds=age, reason='legacy or unreadable owner identity'))
+                           age_seconds=age, reason=reason))
     return result
 
 
@@ -212,7 +223,7 @@ def release(root: Path, key: str, *, actor: str, reason: str, kind: str = 'claim
             if lease.exists():
                 lease_record = read_record(lease)
                 evidence.extend(_review_evidence(root, lease_record) + _owner_evidence(lease_record))
-        if any(process_liveness(pid, start) is not False for pid, start in evidence):
+        if any(process_liveness(pid, start) is not False for pid, start in evidence if pid is not None):
             raise ValueError('live or unknown process owns this record')
         record = audit(root, f'{kind}_released', prior, actor=actor, reason=reason)
         path.unlink()
