@@ -6,6 +6,7 @@ import signal
 import subprocess
 import threading
 import time
+import traceback
 import uuid
 from collections import deque
 from datetime import datetime, timezone
@@ -93,6 +94,8 @@ class LayerSupervisor:
         self.instance_token = uuid.uuid4().hex
         self.stop_request = None
         self.recorded_children = []
+        self.supervisor_errors = []
+        self.supervisor_error_count = 0
         self.identity = {"pid": os.getpid(), "process_start_time": process_start_time(os.getpid()),
                          "instance_token": self.instance_token}
         previous = read_heartbeat(self.path).get("children", {})
@@ -127,6 +130,8 @@ class LayerSupervisor:
             "state": state,
             "stop_request": self.stop_request,
             "recorded_children": self.recorded_children,
+            "supervisor_errors": self.supervisor_errors,
+            "supervisor_error_count": self.supervisor_error_count,
             "children": {name: child.status for name, child in self.children.items()},
         })
 
@@ -169,9 +174,18 @@ class LayerSupervisor:
                 pass
         # Also clean up surviving descendants after a graceful root exit.
         terminate_owned(process)
-        process.wait(timeout=5)
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            child.status.update(state="terminating", alive=True, ticking=False, progressing=False,
+                                terminating_pid=process.pid,
+                                terminating_process_start_time=child.status.get("process_start_time"))
+            child.status.setdefault("terminating_at", timestamp())
+            return False
         if child.tail:
             child.tail.thread.join(timeout=1)
+        child.status.pop("terminating_at", None)
+        return True
 
     def failed(self, child: Child, now: float, code: int | None, reason: str, stderr: str):
         child.exits.append(now)
@@ -200,58 +214,99 @@ class LayerSupervisor:
             self.stop_request = request
             self.request_stop()
         now = self.clock()
-        for child in self.children.values():
+        for name, child in self.children.items():
             if self.stop_requested:
                 break
-            if child.process is None:
-                if child.status["state"] != "crash_loop" and now >= child.due:
-                    child.status["started_at"] = timestamp()
-                    self.start(child, now)
-                continue
-            code = child.process.poll()
-            if code is not None:
-                self.terminate(child)
-                self.failed(child, now, code, "exited", child.tail.text() if child.tail else "")
-                continue
-            hb = read_heartbeat(child.heartbeat)
-            ticks = hb.get("ticks")
-            if hb.get("token") == child.token and isinstance(ticks, int) and ticks > child.heartbeat_ticks:
-                child.heartbeat_ticks = ticks
-                child.observed = now
-                child.status.update({key: hb.get(key) for key in ("ticks", "last_tick_at", "last_progress_at")})
-                child.status.update(state="running", ticking=True, heartbeat_pid=hb.get("pid"))
-                heartbeat_pid = hb.get("pid")
-                if type(heartbeat_pid) is int and heartbeat_pid > 0:
-                    start = process_start_time(heartbeat_pid)
-                    child.status["heartbeat_process_start_time"] = start
-                    identity = {"pid": heartbeat_pid, "process_start_time": start}
-                    # Windows venv shims and their interpreters have different
-                    # PIDs. Retain both identities for external exit verification.
-                    if start and identity not in self.recorded_children:
-                        self.recorded_children.append(identity)
-                if child.exit_started is not None:
-                    child.status["recovery_seconds"] = now - child.exit_started
-                    child.exit_started = None
-            progress = child.status.get("last_progress_at")
-            if progress and progress != child.progress_marker:
-                child.progress_marker = progress
-                child.progress_observed = now
-            child.status["progressing"] = bool(progress) and now - child.progress_observed <= self.stale_seconds
-            if now - child.observed > self.stale_seconds:
-                # Persist the classification before attempting potentially slow termination.
-                child.status.update(state="hung", ticking=False, reason="stale heartbeat")
-                self.save()
-                self.terminate(child)
-                self.failed(child, self.clock(), child.process.returncode, "hung",
-                            child.tail.text() if child.tail else "")
-            elif now - child.started > 600:
-                child.failures = 0
+            try:
+                self.supervise_child(child, now)
+            except Exception as exc:
+                self.record_error(name=name, child=child, exc=exc)
         self.save()
+
+    def record_error(self, *, name, child, exc):
+        evidence = {"at": timestamp(), "child": name, "error": str(exc),
+                    "traceback_tail": traceback.format_exc()[-STDERR_LIMIT:]}
+        self.supervisor_error_count += 1
+        self.supervisor_errors = (self.supervisor_errors + [evidence])[-20:]
+        child.status["supervisor_error_count"] = child.status.get("supervisor_error_count", 0) + 1
+        child.status["supervisor_error"] = evidence
+        # Feed the same rolling breaker without discarding a live owned process.
+        process = child.process
+        self.failed(child, self.clock(), None, "supervision_error", evidence["traceback_tail"])
+        child.process = process
+        if process is not None:
+            child.status.update(state="terminating", alive=True, terminating_pid=process.pid,
+                                terminating_process_start_time=child.status.get("process_start_time"))
+            child.status.setdefault("terminating_at", timestamp())
+
+    def supervise_child(self, child, now):
+        if child.status.get("circuit_open") and child.process is not None:
+            if self.terminate(child):
+                child.status.update(state="crash_loop", alive=False)
+            return
+        if child.status.get("state") == "terminating":
+            if not self.terminate(child):
+                return
+            self.failed(child, now, child.process.returncode, child.status.get("reason", "hung"),
+                        child.tail.text() if child.tail else "")
+            return
+        if child.process is None:
+            if child.status["state"] != "crash_loop" and now >= child.due:
+                child.status["started_at"] = timestamp()
+                self.start(child, now)
+            return
+        code = child.process.poll()
+        if code is not None:
+            if not self.terminate(child):
+                return
+            self.failed(child, now, code, "exited", child.tail.text() if child.tail else "")
+            return
+        hb = read_heartbeat(child.heartbeat)
+        ticks = hb.get("ticks")
+        if hb.get("token") == child.token and isinstance(ticks, int) and ticks > child.heartbeat_ticks:
+            child.heartbeat_ticks = ticks
+            child.observed = now
+            child.status.update({key: hb.get(key) for key in ("ticks", "last_tick_at", "last_progress_at")})
+            child.status.update(state="running", ticking=True, heartbeat_pid=hb.get("pid"))
+            heartbeat_pid = hb.get("pid")
+            if type(heartbeat_pid) is int and heartbeat_pid > 0:
+                start = process_start_time(heartbeat_pid)
+                child.status["heartbeat_process_start_time"] = start
+                identity = {"pid": heartbeat_pid, "process_start_time": start}
+                # Windows venv shims and their interpreters have different
+                # PIDs. Retain both identities for external exit verification.
+                if start and identity not in self.recorded_children:
+                    self.recorded_children.append(identity)
+            if child.exit_started is not None:
+                child.status["recovery_seconds"] = now - child.exit_started
+                child.exit_started = None
+        progress = child.status.get("last_progress_at")
+        if progress and progress != child.progress_marker:
+            child.progress_marker = progress
+            child.progress_observed = now
+        child.status["progressing"] = bool(progress) and now - child.progress_observed <= self.stale_seconds
+        if now - child.observed > self.stale_seconds:
+            # Persist the classification before attempting potentially slow termination.
+            child.status.update(state="hung", ticking=False, reason="hung")
+            self.save()
+            if not self.terminate(child):
+                return
+            self.failed(child, self.clock(), child.process.returncode, "hung",
+                        child.tail.text() if child.tail else "")
+        elif now - child.started > 600:
+            child.failures = 0
 
     def shutdown(self):
         self.stop_requested = True
         for child in self.children.values():
-            self.terminate(child, planned=True)
+            try:
+                gone = self.terminate(child, planned=True)
+            except Exception as exc:
+                self.record_error(name=next(name for name, value in self.children.items() if value is child),
+                                  child=child, exc=exc)
+                continue
+            if gone is False:
+                continue
             child.status.update(state="stopped", alive=False, ticking=False, progressing=False,
                                 stopped_at=timestamp(),
                                 stopped_exit_code=child.process.returncode if child.process else None)
@@ -288,7 +343,14 @@ class LayerSupervisor:
                 previous[sig] = signal.signal(sig, self.request_stop)
         try:
             while not self.stop_requested:
-                self.step()
+                try:
+                    self.step()
+                except Exception as exc:
+                    self.supervisor_error_count += 1
+                    self.supervisor_errors = (self.supervisor_errors + [{
+                        "at": timestamp(), "child": None, "error": str(exc),
+                        "traceback_tail": traceback.format_exc()[-STDERR_LIMIT:],
+                    }])[-20:]
                 time.sleep(0.25)
         finally:
             self.shutdown()

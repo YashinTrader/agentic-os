@@ -25,6 +25,7 @@ POST_TEST_ALLOWLIST_EXACT = frozenset(
     {
         "handoffs/T-M1-27-CAPACITY-LEAK__codex__to__claude.md",
         "handoffs/T-M1-28-LEGACY-STATUS-TAKEOVER__codex__to__claude.md",
+        "handoffs/T-M1-29-LAYER-TERMINATE-CRASH__codex__to__claude.md",
         "handoffs/T-M1-22-POSTDEPLOY-HYGIENE__codex__to__claude.md",
         "handoffs/T-M1-25-GRACEFUL-SUPERVISOR-STOP__codex__to__claude.md",
         "handoffs/T-M1-26-GROK-STREAMING-ACTIVITY__codex__to__claude.md",
@@ -44,6 +45,7 @@ POST_TEST_ALLOWLIST_EXACT = frozenset(
         "handoffs/T-M1-INTEGRATION-R6__claude__to__gabriel.md",
         "handoffs/T-M1-INTEGRATION-R7__claude__to__gabriel.md",
         "handoffs/T-M1-INTEGRATION-R8__claude__to__gabriel.md",
+        "handoffs/T-M1-INTEGRATION-R9__claude__to__gabriel.md",
         "handoffs/T-M1-06-CLI-ENCODING__codex__to__claude.md",
         "handoffs/T-M1-02D-PAID-QUOTA-PROBE__codex__to__claude.md",
         "handoffs/T-M1-11-PROCESS-OWNERSHIP-FENCING__codex__to__claude.md",
