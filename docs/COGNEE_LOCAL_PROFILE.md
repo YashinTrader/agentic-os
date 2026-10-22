@@ -49,9 +49,10 @@ local-first boundary. Cloud OpenAI endpoints such as
 
 ## Dependency
 
-`requirements.txt` now includes `cognee==1.1.0`, the current PyPI release at
-implementation time. The dependency is declared for bootstrap completeness,
-but the dry-run tests do not import it and do not require optional services.
+Cognee is optional and pinned in `requirements-memory.txt`. Install it explicitly
+with `python -m pip install -r requirements-memory.txt` when enabling the memory
+integration. Core installation and the standard-library profile checker/tests
+require no Cognee or native Rust/Cargo toolchain.
 
 ## Source Notes
 

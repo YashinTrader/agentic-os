@@ -204,9 +204,11 @@ class ClaudeEventConsumer:
 
     def _status(self, **updates: Any) -> dict[str, Any]:
         pokes, _ = list_orchestrator_pokes(self.repo_root)
+        eligible = [poke for poke in pokes
+                    if poke.get("event") == "assignment_completed" and poke.get("source") != "claude"]
         ages = []
         now = self.now()
-        for poke in pokes:
+        for poke in eligible:
             try:
                 ages.append(max(0, int((now - _parse_time(str(poke["created_at"]))).total_seconds())))
             except (KeyError, TypeError, ValueError):
@@ -226,6 +228,7 @@ class ClaudeEventConsumer:
             **self.root_audit,
             "schema_version": "1.0",
             "heartbeat_at": _now(),
+            "ignored_pending_poke_count": len(pokes) - len(eligible),
             "oldest_pending_poke_age_seconds": max(ages, default=0),
             "alert_active": max(ages, default=0) > UNHANDLED_ALERT_SECONDS or bool(escalated) or bool(stale) or bool(stale_leases),
             "stale_review_leases": stale_leases,

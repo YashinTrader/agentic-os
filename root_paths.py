@@ -5,6 +5,7 @@ both roots once so spawned helpers use the same versioned configuration.
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
 import os
 import subprocess
 from subprocess import run as run_command
@@ -46,3 +47,25 @@ def root_metadata(state_root: Path) -> dict:
         sha = None
     return {"config_root": str(config_root), "config_root_git_sha": sha,
             "state_root": str(Path(state_root).resolve())}
+
+
+@contextmanager
+def operator_roots(repo_root: Path, explicit=None):
+    """Select CLI roots for one operation, preserving legacy explicit-root fixtures."""
+    state = Path(explicit).resolve() if explicit is not None else resolve_state_root(repo_root)
+    config = resolve_config_root(state if explicit is not None else repo_root)
+    keys = ("AGENTIC_OS_STATE_ROOT", "AGENTIC_OS_CONFIG_ROOT")
+    previous = {key: os.environ.get(key) for key in keys}
+    try:
+        os.environ[keys[0]] = str(state)
+        # Without an override, legacy explicit roots use library fallback, which
+        # permits partial configurations and a not-yet-created runtime directory.
+        if explicit is None or previous[keys[1]] is not None:
+            os.environ[keys[1]] = str(config)
+        yield state
+    finally:
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value

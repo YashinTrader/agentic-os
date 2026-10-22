@@ -1,0 +1,2 @@
+# Optional Cognee memory integration; not needed by core or profile checks.
+cognee==1.1.0

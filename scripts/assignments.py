@@ -14,6 +14,8 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
+from root_paths import operator_roots
+
 from dispatch.assignment_channel import (  # noqa: E402
     accept_assignment,
     claim_assignment,
@@ -506,8 +508,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--root",
-        default=str(REPO_ROOT),
-        help="Repository root (default: auto-detected).",
+        default=None,
+        help="State root (default: AGENTIC_OS_STATE_ROOT or own checkout).",
     )
     sub = p.add_subparsers(dest="command", required=True)
 
@@ -663,7 +665,9 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
-    return int(args.func(args))
+    with operator_roots(REPO_ROOT, args.root) as root:
+        args.root = root
+        return int(args.func(args))
 
 
 if __name__ == "__main__":

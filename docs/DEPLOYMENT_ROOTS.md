@@ -43,3 +43,16 @@ For deployment checks against old runtime state, inspect the consumer's current
 and alert even while newer work resolves. See
 [consumer claim recovery](CONSUMER_CLAIM_RECOVERY.md) for the audited claim and
 review-lease operator commands; run them against the selected state root.
+
+
+Operator CLIs `scripts/assignments.py`, `scripts/work_lock.py`, and
+`scripts/consumer_claims.py` select mutable state from explicit `--root`, then
+`AGENTIC_OS_STATE_ROOT`, then their own checkout. An explicit root retains legacy
+behavior, including roots where `runtime/` has not yet been created. The config
+root uses `AGENTIC_OS_CONFIG_ROOT`, falling back to the explicit legacy root or
+the CLI checkout. Selected roots are scoped to each CLI operation and the caller environment is restored.
+Legacy explicit roots without a config override retain library config fallback.
+
+Consumer poke-age alerts count only `assignment_completed` events whose source
+is not `claude`, matching processing eligibility. `ignored_pending_poke_count`
+reports other queued notices without aging them into an unhandled-poke alert.

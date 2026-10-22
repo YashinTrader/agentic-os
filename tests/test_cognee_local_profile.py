@@ -98,8 +98,8 @@ class CogneeLocalProfileTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("missing required keys", result.stderr)
 
-    def test_requirements_declares_cognee_dependency(self) -> None:
-        requirements = (REPO_ROOT / "requirements.txt").read_text(encoding="utf-8").splitlines()
+    def test_optional_requirements_declares_cognee_dependency(self) -> None:
+        requirements = (REPO_ROOT / "requirements-memory.txt").read_text(encoding="utf-8").splitlines()
 
         self.assertIn("cognee==1.1.0", requirements)
 
