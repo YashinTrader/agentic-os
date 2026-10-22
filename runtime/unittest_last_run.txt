@@ -1,4 +1,4 @@
-timestamp: 2026-10-22T08:20:39Z
+timestamp: 2026-10-22T10:39:01Z
 dependency_install: skipped
 dependency_install_reason: cognee==1.1.0 cannot build on this host (Rust/Cargo); see docs/RUN_TESTS_BOOTSTRAP_BLOCKER.md
 known_exempt_failures: []
@@ -7,14 +7,14 @@ artifact_origin_path: C:/Users/gabot/agentic-os-worktrees/m1-integration
 hostname: AIAG
 python_version: 3.11.15
 command_line: ["C:\\Users\\gabot\\AppData\\Local\\hermes\\hermes-agent\\venv\\Scripts\\python.exe", "-m", "unittest", "discover", "-s", "tests", "-p", "test_*.py", "-v"]
-raw_output_sha256: ae9dd12d5c0922fe524ab77b760c0e41fa5147a876929e0aa2f01027251df3b4
+raw_output_sha256: 924a2d1c960c3d92076d494dceef48deb30ffa70cf91e2a8e0ec9d2e0384ad9f
 repo_root: C:/Users/gabot/agentic-os-worktrees/m1-integration
 commit: unknown
-commit_full: cdcba70f32a44fc211ea30de0e3f026870cbfd41
+commit_full: d422a4241049f0790b9f60dd59223e3c0f443027
 python: C:\Users\gabot\AppData\Local\hermes\hermes-agent\venv\Scripts\python.exe
-test_count: 868
+test_count: 880
 exit_code: 0
-evidence_block_sha256: 1eff6384259a769dd68af685cf509e8e112e9a2bea168bcef6f14fd6d1e33aa4
+evidence_block_sha256: e2b437af6f7b00872a77ed72f9ad8e09ab048a2d8ff444056425714da537efb0
 --- raw output ---
 dependency_install: skipped
 dependency_install_reason: cognee==1.1.0 cannot build on this host (Rust/Cargo); see docs/RUN_TESTS_BOOTSTRAP_BLOCKER.md
@@ -793,6 +793,18 @@ test_repository_default_model (test_quota_probe.QuotaProbeTests.test_repository_
 test_sequential_provider_delay_is_included_in_reservation (test_quota_probe.QuotaProbeTests.test_sequential_provider_delay_is_included_in_reservation) ... ok
 test_success_persists_eligibility_for_all_runs_before_single_dispatch (test_quota_probe.QuotaProbeTests.test_success_persists_eligibility_for_all_runs_before_single_dispatch) ... ok
 test_supervisor_status_contains_paid_probe_fields (test_quota_probe.QuotaProbeTests.test_supervisor_status_contains_paid_probe_fields) ... ok
+test_assignment_lease_remains_capacity_when_other_slots_free (test_review_lease_recovery.ReviewLeaseRecoveryTests.test_assignment_lease_remains_capacity_when_other_slots_free) ... ok
+test_audit_failure_keeps_lease (test_review_lease_recovery.ReviewLeaseRecoveryTests.test_audit_failure_keeps_lease) ... ok
+test_competing_recovery_acquires_only_one_slot (test_review_lease_recovery.ReviewLeaseRecoveryTests.test_competing_recovery_acquires_only_one_slot) ... ok
+test_dead_consumer_no_child_and_dead_child_recover_claim_and_lease_once (test_review_lease_recovery.ReviewLeaseRecoveryTests.test_dead_consumer_no_child_and_dead_child_recover_claim_and_lease_once) ... ok
+test_deferral_reason_preserved_for_auth_and_failure (test_review_lease_recovery.ReviewLeaseRecoveryTests.test_deferral_reason_preserved_for_auth_and_failure) ... ok
+test_incomplete_identity_and_unreadable_evidence_stay_fenced (test_review_lease_recovery.ReviewLeaseRecoveryTests.test_incomplete_identity_and_unreadable_evidence_stay_fenced) ... ok
+test_legacy_capacity_is_visible_readable_and_operator_release_retries_once (test_review_lease_recovery.ReviewLeaseRecoveryTests.test_legacy_capacity_is_visible_readable_and_operator_release_retries_once) ... ok
+test_live_lease_is_capacity_without_stale_alert (test_review_lease_recovery.ReviewLeaseRecoveryTests.test_live_lease_is_capacity_without_stale_alert) ... ok
+test_live_unknown_owner_or_child_preserves_lease (test_review_lease_recovery.ReviewLeaseRecoveryTests.test_live_unknown_owner_or_child_preserves_lease) ... ok
+test_no_recorded_child_recovers_before_capacity_check (test_review_lease_recovery.ReviewLeaseRecoveryTests.test_no_recorded_child_recovers_before_capacity_check) ... ok
+test_run_state_child_fences_even_if_not_recorded_in_lease (test_review_lease_recovery.ReviewLeaseRecoveryTests.test_run_state_child_fences_even_if_not_recorded_in_lease) ... ok
+test_unreadable_lease_counts_and_alerts (test_review_lease_recovery.ReviewLeaseRecoveryTests.test_unreadable_lease_counts_and_alerts) ... ok
 test_blocked_status (test_risk_gate.RiskGateTests.test_blocked_status) ... ok
 test_ci_deployment_plan_is_human (test_risk_gate.RiskGateTests.test_ci_deployment_plan_is_human) ... ok
 test_dashboard_read_only_task_is_reviewer_or_none (test_risk_gate.RiskGateTests.test_dashboard_read_only_task_is_reviewer_or_none) ... ok
@@ -908,6 +920,6 @@ test_worker_correction_does_not_claim_parent_reservation (test_work_lock.WorkLoc
 test_yaml_followups_inherit_parent_task_and_explicit_split (test_work_lock.WorkLockTests.test_yaml_followups_inherit_parent_task_and_explicit_split) ... ok
 
 ----------------------------------------------------------------------
-Ran 868 tests in 4718.914s
+Ran 880 tests in 3881.437s
 
 OK (skipped=3)
