@@ -6,12 +6,14 @@ from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from root_paths import operator_roots
+
 from dispatch import work_lock
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--root', type=Path, default=Path(__file__).resolve().parents[1])
+    parser.add_argument('--root', type=Path, default=None)
     sub = parser.add_subparsers(dest='command', required=True)
     for name in ('acquire', 'release', 'status', 'supersede'):
         command = sub.add_parser(name)
@@ -26,15 +28,16 @@ def main():
             command.add_argument('--run-id', default='')
             command.add_argument('--base-sha', default='')
             command.add_argument('--branch', default='')
-    args = vars(parser.parse_args())
-    root = args.pop('root').resolve()
+    args = vars(parser.parse_args(argv))
+    explicit = args.pop('root')
     command = args.pop('command')
     logical_id = args.pop('logical_task_id')
     try:
-        result = getattr(work_lock, command)(root, logical_id, **args)
+        with operator_roots(Path(__file__).resolve().parents[1], explicit) as root:
+            result = getattr(work_lock, command)(root, logical_id, **args)
         print(json.dumps(result, indent=2))
         return 0
-    except (work_lock.WorkLockError, OSError) as exc:
+    except (work_lock.WorkLockError, OSError, ValueError) as exc:
         print(str(exc), file=sys.stderr)
         return 1
 
