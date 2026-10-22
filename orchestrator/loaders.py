@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from dispatch.roots import resolve_config_root
+from root_paths import resolve_config_root
 
 import yaml
 

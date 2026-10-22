@@ -22,7 +22,7 @@ from orchestrator.supervisor import SupervisorConfig, process_once, run_forever 
 from orchestrator.rotating_log import RotatingLogWriter  # noqa: E402
 
 
-from dispatch.roots import resolve_state_root, resolve_config_root, export_roots
+from root_paths import resolve_state_root, resolve_config_root, export_roots
 
 
 def main() -> int:

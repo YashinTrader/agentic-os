@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
-from dispatch.roots import resolve_config_root
+from root_paths import resolve_config_root
 
 from dispatch.atomic_io import atomic_create_json, atomic_write_json
 from dispatch import work_lock

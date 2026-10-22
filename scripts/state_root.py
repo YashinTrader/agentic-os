@@ -1,2 +1,2 @@
 """Backward-compatible import for deployment state-root selection."""
-from dispatch.roots import resolve_state_root
+from root_paths import resolve_state_root

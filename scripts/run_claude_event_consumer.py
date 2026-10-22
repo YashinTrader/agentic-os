@@ -13,7 +13,7 @@ from orchestrator.layer_heartbeat import install_stop_handlers
 from orchestrator.rotating_log import RotatingLogWriter
 
 
-from dispatch.roots import resolve_state_root, resolve_config_root, export_roots
+from root_paths import resolve_state_root, resolve_config_root, export_roots
 
 
 def main() -> int:

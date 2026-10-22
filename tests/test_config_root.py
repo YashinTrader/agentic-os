@@ -9,7 +9,7 @@ from unittest.mock import Mock, patch
 
 import yaml
 
-from dispatch.roots import resolve_config_root, resolve_state_root, root_metadata
+from root_paths import resolve_config_root, resolve_state_root, root_metadata
 from dispatch.agent_environment import build_minimal_environment
 from dispatch.codex_adapter import load_codex_restricted_adapter, build_codex_command
 from dispatch.execution_policy import load_execution_policy

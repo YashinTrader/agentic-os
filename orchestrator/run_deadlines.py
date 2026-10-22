@@ -7,7 +7,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from dispatch.roots import resolve_config_root
+from root_paths import resolve_config_root
 
 import yaml
 

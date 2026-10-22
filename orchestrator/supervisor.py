@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable
 
-from dispatch.roots import root_metadata
+from root_paths import root_metadata
 
 from orchestrator import layer_heartbeat
 from dispatch import work_lock
