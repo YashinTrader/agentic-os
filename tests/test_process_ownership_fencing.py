@@ -1,3 +1,4 @@
+import ast
 import json
 import os
 from pathlib import Path
@@ -54,13 +55,78 @@ class ProcessOwnershipTests(unittest.TestCase):
             signal_group.assert_not_called()
             proc.kill.assert_not_called()
 
+    def test_inventory_records_are_immutable_and_detached(self):
+        from dataclasses import FrozenInstanceError
+        from orchestrator.process_inventory import legacy_process_inventory
+        args = ['python', 'run_orchestrator.py', '--root', '.']
+        process = Mock(pid=123, info={'name': 'python'})
+        process.cmdline.return_value = args
+        process.create_time.return_value = 12.5
+        process.cwd.return_value = str(Path.cwd())
+        process.environ.return_value = {'AGENTIC_OS_STATE_ROOT': 'state'}
+        with patch('psutil.process_iter', return_value=[process]):
+            records = legacy_process_inventory()
+        self.assertIsInstance(records, tuple)
+        record = records[0]
+        self.assertEqual((record.pid, record.start_time, record.state_root_evidence),
+                         (123, 12.5, 'state'))
+        args.append('changed')
+        self.assertNotIn('changed', record.command_line)
+        with self.assertRaises(FrozenInstanceError):
+            record.pid = 456
+
+    def test_inventory_unreadable_candidates_fail_closed(self):
+        import psutil
+        from orchestrator.process_inventory import legacy_process_inventory
+        process = Mock(pid=123, info={'name': 'python'})
+        process.cmdline.side_effect = psutil.AccessDenied(123)
+        with patch('psutil.process_iter', return_value=[process]):
+            with self.assertRaises(ValueError):
+                legacy_process_inventory()
+        process.cmdline.side_effect = None
+        process.cmdline.return_value = ['python', 'run_orchestrator.py']
+        process.create_time.side_effect = psutil.AccessDenied(123)
+        with patch('psutil.process_iter', return_value=[process]):
+            with self.assertRaises(ValueError):
+                legacy_process_inventory()
+        process.create_time.side_effect = psutil.NoSuchProcess(123)
+        with patch('psutil.process_iter', return_value=[process]):
+            self.assertEqual(legacy_process_inventory(), ())
+
     def test_no_name_based_kills(self):
         root = Path(__file__).resolve().parents[1]
-        forbidden = re.compile(r'taskkill[^\r\n]*?/im\b|Stop-Process[^\r\n]*?-Name\b|psutil\.process_iter\s*\(', re.I)
+        forbidden = re.compile(r'taskkill[^\r\n]*?/im\b|Stop-Process[^\r\n]*?-Name\b', re.I)
+        inventory = root / 'orchestrator/process_inventory.py'
+        enumeration = re.compile(
+            r'\b(?:process_iter|pids|EnumProcesses|CreateToolhelp32Snapshot|Process32FirstW?|'
+            r'Process32NextW?|NtQuerySystemInformation)\s*\(|'
+            r'Get-Process\b|Win32_Process\b|\btasklist\b', re.I)
+        for path in root.rglob('*.py'):
+            if any(part.startswith('.') for part in path.relative_to(root).parts):
+                continue
+            tree = ast.parse(path.read_text(encoding='utf-8-sig'))
+            for node in ast.walk(tree):
+                if isinstance(node, (ast.Import, ast.ImportFrom)):
+                    names = [alias.name for alias in node.names]
+                    module = getattr(node, 'module', '') or ''
+                    if 'process_inventory' in module or any('process_inventory' in n for n in names):
+                        self.assertTrue(path == root / 'orchestrator/supervisor_control.py'
+                                        or path.is_relative_to(root / 'tests'), str(path))
+                        if path == root / 'orchestrator/supervisor_control.py':
+                            legacy = next(n for n in tree.body if isinstance(n, ast.FunctionDef)
+                                          and n.name == 'legacy_process_blockers')
+                            self.assertIn(node, list(ast.walk(legacy)))
+        dangerous = re.compile(
+            r'\b(?:terminate|kill|killpg|send_signal|TerminateProcess|TerminateJobObject)\s*\('
+            r'|\btaskkill\b|Stop-Process\b', re.I)
+        self.assertIsNone(dangerous.search(inventory.read_text(encoding='utf-8')))
         for directory in ('orchestrator', 'dispatch', 'scripts'):
             for path in (root / directory).rglob('*'):
                 if path.suffix in {'.py', '.ps1', '.sh', '.cmd', '.bat'}:
-                    self.assertIsNone(forbidden.search(path.read_text(encoding='utf-8')), str(path))
+                    source = path.read_text(encoding='utf-8')
+                    self.assertIsNone(forbidden.search(source), str(path))
+                    if path != inventory:
+                        self.assertIsNone(enumeration.search(source), str(path))
 
 
 class CompletionFenceTests(unittest.TestCase):

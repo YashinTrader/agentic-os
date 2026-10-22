@@ -23,6 +23,7 @@ UNITTEST_ARTIFACT_REL = "runtime/unittest_last_run.txt"
 # Explicit post-test allowlist — no broad directory prefixes.
 POST_TEST_ALLOWLIST_EXACT = frozenset(
     {
+        "handoffs/T-M1-28B-PROCESS-INVENTORY__codex__to__claude.md",
         "handoffs/T-M1-27-CAPACITY-LEAK__codex__to__claude.md",
         "handoffs/T-M1-28-LEGACY-STATUS-TAKEOVER__codex__to__claude.md",
         "handoffs/T-M1-29-LAYER-TERMINATE-CRASH__codex__to__claude.md",

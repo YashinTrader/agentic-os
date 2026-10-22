@@ -166,7 +166,7 @@ class StopSupervisorTests(unittest.TestCase):
         ):
             process = SimpleNamespace(pid=123, info={"name": "python"},
                 cmdline=lambda: [sys.executable, "run_orchestrator.py", *args],
-                cwd=lambda: str(self.root), environ=lambda: env)
+                cwd=lambda: str(self.root), environ=lambda: env, create_time=lambda: 123.0)
             with patch("psutil.process_iter", return_value=[process]):
                 self.assertEqual(bool(legacy_process_blockers(self.root)), expected)
 

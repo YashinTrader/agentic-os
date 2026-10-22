@@ -170,33 +170,13 @@ def is_legacy_status(record: dict) -> bool:
 
 def legacy_process_blockers(root: Path) -> list[dict]:
     """Read-only process scan; unreadable candidate identities fail closed."""
-    try:
-        import psutil
-    except ImportError as exc:
-        raise ValueError("legacy adoption requires psutil for process inspection") from exc
-    scripts = {"run_supervisor_layers.py", "run_orchestrator.py", "run_claude_event_consumer.py"}
-    candidates = []
-    for process in psutil.process_iter(["pid", "name"]):
-        try:
-            args = process.cmdline()
-        except psutil.NoSuchProcess:
-            continue
-        except psutil.AccessDenied:
-            if "python" in (process.info.get("name") or "").lower():
-                raise ValueError(f"cannot inspect Python process {process.pid}")
-            continue
-        if not any(Path(arg.replace("\\", "/")).name.lower() in scripts for arg in args):
-            continue
-        try:
-            cwd = Path(process.cwd()).resolve()
-            environment_root = process.environ().get("AGENTIC_OS_STATE_ROOT")
-        except psutil.NoSuchProcess:
-            continue
-        except psutil.AccessDenied as exc:
-            raise ValueError(f"cannot inspect runtime process {process.pid}: {args}") from exc
-        candidates.append((process.pid, args, cwd, environment_root))
+    from orchestrator.process_inventory import legacy_process_inventory
+
+    candidates = legacy_process_inventory()
     blockers = []
-    for pid, args, cwd, environment_root in candidates:
+    for candidate in candidates:
+        pid, args = candidate.pid, candidate.command_line
+        cwd, environment_root = candidate.cwd, candidate.state_root_evidence
         options = {}
         for index, arg in enumerate(args):
             for flag in ("--state-root", "--root"):
@@ -213,6 +193,6 @@ def legacy_process_blockers(root: Path) -> list[dict]:
         # With no explicit root, cwd alone cannot exclude environment/default
         # script-root selection. Keep such candidates as uncertain blockers.
         if resolved is None or resolved == root.resolve():
-            blockers.append({"pid": pid, "command": args, "cwd": str(cwd) if cwd else None,
+            blockers.append({"pid": pid, "command": list(args), "cwd": str(cwd) if cwd else None,
                              "resolved_state_root": str(resolved) if resolved else None})
     return blockers
