@@ -11,6 +11,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from dispatch.roots import resolve_config_root
+
 import yaml
 
 from dispatch.atomic_io import atomic_write_json
@@ -23,7 +25,7 @@ PROMPT = "Reply with exactly: ok"
 
 
 def load_config(root: Path) -> dict[str, Any]:
-    path = root / "agents" / "quota_probe.yaml"
+    path = resolve_config_root(root) / "agents" / "quota_probe.yaml"
     if not path.exists():
         return {"enabled": False, "min_interval_seconds": 3600}
     config = yaml.safe_load(path.read_text(encoding="utf-8"))

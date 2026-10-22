@@ -9,6 +9,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 import yaml
 
 ALLOWED_ROLE_RISK_LEVELS = {"low", "medium", "high"}
@@ -16,9 +18,11 @@ ALLOWED_ROLE_APPROVAL_LEVELS = {"none", "reviewer", "human", "blocked"}
 
 
 def load_roles_registry(root: Path) -> dict[str, Any]:
-    path = root / "roles" / "registry.yaml"
+    from dispatch.roots import resolve_config_root
+
+    path = resolve_config_root(root) / "roles" / "registry.yaml"
     if not path.exists():
-        raise FileNotFoundError(f"{path.relative_to(root)} does not exist")
+        raise FileNotFoundError(f"{path} does not exist")
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
         raise ValueError("roles/registry.yaml root must be a YAML mapping")

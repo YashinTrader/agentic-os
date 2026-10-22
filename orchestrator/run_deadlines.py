@@ -7,6 +7,8 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from dispatch.roots import resolve_config_root
+
 import yaml
 
 
@@ -20,7 +22,7 @@ class DeadlinePolicy:
 def adapter_deadlines(repo_root: Path, adapter: str, overall: float) -> DeadlinePolicy:
     reviewer = adapter == "claude-reviewer"
     defaults = (90, 300) if reviewer else (180, 600)
-    path = repo_root / "agents" / "run_deadlines.yaml"
+    path = resolve_config_root(repo_root) / "agents" / "run_deadlines.yaml"
     data = yaml.safe_load(path.read_text(encoding="utf-8")) if path.is_file() else {}
     config = (data or {}).get(adapter, {})
     values = (float(config.get("startup_seconds", defaults[0])),

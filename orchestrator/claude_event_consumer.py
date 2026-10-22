@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from orchestrator.layer_heartbeat import tick
+from dispatch.roots import root_metadata
 from dispatch.atomic_io import atomic_create_json, atomic_write_json
 from dispatch.orchestrator_pokes import list_orchestrator_pokes
 from orchestrator.agent_launcher import resolve_executable
@@ -124,6 +125,7 @@ class ClaudeEventConsumer:
         state_logger: Callable[[dict[str, Any]], None] | None = None,
     ) -> None:
         self.repo_root = Path(repo_root)
+        self.root_audit = root_metadata(self.repo_root)
         self.processor = processor or (lambda **kw: _default_processor(self.repo_root, **kw))
         self.condition_probe = condition_probe or default_condition_probe
         self.now = now or (lambda: datetime.now(timezone.utc))
@@ -196,6 +198,7 @@ class ClaudeEventConsumer:
         ]
         was_escalated = bool(current.get("deferred_escalation_active"))
         current.update({
+            **self.root_audit,
             "schema_version": "1.0",
             "heartbeat_at": _now(),
             "oldest_pending_poke_age_seconds": max(ages, default=0),

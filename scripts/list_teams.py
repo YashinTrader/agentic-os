@@ -9,15 +9,19 @@ import sys
 from pathlib import Path
 from typing import Any
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 import yaml
 
 ALLOWED_TEAM_STATUSES = {"active", "planned", "disabled"}
 
 
 def load_teams_registry(root: Path) -> dict[str, Any]:
-    path = root / "teams" / "registry.yaml"
+    from dispatch.roots import resolve_config_root
+
+    path = resolve_config_root(root) / "teams" / "registry.yaml"
     if not path.exists():
-        raise FileNotFoundError(f"{path.relative_to(root)} does not exist")
+        raise FileNotFoundError(f"{path} does not exist")
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
         raise ValueError("teams/registry.yaml root must be a YAML mapping")

@@ -11,6 +11,8 @@ from typing import Any
 DEFAULT_ENV_ALLOWLIST = frozenset(
     {
         "PATH",
+        "AGENTIC_OS_STATE_ROOT",
+        "AGENTIC_OS_CONFIG_ROOT",
         "HOME",
         "USERPROFILE",
         "TEMP",

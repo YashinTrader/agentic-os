@@ -5,9 +5,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from dispatch.roots import resolve_config_root
+
 
 def load_composer_restricted_adapter(repo_root: Path) -> dict[str, Any]:
-    path = repo_root / "agents" / "composer_restricted_adapter.yaml"
+    path = resolve_config_root(repo_root) / "agents" / "composer_restricted_adapter.yaml"
     if not path.exists():
         raise FileNotFoundError(f"composer restricted adapter config missing: {path}")
     import yaml
