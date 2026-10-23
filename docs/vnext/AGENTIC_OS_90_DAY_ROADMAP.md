@@ -99,6 +99,26 @@ Approved by the owner on 2026-10-22. It starts after the M1 exit gate and M2-02 
 
 **Primary metric:** validated outcomes per hour and per unit of cost.
 
+## Track AOS-WIN-001: Windows Desktop Distribution (owner decision 2026-10-23)
+
+**Trigger:** on 2026-10-23, Smart App Control blocked the unsigned uv/Hermes venv interpreter.
+
+**Goal:** one-click, per-user, signed installation with a bundled runtime and no mandatory Hermes, uv, Python, Git, WSL2 or Docker.
+
+**Design:**
+- Primary channel: MSIX through the Microsoft Store.
+- Direct channel: a signed MSIX plus a bootstrapper.
+- Bundled PSF CPython with hash-locked wheels and a binary inventory.
+- Job Object supervisor host and a Tauri shell.
+- Credential Manager secrets.
+
+**Missions:** WIN-M01 to WIN-M10, each four hours or less. See `AOS-WIN-001_WINDOWS_DESKTOP_DISTRIBUTION.md` and `AOS-WIN-001_CLEAN_MACHINE_TEST_PLAN.md`.
+
+**Scheduling:**
+- WIN-M01 (runtime builder) runs now, because it also produces the signed bridge runtime that restores the owner's install.
+- Restoration is **never** blocked on the public installer.
+- Publisher identity, the Store account and the signing service are owner decisions.
+
 ## Scheduling and efficiency rules (owner directive 2026-10-22, apply to all work)
 
 Four hours is a hard ceiling, not a target. Target durations: bounded tasks 5–30 min, integration 30–90 min, release cycles 60–120 min.
