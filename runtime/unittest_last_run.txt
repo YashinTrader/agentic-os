@@ -1,29 +1,30 @@
-timestamp: 2026-10-23T09:43:17Z
+timestamp: 2026-10-23T17:56:30Z
 dependency_install: skipped
-dependency_install_reason: core dependencies preinstalled in the hermes venv; cognee optional since T-M1-22 (requirements-memory.txt)
+dependency_install_reason: core dependencies vendored into the signed CPython 3.11.9 runtime (R12 runtime decision); cognee optional since T-M1-22
 known_exempt_failures: []
 repo_identity: {"origin": "https://github.com/YashinTrader/agentic-os.git", "roots": ["18ccb6e2e421044e6e21411c83513d80e38fb4ba"]}
-artifact_origin_path: C:/Users/gabot/agentic-os-worktrees/m1-integration
+artifact_origin_path: C:/Users/gabot/agentic-os-worktrees/r12-integration
 hostname: AIAG
-python_version: 3.11.15
-command_line: ["C:\\Users\\gabot\\AppData\\Local\\hermes\\hermes-agent\\venv\\Scripts\\python.exe", "-m", "unittest", "discover", "-s", "tests", "-p", "test_*.py", "-v"]
-raw_output_sha256: ca5128f952b9df75cfe326d28f2c6db3ed91600c37e0212c96ef2f575fccf136
-repo_root: C:/Users/gabot/agentic-os-worktrees/m1-integration
+python_version: 3.11.9
+command_line: ["C:\\Users\\gabot\\agentic-os-runtime\\py311\\Scripts\\python.exe", "-m", "unittest", "discover", "-s", "tests", "-p", "test_*.py", "-v"]
+raw_output_sha256: 666e158f97672e61c699a6df4b40dfbd67500337fb244049562cf4d7a67ff192
+repo_root: C:/Users/gabot/agentic-os-worktrees/r12-integration
 commit: unknown
-commit_full: 8ff5b30a8b09d29db60b9b4164a6a64835863252
-python: C:\Users\gabot\AppData\Local\hermes\hermes-agent\venv\Scripts\python.exe
-test_count: 929
+commit_full: d80dab42e124d16c2c2bf440cd2974e71147486d
+python: C:\Users\gabot\agentic-os-runtime\py311\Scripts\python.exe
+test_count: 962
 exit_code: 0
-evidence_block_sha256: 0a03cb347cb8a1527cc92a7a21ccffddb77150b4fa6d3dc2000fe4ec58b73a97
+evidence_block_sha256: e2038b1414b5a1f6e09b6bba46793e9c22e8189f36a673bde6d9e9d652a38c14
 --- raw output ---
 dependency_install: skipped
-dependency_install_reason: core dependencies preinstalled in the hermes venv; cognee optional since T-M1-22 (requirements-memory.txt)
+dependency_install_reason: core dependencies vendored into the signed CPython 3.11.9 runtime (R12 runtime decision); cognee optional since T-M1-22
 {
   "status": "idle"
 }
 {
   "status": "idle"
 }
+root restart guard open; start refused
 {
   "status": "idle"
 }
@@ -283,6 +284,33 @@ test_terminal_classification (test_grok_streaming.StreamingTests.test_terminal_c
 test_imports_and_patch_targets (test_impacted_tests.ImpactedTestsTests.test_imports_and_patch_targets) ... ok
 test_selection_is_sorted_and_matches_module_boundaries (test_impacted_tests.ImpactedTestsTests.test_selection_is_sorted_and_matches_module_boundaries) ... ok
 test_modules_import_in_fresh_interpreters (test_import_guard.ImportGuardTests.test_modules_import_in_fresh_interpreters) ... ok
+test_both_running_ten_minutes_clears_root_budget (test_launch_resilience.LaunchResilienceTests.test_both_running_ten_minutes_clears_root_budget) ... ok
+test_changed_identity_denied_again_blocks_one_probe (test_launch_resilience.LaunchResilienceTests.test_changed_identity_denied_again_blocks_one_probe) ... ok
+test_classification (test_launch_resilience.LaunchResilienceTests.test_classification) ... ok
+test_config_waits_for_executable_to_appear (test_launch_resilience.LaunchResilienceTests.test_config_waits_for_executable_to_appear) ... ok
+test_continuously_ticking_healthy_idle_budget (test_launch_resilience.LaunchResilienceTests.test_continuously_ticking_healthy_idle_budget) ... ok
+test_full_parked_steps_have_negligible_cpu_and_no_rehash (test_launch_resilience.LaunchResilienceTests.test_full_parked_steps_have_negligible_cpu_and_no_rehash) ... ok
+test_identity_change_probe_success (test_launch_resilience.LaunchResilienceTests.test_identity_change_probe_success) ... ok
+test_identity_hash_only_after_stat_change (test_launch_resilience.LaunchResilienceTests.test_identity_hash_only_after_stat_change) ... ok
+test_idle_write_budgets_and_sleep (test_launch_resilience.LaunchResilienceTests.test_idle_write_budgets_and_sleep) ... ok
+test_parked_shutdown_clean (test_launch_resilience.LaunchResilienceTests.test_parked_shutdown_clean) ... ok
+test_policy_denial_stays_blocked_for_a_day (test_launch_resilience.LaunchResilienceTests.test_policy_denial_stays_blocked_for_a_day) ... ok
+test_removed_policy_executable_reappearing_unchanged_is_not_a_probe (test_launch_resilience.LaunchResilienceTests.test_removed_policy_executable_reappearing_unchanged_is_not_a_probe) ... ok
+test_reset_audited_consumed_once_and_no_duplicate_alert (test_launch_resilience.LaunchResilienceTests.test_reset_audited_consumed_once_and_no_duplicate_alert) ... ok
+test_reset_commands_require_actor_and_reason_and_audit (test_launch_resilience.LaunchResilienceTests.test_reset_commands_require_actor_and_reason_and_audit) ... usage: command [-h] [--state-root STATE_ROOT] [--config-root CONFIG_ROOT]
+               [--reset-root-guard] [--actor ACTOR] [--reason REASON]
+command: error: --reset-root-guard requires nonblank --actor and --reason
+usage: command [-h] [--state-root STATE_ROOT] [--adopt-legacy-status]
+               [--reset-circuit RESET_CIRCUIT] [--actor ACTOR]
+               [--reason REASON] [--timeout TIMEOUT] [--maintenance {on,off}]
+command: error: a stop request requires --actor and --reason
+ok
+test_root_guard_budget_cooldown_and_reset_audit (test_launch_resilience.LaunchResilienceTests.test_root_guard_budget_cooldown_and_reset_audit) ... ok
+test_root_guard_run_refuses_with_78 (test_launch_resilience.LaunchResilienceTests.test_root_guard_run_refuses_with_78) ... ok
+test_root_healthy_and_planned_stop_reset_budget (test_launch_resilience.LaunchResilienceTests.test_root_healthy_and_planned_stop_reset_budget) ... ok
+test_stderr_policy_and_persistence (test_launch_resilience.LaunchResilienceTests.test_stderr_policy_and_persistence) ... ok
+test_transient_jitter_and_half_open_bounds_over_day (test_launch_resilience.LaunchResilienceTests.test_transient_jitter_and_half_open_bounds_over_day) ... ok
+test_transient_probe_deadline_survives_root_restart (test_launch_resilience.LaunchResilienceTests.test_transient_probe_deadline_survives_root_restart) ... ok
 test_blocking_wait_ticks_and_honors_stop (test_layer_supervisor.HeartbeatTests.test_blocking_wait_ticks_and_honors_stop) ... ok
 test_idle_and_progress_markers (test_layer_supervisor.HeartbeatTests.test_idle_and_progress_markers) ... ok
 test_monitor_stop_kills_work_process_before_unwinding (test_layer_supervisor.HeartbeatTests.test_monitor_stop_kills_work_process_before_unwinding) ... ok
@@ -546,12 +574,18 @@ test_get_form_submit_is_allowed (test_phase3_4_safety_boundaries.SafetyScannerPr
 test_mixed_get_ok_post_flagged (test_phase3_4_safety_boundaries.SafetyScannerPrecisionTests.test_mixed_get_ok_post_flagged) ... ok
 test_post_form_submit_is_flagged (test_phase3_4_safety_boundaries.SafetyScannerPrecisionTests.test_post_form_submit_is_flagged) ... ok
 test_allocate_worktree_success (test_phase3_4_worktree_allocator.WorktreeAllocatorTests.test_allocate_worktree_success) ... ok
+test_branch_claimed_between_preflight_and_add (test_phase3_4_worktree_allocator.WorktreeAllocatorTests.test_branch_claimed_between_preflight_and_add) ... ok
 test_branch_name_sanitization (test_phase3_4_worktree_allocator.WorktreeAllocatorTests.test_branch_name_sanitization) ... ok
 test_build_run_ids_get_unique_slugs (test_phase3_4_worktree_allocator.WorktreeAllocatorTests.test_build_run_ids_get_unique_slugs) ... ok
 test_cleanup_refuses_dirty_worktree (test_phase3_4_worktree_allocator.WorktreeAllocatorTests.test_cleanup_refuses_dirty_worktree) ... ok
+test_collision_retries_are_bounded (test_phase3_4_worktree_allocator.WorktreeAllocatorTests.test_collision_retries_are_bounded) ... ok
 test_duplicate_active_allocation_blocked (test_phase3_4_worktree_allocator.WorktreeAllocatorTests.test_duplicate_active_allocation_blocked) ... ok
+test_existing_candidate_branch_and_directory_preserved (test_phase3_4_worktree_allocator.WorktreeAllocatorTests.test_existing_candidate_branch_and_directory_preserved) ... ok
+test_full_run_suffix_affects_slug (test_phase3_4_worktree_allocator.WorktreeAllocatorTests.test_full_run_suffix_affects_slug) ... ok
 test_invalid_base_sha_blocked (test_phase3_4_worktree_allocator.WorktreeAllocatorTests.test_invalid_base_sha_blocked) ... ok
+test_long_task_path_budget (test_phase3_4_worktree_allocator.WorktreeAllocatorTests.test_long_task_path_budget) ... ok
 test_run_git_never_uses_shell (test_phase3_4_worktree_allocator.WorktreeAllocatorTests.test_run_git_never_uses_shell) ... ok
+test_same_window_runs_and_legacy_branch_preserved (test_phase3_4_worktree_allocator.WorktreeAllocatorTests.test_same_window_runs_and_legacy_branch_preserved) ... ok
 test_unsafe_task_id_rejected_for_containment (test_phase3_4_worktree_allocator.WorktreeAllocatorTests.test_unsafe_task_id_rejected_for_containment) ... ok
 test_worktree_path_stays_inside_root (test_phase3_4_worktree_allocator.WorktreeAllocatorTests.test_worktree_path_stays_inside_root) ... ok
 test_duplicate_active_ownership_detected (test_phase3_4_worktree_registry.WorktreeRegistryTests.test_duplicate_active_ownership_detected) ... ok
@@ -864,6 +898,13 @@ test_list_roles_filters_by_agent (test_roles_registry.RolesRegistryTests.test_li
 test_missing_mcp_cross_reference_fails (test_roles_registry.RolesRegistryTests.test_missing_mcp_cross_reference_fails) ... ok
 test_required_role_fields_exist (test_roles_registry.RolesRegistryTests.test_required_role_fields_exist) ... ok
 test_roles_registry_loads (test_roles_registry.RolesRegistryTests.test_roles_registry_loads) ... ok
+test_empty_output (test_root_paths_provenance.RootPathsProvenanceTests.test_empty_output) ... ok
+test_git_error_first_line_and_recovery (test_root_paths_provenance.RootPathsProvenanceTests.test_git_error_first_line_and_recovery) ... ok
+test_git_missing (test_root_paths_provenance.RootPathsProvenanceTests.test_git_missing) ... ok
+test_no_git (test_root_paths_provenance.RootPathsProvenanceTests.test_no_git) ... ok
+test_persistent_timeout_is_not_cached (test_root_paths_provenance.RootPathsProvenanceTests.test_persistent_timeout_is_not_cached) ... ok
+test_success_cached_per_config_root (test_root_paths_provenance.RootPathsProvenanceTests.test_success_cached_per_config_root) ... ok
+test_timeout_then_success_retries_once (test_root_paths_provenance.RootPathsProvenanceTests.test_timeout_then_success_retries_once) ... ok
 test_inactivity_terminal_poke_and_retained_lock (test_run_deadlines.BuilderDeadlineFlowTests.test_inactivity_terminal_poke_and_retained_lock) ... ok
 test_overall_terminal_poke_and_retained_lock (test_run_deadlines.BuilderDeadlineFlowTests.test_overall_terminal_poke_and_retained_lock) ... ok
 test_startup_terminal_poke_and_retained_lock (test_run_deadlines.BuilderDeadlineFlowTests.test_startup_terminal_poke_and_retained_lock) ... ok
@@ -974,6 +1015,6 @@ test_worker_correction_does_not_claim_parent_reservation (test_work_lock.WorkLoc
 test_yaml_followups_inherit_parent_task_and_explicit_split (test_work_lock.WorkLockTests.test_yaml_followups_inherit_parent_task_and_explicit_split) ... ok
 
 ----------------------------------------------------------------------
-Ran 929 tests in 4813.878s
+Ran 962 tests in 2652.406s
 
 OK (skipped=3)
