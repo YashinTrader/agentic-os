@@ -12,6 +12,7 @@ import unittest
 from unittest.mock import patch
 
 from dispatch.atomic_io import atomic_write_json
+from orchestrator.process_inventory import ProcessRecord
 from orchestrator.layer_heartbeat import read_heartbeat
 from orchestrator.process_ownership import owned_popen, terminate_owned, process_start_time
 from orchestrator.supervisor_control import control_dir, identity_state, force_recorded_tree
@@ -97,8 +98,24 @@ class StopSupervisorTests(unittest.TestCase):
         for record in [status, *status["recorded_children"]]:
             self.assertEqual(identity_state(record), "gone", record)
 
-    def stop_cli(self, *extra):
-        return subprocess.run([sys.executable, str(ROOT / "scripts/stop_supervisor.py"),
+    def stop_cli(self, *extra, inventory=()):
+        command = [sys.executable, str(ROOT / "scripts/stop_supervisor.py")]
+        if "--adopt-legacy-status" in extra:
+            # Patch inside the child: parent mocks cannot isolate CLI subprocesses.
+            records = [(r.pid, r.start_time, r.command_line, str(r.cwd), r.state_root_evidence)
+                       for r in inventory]
+            wrapper = (
+                "import json,runpy,sys; from pathlib import Path; "
+                "from unittest.mock import patch; "
+                "from orchestrator.process_inventory import ProcessRecord; "
+                "records = tuple(ProcessRecord(pid, start, tuple(args), Path(cwd), env) "
+                "for pid,start,args,cwd,env in json.loads(sys.argv.pop(1))); "
+                "script = sys.argv.pop(1); sys.argv[0] = script; "
+                "mock = patch('orchestrator.process_inventory.legacy_process_inventory', return_value=records); "
+                "mock.start(); runpy.run_path(script, run_name='__main__')"
+            )
+            command = [sys.executable, "-c", wrapper, json.dumps(records), command[1]]
+        return subprocess.run([*command,
                                "--state-root", str(self.root), "--actor", "test", "--reason", "maintenance",
                                "--timeout", "10", *extra], env=self.env, capture_output=True, text=True, timeout=20)
 
@@ -133,12 +150,31 @@ class StopSupervisorTests(unittest.TestCase):
         fake = self.root / "run_orchestrator.py"
         fake.write_text("import time; time.sleep(120)", encoding="utf-8")
         process = self.launch([sys.executable, str(fake), "--state-root", str(self.root)])
-        result = self.stop_cli("--adopt-legacy-status")
+        import psutil
+        from orchestrator.process_inventory import legacy_process_inventory
+        # Inspect a real process, but enumerate only the PID owned by this test.
+        # An unrelated inaccessible Python process must never affect this result.
+        with patch("psutil.process_iter", return_value=[psutil.Process(process.pid)]):
+            inventory = legacy_process_inventory()
+        self.assertEqual(len(inventory), 1)
+        self.assertEqual(inventory[0].pid, process.pid)
+        result = self.stop_cli("--adopt-legacy-status", inventory=inventory)
         self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
         self.assertIn(str(process.pid), result.stdout)
         self.assertEqual(self.status(), before)
         self.assertFalse((control_dir(self.root) / "legacy").exists())
         self.assertIsNone(process.poll())
+        with tempfile.TemporaryDirectory() as other:
+            original_root = self.root
+            try:
+                self.root = Path(other)
+                self.legacy_status()
+                result = self.stop_cli("--adopt-legacy-status", inventory=inventory)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertFalse(self.status())
+                self.assertIsNone(process.poll())
+            finally:
+                self.root = original_root
         terminate_owned(process)
         process.wait(timeout=10)
 
@@ -149,12 +185,11 @@ class StopSupervisorTests(unittest.TestCase):
             self.assertEqual(self.stop_cli("--adopt-legacy-status").returncode, 2)
         self.legacy_status()
         from scripts.stop_supervisor import adopt_legacy_status
-        with patch("scripts.stop_supervisor.legacy_process_blockers", side_effect=OSError("unreadable")):
+        with patch("orchestrator.process_inventory.legacy_process_inventory", side_effect=OSError("unreadable")):
             self.assertEqual(adopt_legacy_status(self.root, "test", "scan error"), 2)
         self.assertTrue(self.status())
 
     def test_scan_resolves_root_flags_environment_and_cwd(self):
-        from types import SimpleNamespace
         from orchestrator.supervisor_control import legacy_process_blockers
         for args, env, expected in (
             (["--state-root", str(self.root)], {}, True),
@@ -164,10 +199,10 @@ class StopSupervisorTests(unittest.TestCase):
             (["--state-root", str(self.root / "other")], {}, False),
             ([], {}, True),
         ):
-            process = SimpleNamespace(pid=123, info={"name": "python"},
-                cmdline=lambda: [sys.executable, "run_orchestrator.py", *args],
-                cwd=lambda: str(self.root), environ=lambda: env, create_time=lambda: 123.0)
-            with patch("psutil.process_iter", return_value=[process]):
+            record = ProcessRecord(123, 123.0,
+                (sys.executable, "run_orchestrator.py", *args), self.root,
+                env.get("AGENTIC_OS_STATE_ROOT"))
+            with patch("orchestrator.process_inventory.legacy_process_inventory", return_value=(record,)):
                 self.assertEqual(bool(legacy_process_blockers(self.root)), expected)
 
     def test_gone_identity_allows_start_without_adoption(self):
