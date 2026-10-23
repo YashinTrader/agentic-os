@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import os
+import copy
+import random
 import signal
 import subprocess
 import threading
@@ -20,12 +22,23 @@ from orchestrator.process_ownership import owned_popen, terminate_owned, ownersh
 from orchestrator.layer_heartbeat import read_heartbeat, timestamp
 from orchestrator.supervisor_control import control_dir, file_lock, identity_state, register_supervisor_job, is_legacy_status
 
+from orchestrator.launch_failures import classify_launch_failure, executable_identity, alert_once
+from orchestrator.root_restart_guard import RootRestartGuard
+
+BACKOFF_FLOOR = 2
+BACKOFF_CAP = 300
+PROBE_COOLDOWN = 15 * 60
+PROBE_CAP = 4 * 3600
+IDENTITY_CHECK_SECONDS = 60
+LIVENESS_SECONDS = 30
+PARKED_LIVENESS_SECONDS = 60
+HEARTBEAT_STATUS_SECONDS = 5
 STDERR_LIMIT = 8192
 GRACE_SECONDS = 20
 
 
 def backoff_seconds(exits: int) -> float:
-    return min(300, 2 * 2 ** min(8, max(0, exits - 1)))
+    return min(BACKOFF_CAP, BACKOFF_FLOOR * 2 ** min(8, max(0, exits - 1)))
 
 
 class StderrTail:
@@ -56,6 +69,11 @@ class StderrTail:
 class Child:
     command: list[str]
     heartbeat: Path
+    identity_cache: dict | None = None
+    identity_check_due: float = 0
+    probe_due: float = 0
+    cooldown: float = 0
+    probing: bool = False
     process: object = None
     tail: StderrTail | None = None
     exits: deque = field(default_factory=deque)
@@ -72,13 +90,24 @@ class Child:
         "state": "pending", "alive": False, "ticking": False, "progressing": False,
         "restart_count": 0, "last_restart_at": None, "recovery_seconds": None,
         "last_tick_at": None, "ticks": 0, "last_progress_at": None, "exits": [],
+        "failure_class": None, "blocked_executable": None, "next_probe_at": None,
     })
 
 
 class LayerSupervisor:
     def __init__(self, root: Path, commands: dict[str, list[str]], *,
                  poll_seconds: float = 5, popen=subprocess.Popen,
-                 clock: Callable[[], float] = time.monotonic):
+                 clock: Callable[[], float] = time.monotonic, rng=None,
+                 wall_clock=time.time, root_guard: bool = False):
+        self.rng = rng or random.Random()
+        self.wall_clock = wall_clock
+        self.root_guard = RootRestartGuard(root, wall_clock) if root_guard else None
+        self.guard_started = False
+        self.healthy_since = None
+        self.health_recorded = False
+        self.alerts = []
+        self._saved_content = None
+        self._saved_at = float('-inf')
         self.root = root
         self.root_audit = root_metadata(root)
         self.path = root / "runtime/dispatch/layer_supervisor/status.json"
@@ -98,10 +127,13 @@ class LayerSupervisor:
         self.supervisor_error_count = 0
         self.identity = {"pid": os.getpid(), "process_start_time": process_start_time(os.getpid()),
                          "instance_token": self.instance_token}
-        previous = read_heartbeat(self.path).get("children", {})
+        previous_status = read_heartbeat(self.path)
+        self.alerts = previous_status.get("alerts", [])
+        previous = previous_status.get("children", {})
         for name, child in self.children.items():
             old = previous.get(name, {})
-            for key in ("restart_count", "last_restart_at", "recovery_seconds", "exits"):
+            for key in ("restart_count", "last_restart_at", "recovery_seconds", "exits",
+                        "failure_class", "blocked_executable", "next_probe_at", "probe_cooldown", "reset_token"):
                 if key in old:
                     child.status[key] = old[key]
             # Retain audit and breaker across parent restarts; monotonic times
@@ -114,26 +146,68 @@ class LayerSupervisor:
                 except (KeyError, ValueError, TypeError):
                     pass
             if old.get("circuit_open") or old.get("state") == "crash_loop":
-                child.status.update(state="crash_loop", circuit_open=True, reason=old.get("reason"))
+                state = {"CONFIG": "blocked_config", "BLOCKED_SECURITY_POLICY": "blocked_security_policy"}.get(
+                    old.get("failure_class"), "crash_loop")
+                child.status.update(state=state, circuit_open=True, reason=old.get("reason"))
+                child.cooldown = old.get("probe_cooldown", PROBE_COOLDOWN)
+                remaining = max(0, (old.get("next_probe_at") or self.wall_clock() + child.cooldown) - self.wall_clock())
+                child.probe_due = self.clock() + remaining
+                child.identity_check_due = self.clock() + IDENTITY_CHECK_SECONDS
 
     def request_stop(self, *_):
         self.stop_requested = True
+
+    def parked(self):
+        return bool(self.children) and all(c.status.get("circuit_open") and c.process is None
+                                           for c in self.children.values())
+
+    def sleep_seconds(self):
+        if self.parked():
+            return 5
+        return .25 if any(c.status['state'] == 'starting' for c in self.children.values()) else 1
+
+    def add_alert(self, key, **payload):
+        identifier = alert_once(self.root, key, **payload)
+        if identifier not in self.alerts:
+            self.alerts.append(identifier)
 
     def save(self):
         state = "stopping" if self.stop_requested else "running"
         if self.shutdown_complete:
             state = "stopped_by_request" if self.stop_request else "stopped"
-        atomic_write_json(self.path, {
+        parked_reason = None
+        if self.parked() and not self.stop_requested:
+            state = "parked"
+            parked_reason = "all children have open circuits or deterministic launch failures"
+            self.add_alert(['root_parked'], kind='root_parked', action='Inspect child alerts and remediate before resetting circuits.')
+        content = {
             **self.root_audit,
-            "updated_at": timestamp(),
             **self.identity,
             "state": state,
+            "alerts": self.alerts, "parked_reason": parked_reason,
             "stop_request": self.stop_request,
             "recorded_children": self.recorded_children,
             "supervisor_errors": self.supervisor_errors,
             "supervisor_error_count": self.supervisor_error_count,
             "children": {name: child.status for name, child in self.children.items()},
-        })
+        }
+        interval = PARKED_LIVENESS_SECONDS if state == "parked" else LIVENESS_SECONDS
+        changed = content != self._saved_content
+        elapsed = self.clock() - self._saved_at
+        if changed and self._saved_content is not None and elapsed < HEARTBEAT_STATUS_SECONDS:
+            # Ticking idle children can publish every second. Batch only their
+            # counters/timestamps; state, progress, failures and controls stay immediate.
+            def significant(document):
+                document = copy.deepcopy(document)
+                for status in document['children'].values():
+                    status.pop('ticks', None)
+                    status.pop('last_tick_at', None)
+                return document
+            changed = significant(content) != significant(self._saved_content)
+        if changed or elapsed >= interval:
+            atomic_write_json(self.path, {**content, "updated_at": timestamp()})
+            self._saved_content = copy.deepcopy(content)
+            self._saved_at = self.clock()
 
     def start(self, child: Child, now: float):
         child.heartbeat.unlink(missing_ok=True)
@@ -146,10 +220,10 @@ class LayerSupervisor:
             child.process = owned_popen(child.command, cwd=self.root, shell=False,
                                        stderr=subprocess.PIPE, env=env, popen=self.popen, **options)
         except OSError as exc:
-            self.failed(child, now, None, "launch_failed", str(exc))
+            self.failed(child, now, None, "launch_failed", str(exc), exc=exc)
             return
         child.status.update(ownership_metadata(child.process))
-        self.recorded_children.append({"pid": child.process.pid, **ownership_metadata(child.process)})
+        self.recorded_children.append({"pid": child.process.pid, **ownership_metadata(child.process), "failure_class": None})
         child.tail = StderrTail(child.process.stderr) if child.process.stderr else None
         if child.exit_started is not None:
             child.status["restart_count"] += 1
@@ -187,23 +261,39 @@ class LayerSupervisor:
         child.status.pop("terminating_at", None)
         return True
 
-    def failed(self, child: Child, now: float, code: int | None, reason: str, stderr: str):
+    def failed(self, child: Child, now: float, code: int | None, reason: str, stderr: str, exc=None):
         child.exits.append(now)
         while child.exits and now - child.exits[0] > 600:
             child.exits.popleft()
         child.failures += 1
         child.exit_started = now
-        evidence = {"exit_code": code, "stderr_tail": stderr[-STDERR_LIMIT:],
+        failure_class = classify_launch_failure(exc, stderr)
+        evidence = {"failure_class": failure_class, "exit_code": code, "stderr_tail": stderr[-STDERR_LIMIT:],
                     "exited_at": timestamp(), "reason": reason,
                     "started_at": child.status.get("started_at")}
         history = (child.status["exits"] + [evidence])[-20:]
         child.status.update(evidence)
         child.status.update(alive=False, ticking=False, progressing=False, exits=history)
         child.process = None
-        if len(child.exits) > 5:
+        if failure_class in {"BLOCKED_SECURITY_POLICY", "CONFIG"}:
+            identity = executable_identity(child.command[0], self.root)
+            child.status.update(state="blocked_security_policy" if failure_class == "BLOCKED_SECURITY_POLICY" else "blocked_config",
+                                circuit_open=True, blocked_executable=identity, next_probe_at=None)
+            child.probing = False
+            child.identity_check_due = now + IDENTITY_CHECK_SECONDS
+            name = next(name for name, value in self.children.items() if value is child)
+            self.add_alert([name, identity['path'], identity['sha256']], layer=name,
+                           failure_class=failure_class, blocked_executable=identity,
+                           action="switch to a permitted signed runtime or ask the operator; do not disable Smart App Control"
+                           if failure_class == "BLOCKED_SECURITY_POLICY" else "Restore the missing executable or ask the operator.")
+        elif len(child.exits) > 5 or child.probing:
+            child.cooldown = min(PROBE_CAP, child.cooldown * 2) if child.cooldown else PROBE_COOLDOWN
+            child.probe_due = now + child.cooldown
+            child.probing = False
+            child.status.update(next_probe_at=self.wall_clock() + child.cooldown, probe_cooldown=child.cooldown)
             child.status.update(state="crash_loop", circuit_open=True, reason="more than 5 exits in 600 seconds")
         else:
-            delay = backoff_seconds(child.failures)
+            delay = self.rng.uniform(BACKOFF_FLOOR, backoff_seconds(child.failures))
             child.due = now + delay
             child.status.update(state="backoff", backoff_seconds=delay)
 
@@ -221,6 +311,16 @@ class LayerSupervisor:
                 self.supervise_child(child, now)
             except Exception as exc:
                 self.record_error(name=name, child=child, exc=exc)
+        if self.root_guard and self.guard_started and not self.health_recorded:
+            if all(c.status['state'] == 'running' for c in self.children.values()):
+                if self.healthy_since is None:
+                    self.healthy_since = now
+                if now - self.healthy_since >= 600:
+                    with file_lock(self.path.parent / 'control.lock'):
+                        self.root_guard.healthy()
+                    self.health_recorded = True
+            else:
+                self.healthy_since = None
         self.save()
 
     def record_error(self, *, name, child, exc):
@@ -243,6 +343,7 @@ class LayerSupervisor:
         if child.status.get("circuit_open") and child.process is not None:
             if self.terminate(child):
                 child.status.update(state="crash_loop", alive=False)
+                child.process = None
             return
         if child.status.get("state") == "terminating":
             if not self.terminate(child):
@@ -251,7 +352,31 @@ class LayerSupervisor:
                         child.tail.text() if child.tail else "")
             return
         if child.process is None:
-            if child.status["state"] != "crash_loop" and now >= child.due:
+            if child.status.get('circuit_open'):
+                name = next(name for name, value in self.children.items() if value is child)
+                reset = read_heartbeat(self.path.parent / 'circuit_resets' / (name + '.json'))
+                allow = (reset.get('token') and reset.get('token') != child.status.get('reset_token')
+                         and all(reset.get(k) for k in ('requester', 'reason', 'at')))
+                if allow:
+                    child.status['reset_token'] = reset['token']
+                elif child.status.get('failure_class') in {'BLOCKED_SECURITY_POLICY', 'CONFIG'}:
+                    if now < child.identity_check_due:
+                        return
+                    child.identity_check_due = now + IDENTITY_CHECK_SECONDS
+                    old = child.status.get('blocked_executable') or {}
+                    current = executable_identity(child.command[0], self.root, child.identity_cache or old)
+                    child.identity_cache = current
+                    allow = (current['sha256'] is not None if child.status['failure_class'] == 'CONFIG'
+                             else current['path'] != old.get('path') or
+                             current['sha256'] is not None and current['sha256'] != old.get('sha256'))
+                else:
+                    allow = now >= child.probe_due
+                if not allow:
+                    return
+                child.probing = True
+                child.status.update(circuit_open=False, next_probe_at=None, state='half_open')
+                child.due = now
+            if now >= child.due:
                 child.status["started_at"] = timestamp()
                 self.start(child, now)
             return
@@ -295,8 +420,11 @@ class LayerSupervisor:
                         child.tail.text() if child.tail else "")
         elif now - child.started > 600:
             child.failures = 0
+            child.cooldown = 0
+            child.probing = False
+            child.status.update(circuit_open=False, next_probe_at=None)
 
-    def shutdown(self):
+    def shutdown(self, *, planned=True):
         self.stop_requested = True
         for child in self.children.values():
             try:
@@ -310,6 +438,10 @@ class LayerSupervisor:
             child.status.update(state="stopped", alive=False, ticking=False, progressing=False,
                                 stopped_at=timestamp(),
                                 stopped_exit_code=child.process.returncode if child.process else None)
+        if (planned and self.root_guard and self.guard_started
+                and all(not c.status.get('alive') for c in self.children.values())):
+            with file_lock(self.path.parent / 'control.lock'):
+                self.root_guard.planned_stop()
         self.shutdown_complete = True
         self.save()
 
@@ -327,6 +459,11 @@ class LayerSupervisor:
                     if old and identity_state(old) in {"live", "unknown"}:
                         print("supervisor already live or identity unverifiable; refusing start", flush=True)
                         return 2
+                    if self.root_guard:
+                        if not self.root_guard.start():
+                            print("root restart guard open; start refused", flush=True)
+                            return 78
+                        self.guard_started = True
                     job_name, self._root_job = register_supervisor_job()
                     self.identity["process_identity"] = job_name
                     self.save()
@@ -351,9 +488,9 @@ class LayerSupervisor:
                         "at": timestamp(), "child": None, "error": str(exc),
                         "traceback_tail": traceback.format_exc()[-STDERR_LIMIT:],
                     }])[-20:]
-                time.sleep(0.25)
+                time.sleep(self.sleep_seconds())
         finally:
-            self.shutdown()
+            self.shutdown(planned=self.stop_requested)
             for sig, handler in previous.items():
                 signal.signal(sig, handler)
         return 0

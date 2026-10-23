@@ -32,7 +32,7 @@ from orchestrator.layer_supervisor import LayerSupervisor
 from scripts import run_supervisor_layers as entrypoint
 root = Path(sys.argv[1])
 command = [sys.executable, str(root / 'fake.py')]
-entrypoint.LayerSupervisor = lambda root, commands: LayerSupervisor(root, {'builder': command, 'claude': command})
+entrypoint.LayerSupervisor = lambda root, commands, **kwargs: LayerSupervisor(root, {'builder': command, 'claude': command}, **kwargs)
 sys.argv = ['run_supervisor_layers.py', '--state-root', str(root)]
 raise SystemExit(entrypoint.main())
 """

@@ -313,6 +313,7 @@ class LayerSupervisorTests(unittest.TestCase):
     def test_atomic_status_failure_preserves_previous_document(self):
         self.supervisor.step()
         before = self.supervisor.path.read_bytes()
+        self.supervisor.supervisor_error_count += 1  # force a content change
         with patch("dispatch.atomic_io.os.replace", side_effect=OSError("interrupted")):
             with self.assertRaises(OSError):
                 self.supervisor.save()
