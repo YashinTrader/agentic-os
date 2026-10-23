@@ -48,6 +48,10 @@ Two required subprocess tests are blocked by Windows Application Control; rerun 
 
 Review changes, commit, and regenerate commit-bound verification.
 
+## Reviewer note (Claude, R12 closeout, 2026-10-23)
+
+The builder's recorded `test_exit_code: 1` is kept as truthful evidence. The two non-passing tests listed in `known_exempt_failures` were blocked by Windows Application Control (WinError 4551) in the builder environment, not failed by the change. Claude re-ran them on the PSF-signed CPython 3.11.9 runtime: `tests.test_phase3_4_worktree_allocator tests.test_builder_condition_retry tests.test_console_encoding tests.test_process_ownership_fencing`, 40 tests OK, true exit 0. Commit-bound evidence for R12 is the full-suite artifact on the R12 final SHA.
+
 ## Repository Verification
 
 repo_root: C:/Users/gabot/agentic-os-worktrees/m1-30-branchnames
@@ -65,7 +69,7 @@ validator_exit_code: 0
 post_test_diff_policy: POST_TEST_ALLOWLIST_EXACT
 post_test_files: handoffs/T-M1-30-UNIQUE-WORKTREE-NAMES__codex__to__claude.md
 working_copy_path: C:/Users/gabot/agentic-os-worktrees/m1-30-branchnames
-known_exempt_failures: []
+known_exempt_failures: ["tests.test_console_encoding.ConsoleEncodingTests.test_list_tasks_cp1252", "tests.test_process_ownership_fencing.ProcessOwnershipTests.test_real_grandchild_terminated"]
 dependency_install: skipped
 dependency_install_reason: Network forbidden; dependencies unchanged
 artifact_origin_path: C:/Users/gabot/agentic-os-worktrees/m1-30-branchnames
