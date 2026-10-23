@@ -59,9 +59,22 @@ AgenticOS.exe (Tauri shell, signed)  ──pipe/loopback + per-session token─�
 1. **Fetch the runtime.** Download the CPython embeddable zip from python.org. Verify its SHA-256 against the release page and the Authenticode signer (Python Software Foundation) of every PE file.
 2. **Resolve dependencies.** Install from `requirements-core.lock`, which is hash-pinned (`--require-hashes`, `--only-binary=:all:`). Pins are produced by `uv pip compile --generate-hashes` on the build machine only. The core set is PyYAML and psutil, plus langgraph and its closure (36 dists measured on 2026-10-23). Optional extras such as cognee are separate locks and are not shipped in core.
 3. **Inventory binaries.** Every `.exe`, `.dll` and `.pyd` is recorded with its SHA-256, origin wheel and RECORD hash, and its signer status, in `binary-inventory.json`. The build **fails** on any PE file not in the allowlist. Measured on 2026-10-23: the 3.11 closure has 12 unsigned third-party `.pyd` files (pydantic_core, orjson, ormsgpack, psutil, PyYAML, uuid_utils, websockets, xxhash, zstandard ×2, charset_normalizer ×2). pip's distlib launchers and Tcl DLLs are excluded entirely.
-4. **Sign.**
-   - Store channel: the Store signature covers the package. **To be verified in WIN-M04:** that SAC accepts unsigned loose `.pyd` files inside a Store-signed package.
-   - Direct channel: every PE file we ship that is unsigned is Authenticode-signed with our certificate and an RFC 3161 timestamp, and then the package itself is signed.
+4. **Sign.** There are two different mechanisms, and they must not be confused:
+   - **MSIX package signing.** `AppxSignature.p7x` signs the package's block map, so every file's hashes are covered as a unit. It does **not** put an Authenticode signature into the individual `.exe`, `.dll` or `.pyd` files. For packaged processes, Windows validates images through the package's signature. Whether Smart App Control accepts a load of an internally unsigned PE file from an installed package depends on how the package was signed:
+     - **Store-signed:** the Store re-signs the package with Microsoft's certificate.
+     - **Our certificate:** the package is signed with our publicly trusted certificate.
+
+     This is an empirical question to prove on clean SAC-On machines (WIN-M04), not an assumption.
+   - **Authenticode on individual PE files.** An embedded signature in each `.exe`, `.dll` or `.pyd`. This is the only trust anchor for anything that is **not** loaded from an installed MSIX package: a ZIP or per-user directory install, a bootstrapper EXE, files copied out of a package, and tools spawned from outside the package context. (Per-file catalog signatures need a system-wide catalog install, which requires admin, so they are out of scope.)
+
+   | Channel | Package signature | Per-PE Authenticode | Required proof on clean SAC-On machines |
+   |---|---|---|---|
+   | Store MSIX | Microsoft Store | Not required by design. Ours are signed anyway where we build them | Install, launch, and import of every native `.pyd` with 0 Code Integrity blocks |
+   | Sideloaded MSIX | Our certificate (publicly trusted) | **Required for every shipped PE** until the proof shows package trust alone suffices under SAC | Same, plus behaviour with SAC in Evaluation mode |
+   | Bootstrapper EXE | — | Our certificate | Launches under SAC with no SmartScreen block once the reputation of the signed identity is established |
+   | Per-user directory or ZIP (prototype and internal bridge only) | — | **Required for every PE**. PSF-signed CPython plus our signature on third-party `.pyd` files | 0 Code Integrity blocks across start, restart, every import and stop |
+
+   The build fails if any shipped PE file is unsigned in a channel that requires per-PE Authenticode. The third-party `.pyd` files in today's bridge runtime are unsigned; that is a documented gap of the internal bridge, not acceptable for release.
 5. **Package.** MSIX (`runFullTrust`, `startupTask`, no broad capabilities), plus the bootstrapper EXE for direct installs. Packaging also produces an SBOM (CycloneDX) and the inventory.
 6. **Verify.** The clean-machine matrix in `AOS-WIN-001_CLEAN_MACHINE_TEST_PLAN.md`.
 
@@ -73,7 +86,13 @@ AgenticOS.exe (Tauri shell, signed)  ──pipe/loopback + per-session token─�
 - Total: roughly 85–90 MB. MinGit adds about 45 MB.
 
 **Prerequisites:**
-- **None for the core.** WebView2 is present on Windows 11. On Windows 10 22H2, the bootstrapper installs the Evergreen runtime from Microsoft's signed installer, which is the only download it makes.
+- **None for the core.** WebView2 ships with Windows 11 24H2+. No runtime downloads.
+- **Crash-loop guarantee:**
+  - The launcher refuses to start after 3 non-zero exits in 30 minutes (exit 78, one actionable message).
+  - The supervisor classifies policy denials as `BLOCKED_SECURITY_POLICY` and never retries them.
+  - Status writes are budgeted: ≤0.2/s healthy, ≤1/min parked.
+  - The logon task has no repetition trigger.
+  - Installation or runtime failures therefore cannot trap users in a high-resource loop (incident 2026-10-23).
 
 **Uninstall:**
 - Removes the app files, the logon task or startup task, and the credential entries under the `AgenticOS/` target prefix.
@@ -95,8 +114,8 @@ AgenticOS.exe (Tauri shell, signed)  ──pipe/loopback + per-session token─�
 
 ## 5. Support boundaries (v1)
 
-- **Supported:** Windows 11 23H2 and later, x64, standard user, SAC On/Evaluation/Off, Defender or a third-party AV. Windows 10 22H2 is best effort until its extended updates end.
-- **Not supported:** ARM64 (planned once all core wheels ship win_arm64), Windows Server, multi-user shared installs, enterprise WDAC policies stricter than SAC (documented allow rules are provided for admins), and running agents as admin.
+- **Public release target:** Windows 11 **24H2 and later**, x64, standard user, SAC On/Evaluation/Off, Defender or a third-party AV.
+- **Out of scope unless a specific support decision is made:** all other Windows releases, including Windows 10 and Windows 11 before 24H2. Also out of scope: ARM64 (planned once all core wheels ship win_arm64), Windows Server, multi-user shared installs, enterprise WDAC policies stricter than SAC, and running agents as admin.
 - **Third-party agents:** each is the user's own account and install. Agentic OS supports the adapter contract, not the vendor's CLI.
 
 ## 6. Missions (each ≤ 4 h; GO / FIX / NO-GO per the release policy)
