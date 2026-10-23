@@ -210,7 +210,7 @@ class ConditionRetryFixture(unittest.TestCase):
 class QuotaBackoffTests(ConditionRetryFixture):
     def test_quota_without_retry_after_relaunches_once_after_backoff(self) -> None:
         monitor = _monitor("quota exceeded")
-        with patch("orchestrator.builder_condition.subprocess.run") as spawned:
+        with patch("orchestrator.process_ownership.owned_run") as spawned:
             first = process_once(
                 self.root,
                 config=self._config(),
@@ -280,7 +280,7 @@ class QuotaBackoffTests(ConditionRetryFixture):
         """Backoff eligibility relaunches from the tick itself. No later wake."""
         monitor = _monitor("quota exceeded")
         kwargs = dict(popen=self._popen, launch_plan_builder=self._plan, monitor=monitor)
-        with patch("orchestrator.builder_condition.subprocess.run") as spawned:
+        with patch("orchestrator.process_ownership.owned_run") as spawned:
             first = process_once(self.root, config=self._config(), **kwargs)
             self.assertEqual(first["process_state"], "blocked_quota", first)
             blocked = self._runs()[0]
@@ -479,7 +479,7 @@ class ConditionRetryUnitTests(unittest.TestCase):
         self.assertEqual(consumed, now + timedelta(seconds=1800))
 
     def test_grok_probe_never_spawns_and_codex_auth_uses_login_status(self) -> None:
-        with patch("orchestrator.builder_condition.subprocess.run") as spawned:
+        with patch("orchestrator.process_ownership.owned_run") as spawned:
             self.assertFalse(default_builder_probe("quota:grok"))
             self.assertFalse(default_builder_probe("auth:grok"))
             spawned.assert_not_called()

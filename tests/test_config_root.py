@@ -96,7 +96,7 @@ class ConfigRootTests(unittest.TestCase):
         state = RunState(run_id="offline", assignment_id="offline", task_id="T",
                          assigned_agent="codex", adapter="codex-restricted")
         self.assertTrue(save_run_state(self.state, state).is_relative_to(self.state))
-        with patch("dispatch.worktree_allocator.subprocess.run") as git:
+        with patch("orchestrator.process_ownership.owned_run") as git:
             run_git(self.state, ["rev-parse", "HEAD"])
         self.assertEqual(git.call_args.kwargs["cwd"], self.state)
         self.assertEqual(resolve_worktree_root(self.state),
