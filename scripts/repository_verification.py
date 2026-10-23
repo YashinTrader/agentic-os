@@ -24,6 +24,7 @@ UNITTEST_ARTIFACT_REL = "runtime/unittest_last_run.txt"
 POST_TEST_ALLOWLIST_EXACT = frozenset(
     {
         "handoffs/T-M1-30-UNIQUE-WORKTREE-NAMES__codex__to__claude.md",
+        "handoffs/T-M1-31-PROVENANCE-GIT-TIMEOUT__codex__to__claude.md",
         "handoffs/T-M1-25B-STATUS-READ-RACE__codex__to__claude.md",
         "handoffs/T-M1-28C-INVENTORY-TEST-ISOLATION__codex__to__claude.md",
         "handoffs/T-M1-27B-STALE-MOCK__codex__to__claude.md",
