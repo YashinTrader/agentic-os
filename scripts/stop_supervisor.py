@@ -148,10 +148,39 @@ def adopt_legacy_status(root: Path, actor: str, reason: str) -> int:
     return code
 
 
+def reset_resilience(root: Path, actor: str, reason: str, layer: str | None = None) -> int:
+    """Durable audited intent; a live root consumes each reset token once."""
+    if not actor or not actor.strip() or not reason or not reason.strip():
+        raise ValueError('reset requires nonblank actor and reason')
+    directory = control_dir(root)
+    token = uuid.uuid4().hex
+    audit = {'requester': actor, 'reason': reason, 'token': token, 'at': timestamp(),
+             'operation': 'reset_circuit' if layer else 'reset_root_guard', 'layer': layer}
+    audit_path = directory / 'audit' / (token + '.json')
+    try:
+        with file_lock(directory / 'operator.lock'), file_lock(directory / 'control.lock'):
+            if layer and (layer not in read_heartbeat(directory / 'status.json').get('children', {})
+                          or Path(layer).name != layer or layer in {'.', '..'}):
+                raise ValueError('unknown layer')
+            atomic_write_json(audit_path, audit)
+            if layer:
+                atomic_write_json(directory / 'circuit_resets' / (layer + '.json'), audit)
+            else:
+                atomic_write_json(directory / 'root_starts.json', {'starts': [], 'reset': audit})
+            audit.update(exit_code=0, outcome='reset recorded', finished_at=timestamp())
+            atomic_write_json(audit_path, audit)
+        return 0
+    except (OSError, ValueError) as exc:
+        audit.update(exit_code=2, outcome=str(exc), finished_at=timestamp())
+        atomic_write_json(audit_path, audit)
+        return 2
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--state-root")
     parser.add_argument("--adopt-legacy-status", action="store_true")
+    parser.add_argument("--reset-circuit")
     parser.add_argument("--actor")
     parser.add_argument("--reason")
     parser.add_argument("--timeout", type=float, default=90)
@@ -165,8 +194,12 @@ def main() -> int:
         parser.error("--actor and --reason must not be blank")
     if args.adopt_legacy_status and (not args.actor or args.maintenance):
         parser.error("--adopt-legacy-status requires --actor and --reason and cannot combine with --maintenance")
+    if args.reset_circuit and (not args.actor or args.maintenance or args.adopt_legacy_status):
+        parser.error('--reset-circuit requires --actor and --reason and cannot combine with other operations')
     try:
         root = resolve_state_root(REPO_ROOT, args.state_root)
+        if args.reset_circuit:
+            return reset_resilience(root, args.actor, args.reason, args.reset_circuit)
         if args.adopt_legacy_status:
             return adopt_legacy_status(root, args.actor, args.reason)
         return stop(root, args.actor or "local-operator", args.reason or f"maintenance {args.maintenance}",
