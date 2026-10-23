@@ -1,4 +1,4 @@
-timestamp: 2026-10-22T20:28:06Z
+timestamp: 2026-10-23T09:43:17Z
 dependency_install: skipped
 dependency_install_reason: core dependencies preinstalled in the hermes venv; cognee optional since T-M1-22 (requirements-memory.txt)
 known_exempt_failures: []
@@ -7,14 +7,14 @@ artifact_origin_path: C:/Users/gabot/agentic-os-worktrees/m1-integration
 hostname: AIAG
 python_version: 3.11.15
 command_line: ["C:\\Users\\gabot\\AppData\\Local\\hermes\\hermes-agent\\venv\\Scripts\\python.exe", "-m", "unittest", "discover", "-s", "tests", "-p", "test_*.py", "-v"]
-raw_output_sha256: a5ceaafc109a3ae1d8fecce58898a19cb9fdec100d01768e66f5954ab847fc75
+raw_output_sha256: ca5128f952b9df75cfe326d28f2c6db3ed91600c37e0212c96ef2f575fccf136
 repo_root: C:/Users/gabot/agentic-os-worktrees/m1-integration
 commit: unknown
-commit_full: 7cfe687b69c8561c2d66295e3e0168f22eacdd3c
+commit_full: 8ff5b30a8b09d29db60b9b4164a6a64835863252
 python: C:\Users\gabot\AppData\Local\hermes\hermes-agent\venv\Scripts\python.exe
-test_count: 906
+test_count: 929
 exit_code: 0
-evidence_block_sha256: 8b7ef4f8e79c739b22f2b63adf36d140ef7b2f1d65cf68e5f563b0baea41eddb
+evidence_block_sha256: 0a03cb347cb8a1527cc92a7a21ccffddb77150b4fa6d3dc2000fe4ec58b73a97
 --- raw output ---
 dependency_install: skipped
 dependency_install_reason: core dependencies preinstalled in the hermes venv; cognee optional since T-M1-22 (requirements-memory.txt)
@@ -30,8 +30,10 @@ dependency_install_reason: core dependencies preinstalled in the hermes venv; co
 {
   "status": "idle"
 }
+refused/failed: unreadable
 maintenance mode on
 maintenance mode off
+refused: missing, reused or unverifiable root PID/start time
 refused: missing, reused or unverifiable root PID/start time
 test_canonical_seal_ignores_only_formatting_and_closeout (test_achievable_evidence_seal.AchievableSealTests.test_canonical_seal_ignores_only_formatting_and_closeout) ... ok
 test_missing_or_duplicate_evidence_is_rejected (test_achievable_evidence_seal.AchievableSealTests.test_missing_or_duplicate_evidence_is_rejected) ... ok
@@ -81,6 +83,15 @@ test_quota_without_retry_after_relaunches_once_after_backoff (test_builder_condi
 test_recovery_seconds_from_blocked_since_to_first_activity (test_builder_condition_retry.RecoveryTests.test_recovery_seconds_from_blocked_since_to_first_activity) ... ok
 test_retry_after_is_honored_ahead_of_backoff (test_builder_condition_retry.RetryAfterTests.test_retry_after_is_honored_ahead_of_backoff) ... ok
 test_orchestrator_supersede_still_replaces_the_lock (test_builder_condition_retry.SupersedeWhileBlockedTests.test_orchestrator_supersede_still_replaces_the_lock) ... ok
+test_capacity_creates_no_run_ids_or_directories (test_capacity_leak.CapacityLeakTests.test_capacity_creates_no_run_ids_or_directories) ... ok
+test_condition_retry_capacity_does_not_spend_attempt (test_capacity_leak.CapacityLeakTests.test_condition_retry_capacity_does_not_spend_attempt) ... ok
+test_dead_owner_does_not_override_live_run_pid (test_capacity_leak.CapacityLeakTests.test_dead_owner_does_not_override_live_run_pid) ... ok
+test_dead_prelaunch_owner_recovers_and_launches (test_capacity_leak.CapacityLeakTests.test_dead_prelaunch_owner_recovers_and_launches) ... ok
+test_live_or_unknown_prelaunch_owner_untouched (test_capacity_leak.CapacityLeakTests.test_live_or_unknown_prelaunch_owner_untouched) ... ok
+test_recovered_wake_has_bounded_retry (test_capacity_leak.CapacityLeakTests.test_recovered_wake_has_bounded_retry) ... ok
+test_recovery_cannot_release_replacement_lease_or_lock (test_capacity_leak.CapacityLeakTests.test_recovery_cannot_release_replacement_lease_or_lock) ... ok
+test_cache_invalidated_by_mtime (test_capacity_leak.VersionProbeTests.test_cache_invalidated_by_mtime) ... ok
+test_cmd_grandchild_timeout_leaves_decoy_alive (test_capacity_leak.VersionProbeTests.test_cmd_grandchild_timeout_leaves_decoy_alive) ... ok
 test_auth_deferral_becomes_eligible_only_after_probe_success (test_claude_event_consumer.ClaudeEventConsumerTests.test_auth_deferral_becomes_eligible_only_after_probe_success) ... ok
 test_backoff_grows_and_caps_at_six_hours (test_claude_event_consumer.ClaudeEventConsumerTests.test_backoff_grows_and_caps_at_six_hours) ... ok
 test_buffered_output_valid_verdict_at_exit_is_not_failed_launch (test_claude_event_consumer.ClaudeEventConsumerTests.test_buffered_output_valid_verdict_at_exit_is_not_failed_launch) ... ok
@@ -269,6 +280,8 @@ test_adapter_streams_past_startup_and_inactivity (test_grok_streaming.FormatSens
 test_malformed_lines_are_liveness_only (test_grok_streaming.StreamingTests.test_malformed_lines_are_liveness_only) ... ok
 test_real_events_and_terminal_metadata (test_grok_streaming.StreamingTests.test_real_events_and_terminal_metadata) ... ok
 test_terminal_classification (test_grok_streaming.StreamingTests.test_terminal_classification) ... ok
+test_imports_and_patch_targets (test_impacted_tests.ImpactedTestsTests.test_imports_and_patch_targets) ... ok
+test_selection_is_sorted_and_matches_module_boundaries (test_impacted_tests.ImpactedTestsTests.test_selection_is_sorted_and_matches_module_boundaries) ... ok
 test_modules_import_in_fresh_interpreters (test_import_guard.ImportGuardTests.test_modules_import_in_fresh_interpreters) ... ok
 test_blocking_wait_ticks_and_honors_stop (test_layer_supervisor.HeartbeatTests.test_blocking_wait_ticks_and_honors_stop) ... ok
 test_idle_and_progress_markers (test_layer_supervisor.HeartbeatTests.test_idle_and_progress_markers) ... ok
@@ -276,6 +289,7 @@ test_monitor_stop_kills_work_process_before_unwinding (test_layer_supervisor.Hea
 test_wait_continues_ticking_until_process_exits (test_layer_supervisor.HeartbeatTests.test_wait_continues_ticking_until_process_exits) ... ok
 test_atomic_status_failure_preserves_previous_document (test_layer_supervisor.LayerSupervisorTests.test_atomic_status_failure_preserves_previous_document) ... ok
 test_backoff_progression_and_cap (test_layer_supervisor.LayerSupervisorTests.test_backoff_progression_and_cap) ... ok
+test_child_exception_isolated_and_breaker_bounds_retries (test_layer_supervisor.LayerSupervisorTests.test_child_exception_isolated_and_breaker_bounds_retries) ... ok
 test_crash_loop_keeps_sibling_running_and_preserves_audit (test_layer_supervisor.LayerSupervisorTests.test_crash_loop_keeps_sibling_running_and_preserves_audit) ... ok
 test_graceful_shutdown_records_stopped_without_crash (test_layer_supervisor.LayerSupervisorTests.test_graceful_shutdown_records_stopped_without_crash) ... ok
 test_hung_child_forces_termination_without_grace_wait (test_layer_supervisor.LayerSupervisorTests.test_hung_child_forces_termination_without_grace_wait) ... ok
@@ -284,10 +298,12 @@ test_launch_error_is_backed_off_independently (test_layer_supervisor.LayerSuperv
 test_missing_heartbeat_and_wrong_generation_cannot_mask_hang (test_layer_supervisor.LayerSupervisorTests.test_missing_heartbeat_and_wrong_generation_cannot_mask_hang) ... ok
 test_only_exited_child_restarts_and_recovery_requires_heartbeat (test_layer_supervisor.LayerSupervisorTests.test_only_exited_child_restarts_and_recovery_requires_heartbeat) ... ok
 test_real_dummy_crash_restarts_with_bounded_stderr_and_recovery (test_layer_supervisor.LayerSupervisorTests.test_real_dummy_crash_restarts_with_bounded_stderr_and_recovery) ... ok
+test_run_continues_after_child_error (test_layer_supervisor.LayerSupervisorTests.test_run_continues_after_child_error) ... ok
 test_shutdown_escalates_if_child_ignores_signal (test_layer_supervisor.LayerSupervisorTests.test_shutdown_escalates_if_child_ignores_signal) ... ok
 test_shutdown_graceful_signal (test_layer_supervisor.LayerSupervisorTests.test_shutdown_graceful_signal) ... ok
 test_shutdown_terminates_owned_tree (test_layer_supervisor.LayerSupervisorTests.test_shutdown_terminates_owned_tree) ... ok
 test_signal_handlers_stop_run_and_are_restored (test_layer_supervisor.LayerSupervisorTests.test_signal_handlers_stop_run_and_are_restored) ... ok
+test_slow_real_child_retained_until_exit (test_layer_supervisor.LayerSupervisorTests.test_slow_real_child_retained_until_exit) ... ok
 test_stale_heartbeat_restarts_as_hung (test_layer_supervisor.LayerSupervisorTests.test_stale_heartbeat_restarts_as_hung) ... ok
 test_build_codex_command_default_zero_mcp (test_mcp_isolation.CodexCommandPlanIntegrationTests.test_build_codex_command_default_zero_mcp) ... ok
 test_argv_contract_allows_isolation_flags (test_mcp_isolation.CodexMcpIsolationFlagTests.test_argv_contract_allows_isolation_flags) ... ok
@@ -769,6 +785,8 @@ test_same_run_release_allowed_but_older_release_is_not (test_process_ownership_f
 test_stale_runtime_outcome_is_audited (test_process_ownership_fencing.CompletionFenceTests.test_stale_runtime_outcome_is_audited) ... ok
 test_supersede_cannot_race_outbox_and_poke_transaction (test_process_ownership_fencing.CompletionFenceTests.test_supersede_cannot_race_outbox_and_poke_transaction) ... ok
 test_superseded_completion_is_fenced_every_entry (test_process_ownership_fencing.CompletionFenceTests.test_superseded_completion_is_fenced_every_entry) ... ok
+test_inventory_records_are_immutable_and_detached (test_process_ownership_fencing.ProcessOwnershipTests.test_inventory_records_are_immutable_and_detached) ... ok
+test_inventory_unreadable_candidates_fail_closed (test_process_ownership_fencing.ProcessOwnershipTests.test_inventory_unreadable_candidates_fail_closed) ... ok
 test_no_name_based_kills (test_process_ownership_fencing.ProcessOwnershipTests.test_no_name_based_kills) ... ok
 test_real_grandchild_terminated (test_process_ownership_fencing.ProcessOwnershipTests.test_real_grandchild_terminated) ... ok
 test_reused_pid_is_gone_and_never_signaled (test_process_ownership_fencing.ProcessOwnershipTests.test_reused_pid_is_gone_and_never_signaled) ... ok
@@ -882,14 +900,21 @@ test_list_skills_filters_by_agent (test_skills_registry.SkillsRegistryTests.test
 test_list_skills_filters_by_risk (test_skills_registry.SkillsRegistryTests.test_list_skills_filters_by_risk) ... ok
 test_required_skill_fields_exist (test_skills_registry.SkillsRegistryTests.test_required_skill_fields_exist) ... ok
 test_skills_registry_loads (test_skills_registry.SkillsRegistryTests.test_skills_registry_loads) ... ok
+test_adoption_refuses_partial_identity_and_scan_errors (test_stop_supervisor.StopSupervisorTests.test_adoption_refuses_partial_identity_and_scan_errors) ... ok
 test_force_revalidates_creation_immediately_before_termination (test_stop_supervisor.StopSupervisorTests.test_force_revalidates_creation_immediately_before_termination) ... ok
 test_foreign_job_is_refused_and_decoy_survives (test_stop_supervisor.StopSupervisorTests.test_foreign_job_is_refused_and_decoy_survives) ... ok
+test_gone_identity_allows_start_without_adoption (test_stop_supervisor.StopSupervisorTests.test_gone_identity_allows_start_without_adoption) ... ok
 test_graceful_real_two_layers_and_audit (test_stop_supervisor.StopSupervisorTests.test_graceful_real_two_layers_and_audit) ... ok
+test_legacy_adoption_archives_audits_and_allows_start (test_stop_supervisor.StopSupervisorTests.test_legacy_adoption_archives_audits_and_allows_start) ... ok
+test_legacy_adoption_refuses_own_fake_runtime (test_stop_supervisor.StopSupervisorTests.test_legacy_adoption_refuses_own_fake_runtime) ... ok
 test_live_status_fence_even_without_instance_lock (test_stop_supervisor.StopSupervisorTests.test_live_status_fence_even_without_instance_lock) ... ok
 test_maintenance_entrypoint_and_resume (test_stop_supervisor.StopSupervisorTests.test_maintenance_entrypoint_and_resume) ... ok
 test_restart_rollback_no_overlap_and_heartbeats_resume (test_stop_supervisor.StopSupervisorTests.test_restart_rollback_no_overlap_and_heartbeats_resume) ... ok
 test_reused_pid_refused_without_signaling (test_stop_supervisor.StopSupervisorTests.test_reused_pid_refused_without_signaling) ... ok
+test_scan_resolves_root_flags_environment_and_cwd (test_stop_supervisor.StopSupervisorTests.test_scan_resolves_root_flags_environment_and_cwd) ... ok
 test_stale_stop_request_does_not_stop_replacement (test_stop_supervisor.StopSupervisorTests.test_stale_stop_request_does_not_stop_replacement) ... ok
+test_status_read_missing_identity_is_bounded_and_stop_refuses (test_stop_supervisor.StopSupervisorTests.test_status_read_missing_identity_is_bounded_and_stop_refuses) ... ok
+test_status_read_retries_transient_failures (test_stop_supervisor.StopSupervisorTests.test_status_read_retries_transient_failures) ... ok
 test_unresponsive_forces_only_recorded_tree_leaves_decoy (test_stop_supervisor.StopSupervisorTests.test_unresponsive_forces_only_recorded_tree_leaves_decoy) ... ok
 test_suggest_team_by_dashboard_skill (test_team_suggestion.TeamSuggestionTests.test_suggest_team_by_dashboard_skill) ... ok
 test_suggest_team_by_python_cli_skill (test_team_suggestion.TeamSuggestionTests.test_suggest_team_by_python_cli_skill) ... ok
@@ -949,6 +974,6 @@ test_worker_correction_does_not_claim_parent_reservation (test_work_lock.WorkLoc
 test_yaml_followups_inherit_parent_task_and_explicit_split (test_work_lock.WorkLockTests.test_yaml_followups_inherit_parent_task_and_explicit_split) ... ok
 
 ----------------------------------------------------------------------
-Ran 906 tests in 6701.675s
+Ran 929 tests in 4813.878s
 
 OK (skipped=3)
