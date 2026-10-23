@@ -5,6 +5,9 @@ from contextlib import contextmanager
 import os
 from pathlib import Path
 import signal
+import time
+
+from orchestrator.layer_heartbeat import read_heartbeat
 
 from orchestrator.process_ownership import process_start_time
 
@@ -32,6 +35,25 @@ def register_supervisor_job() -> tuple[str | None, object]:
 
 def control_dir(root: Path) -> Path:
     return root / "runtime/dispatch/layer_supervisor"
+
+
+def read_control_status(path: Path, timeout: float = 3.0) -> dict:
+    """Wait briefly for a readable root identity; callers still fence it normally.
+
+    Heartbeat reads map malformed JSON and sharing violations to an empty dict.
+    Never reuse a cached identity across reads or weaken process verification.
+    """
+    deadline = time.monotonic() + timeout
+    while True:
+        record = read_heartbeat(path)
+        if (type(record.get("pid")) is int
+                and isinstance(record.get("process_start_time"), str)
+                and record["process_start_time"].strip()):
+            return record
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return record
+        time.sleep(min(.05, remaining))
 
 
 @contextmanager

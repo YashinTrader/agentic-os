@@ -15,7 +15,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from dispatch.atomic_io import atomic_write_json
 from orchestrator.layer_heartbeat import read_heartbeat, timestamp
-from orchestrator.supervisor_control import control_dir, file_lock, identity_state, force_recorded_tree, is_legacy_status, legacy_process_blockers
+from orchestrator.supervisor_control import control_dir, read_control_status, file_lock, identity_state, force_recorded_tree, is_legacy_status, legacy_process_blockers
 from root_paths import resolve_state_root
 
 
@@ -44,7 +44,7 @@ def stop(root: Path, actor: str, reason: str, timeout: float = 90,
                     (directory / "maintenance.json").unlink(missing_ok=True)
                 if not request_stop:
                     return finish(0, f"maintenance mode {maintenance}")
-                status = read_heartbeat(directory / "status.json")
+                status = read_control_status(directory / "status.json")
                 if not status or identity_state(status) in {"reused", "unknown"}:
                     return finish(2, "refused: missing, reused or unverifiable root PID/start time")
                 audit["root"] = {key: status.get(key) for key in
@@ -57,7 +57,7 @@ def stop(root: Path, actor: str, reason: str, timeout: float = 90,
             records = {}
 
             def tree_states():
-                current = read_heartbeat(directory / "status.json")
+                current = read_control_status(directory / "status.json")
                 if (current.get("pid"), current.get("process_start_time")) == (
                         status.get("pid"), status.get("process_start_time")):
                     sources = [status, current]
@@ -88,7 +88,7 @@ def stop(root: Path, actor: str, reason: str, timeout: float = 90,
                 if "unknown" in states:
                     return finish(2, "refused: process identity cannot be verified")
                 if all(state in {"gone", "reused"} for state in states):
-                    latest = read_heartbeat(directory / "status.json")
+                    latest = read_control_status(directory / "status.json")
                     acknowledged = latest.get("stop_request") or {}
                     if not isinstance(acknowledged, dict):
                         raise ValueError("invalid stop acknowledgement")

@@ -66,7 +66,16 @@ class StopSupervisorTests(unittest.TestCase):
         return process
 
     def status(self):
-        return read_heartbeat(control_dir(self.root) / "status.json")
+        deadline = time.monotonic() + 3
+        while True:
+            status = read_heartbeat(control_dir(self.root) / "status.json")
+            expected = getattr(self, "supervisor_pid", None)
+            if expected is None or (status.get("pid") == expected
+                                    and status.get("process_start_time")):
+                return status
+            if time.monotonic() >= deadline:
+                self.fail(f"status missing expected identity {expected}: {status}")
+            time.sleep(.05)
 
     def wait_for(self, predicate, timeout=15):
         deadline = time.monotonic() + timeout
@@ -86,12 +95,16 @@ class StopSupervisorTests(unittest.TestCase):
                       "module.read_heartbeat = lambda path: {} if path.name == 'stop_request.json' else original(path)\n")
         host.write_text(prefix + HOST, encoding="utf-8")
         process = self.launch([sys.executable, str(host), str(self.root)])
+        previous_pid = getattr(self, "supervisor_pid", None)
+        self.supervisor_pid = None
         def ticking():
             status = self.status()
             children = status.get("children", {})
-            return (status.get("state") == "running" and len(children) == 2
-                    and all(child.get("ticking") for child in children.values()))
-        self.wait_for(ticking)
+            return (status.get("pid") and status.get("process_start_time")
+                    and status.get("pid") != previous_pid
+                    and status.get("state") == "running" and len(children) == 2
+                    and all(child.get("ticking") for child in children.values()) and status)
+        self.supervisor_pid = self.wait_for(ticking)["pid"]
         return process
 
     def assert_gone(self, status):
@@ -124,6 +137,26 @@ class StopSupervisorTests(unittest.TestCase):
                   "config_root": str(ROOT), "config_root_git_sha": "old", "updated_at": "old"}
         atomic_write_json(control_dir(self.root) / "status.json", record)
         return record
+
+    def test_status_read_retries_transient_failures(self):
+        from orchestrator.supervisor_control import read_control_status
+        record = {"pid": 123, "process_start_time": "creation"}
+        for transient in ("", "{", "[]", "{}", PermissionError("sharing violation")):
+            with self.subTest(transient=transient):
+                with patch.object(Path, "read_text", side_effect=[transient, json.dumps(record)]):
+                    self.assertEqual(read_control_status(self.root / "status.json", timeout=.2), record)
+
+    def test_status_read_missing_identity_is_bounded_and_stop_refuses(self):
+        from orchestrator.supervisor_control import read_control_status
+        for record in ({}, {"state": "running"}, {"pid": 123}):
+            with self.subTest(record=record):
+                atomic_write_json(control_dir(self.root) / "status.json", record)
+                started = time.monotonic()
+                self.assertEqual(read_control_status(control_dir(self.root) / "status.json", timeout=.05), record)
+                self.assertLess(time.monotonic() - started, .5)
+        with patch("scripts.stop_supervisor.force_recorded_tree") as force:
+            self.assertEqual(stop(self.root, "test", "missing identity", 0), 2)
+            force.assert_not_called()
 
     def test_legacy_adoption_archives_audits_and_allows_start(self):
         before = self.legacy_status()
