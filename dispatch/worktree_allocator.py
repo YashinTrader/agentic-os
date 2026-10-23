@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import hashlib
 import re
 import subprocess
 from dataclasses import dataclass
@@ -24,6 +25,8 @@ from dispatch.worktree_registry import (
 GIT_EXECUTABLE = "git"
 GIT_TIMEOUT_SECONDS = 120
 MAX_BRANCH_LENGTH = 120
+MAX_WORKTREE_PATH_LENGTH = 199
+MAX_ALLOCATION_ATTEMPTS = 8
 DEFAULT_ALLOCATION_TTL_HOURS = 24
 
 ALLOWED_GIT_SUBCOMMANDS = frozenset(
@@ -100,14 +103,9 @@ def sanitize_run_id(run_id: str) -> str:
 
 
 def unique_run_slug(run_id: str) -> str:
-    """Deterministic short slug that stays unique across retries (stamp + suffix)."""
-    run_part = sanitize_run_id(run_id)
-    parts = run_part.split("-")
-    if len(parts) >= 3 and parts[0] == "build":
-        stamp = parts[1][:15]
-        suffix = parts[-1][:8]
-        return f"{stamp}-{suffix}"[:24]
-    return run_part[:12] if len(run_part) > 12 else run_part
+    """Stable 96-bit digest of the FULL validated run id, including its suffix."""
+    sanitize_run_id(run_id)  # Validate without hashing the truncated sanitizer output.
+    return hashlib.sha256(run_id.encode("utf-8")).hexdigest()[:24]
 
 
 def build_branch_name(task_id: str, run_id: str) -> str:
@@ -126,7 +124,15 @@ def build_branch_name(task_id: str, run_id: str) -> str:
 def build_worktree_path(worktree_root: Path, task_id: str, run_id: str) -> Path:
     task_part = sanitize_task_id(task_id)
     short_run = unique_run_slug(run_id)
+    # Budget: absolute root + 2 separators + task (<=60) + run slug (24).
+    # Shorten only the task component; never truncate the run identity.
+    budget = MAX_WORKTREE_PATH_LENGTH - len(str(worktree_root.resolve())) - 2 - len(short_run)
+    if budget < 1:
+        raise ValueError("configured worktree root exceeds 199-character path budget")
+    task_part = task_part[:budget].rstrip("/.") or "t"
     candidate = (worktree_root / task_part / short_run).resolve()
+    if len(str(candidate)) > MAX_WORKTREE_PATH_LENGTH:
+        raise ValueError("worktree path exceeds 199-character path budget")
     if not path_is_inside(candidate, worktree_root.resolve(), allow_equal=True):
         raise ValueError("worktree path escapes configured worktree root")
     return candidate
@@ -197,6 +203,7 @@ def allocate_worktree(
     base_branch: str = "",
     owner: str = "operator",
     cleanup_policy: str = "manual",
+    _attempt: int = 0,
 ) -> AllocationResult:
     """Operator-commanded worktree allocation. Never auto-invoked."""
     repo_root = repo_root.resolve()
@@ -210,18 +217,29 @@ def allocate_worktree(
         return AllocationResult(False, None, "", "", [str(exc)])
 
     errors.extend(_validate_base_inside_repo(repo_root, base_sha))
-    if worktree_path.exists():
-        errors.append(f"worktree path already exists: {worktree_path}")
-    errors.extend(
-        assert_no_active_duplicate(
-            repo_root,
-            run_id=run_id,
-            branch_name=branch_name,
-            worktree_path=str(worktree_path),
-        )
-    )
     if errors:
         return AllocationResult(False, None, str(worktree_path), branch_name, errors)
+
+    for attempt in range(_attempt, MAX_ALLOCATION_ATTEMPTS):
+        # Retry identities include fresh entropy, but the registry retains the real run_id.
+        identity = run_id if attempt == 0 else f"{run_id}-allocation-{uuid4().hex}"
+        branch_name = build_branch_name(task_id, identity)
+        worktree_path = build_worktree_path(worktree_root, task_id, identity)
+        conflicts = assert_no_active_duplicate(
+            repo_root, run_id=run_id, branch_name=branch_name,
+            worktree_path=str(worktree_path),
+        )
+        same_run = [reason for reason in conflicts if reason.startswith("active allocation already exists for run_id ")]
+        if same_run:
+            return AllocationResult(False, None, str(worktree_path), branch_name, same_run)
+        branch_exists, _, _ = run_git(
+            repo_root, ["rev-parse", "--verify", f"refs/heads/{branch_name}"]
+        )
+        if not conflicts and not worktree_path.exists() and branch_exists != 0:
+            break
+    else:
+        return AllocationResult(False, None, str(worktree_path), branch_name,
+                                ["worktree allocation collision retry limit reached"])
 
     allocation_id = new_allocation_id()
     created_at = utc_now()
@@ -282,6 +300,14 @@ def allocate_worktree(
             audit=[{"at": utc_now(), "event": "allocate_failed"}],
         )
         save_allocation_record(repo_root, failed)
+        # A competing allocator may have claimed the name after the preflight.
+        branch_exists, _, _ = run_git(repo_root, ["rev-parse", "--verify", f"refs/heads/{branch_name}"])
+        if (worktree_path.exists() or branch_exists == 0) and attempt + 1 < MAX_ALLOCATION_ATTEMPTS:
+            return allocate_worktree(
+                repo_root, task_id=task_id, run_id=run_id, base_sha=base_sha,
+                base_branch=base_branch, owner=owner, cleanup_policy=cleanup_policy,
+                _attempt=attempt + 1,
+            )
         return AllocationResult(False, failed, str(worktree_path), branch_name, [failed.error])
 
     head = git_worktree_head(repo_root, worktree_path)

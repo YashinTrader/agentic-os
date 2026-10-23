@@ -72,13 +72,73 @@ class WorktreeAllocatorTests(unittest.TestCase):
 
     def test_branch_name_sanitization(self) -> None:
         branch = build_branch_name("T-PHASE3-4", "run-abc123XYZ")
-        self.assertEqual(branch, "agentic/t-phase3-4/run-abc123XY")
+        self.assertEqual(branch, "agentic/t-phase3-4/" + unique_run_slug("run-abc123XYZ"))
         self.assertRegex(branch, r"^agentic/[a-zA-Z0-9._/-]+$")
 
     def test_build_run_ids_get_unique_slugs(self) -> None:
         a = unique_run_slug("build-20260630T121818Z-T-FIRST-AUTONOMOUS-CODEX-b14a7ce2")
         b = unique_run_slug("build-20260630T121927Z-T-FIRST-AUTONOMOUS-CODEX-95d42102")
         self.assertNotEqual(a, b)
+
+    def test_same_window_runs_and_legacy_branch_preserved(self) -> None:
+        legacy = "agentic/t-window/phys-2026102"
+        subprocess.run(["git", "branch", legacy], cwd=self.repo, check=True, capture_output=True)
+        results = [allocate_worktree(
+            self.repo, task_id="T-WINDOW", run_id=run, base_sha=self.base_sha,
+        ) for run in ["phys-20261023T100028Z-T-WINDOW-15b55ba7",
+                      "phys-20261024T100028Z-T-WINDOW-25b55ba7"]]
+        for result in results:
+            self.assertTrue(result.success, result.errors)
+        self.assertNotEqual(results[0].branch_name, results[1].branch_name)
+        self.assertNotEqual(results[0].worktree_path, results[1].worktree_path)
+        old = subprocess.run(["git", "rev-parse", legacy], cwd=self.repo, check=True, capture_output=True, text=True)
+        self.assertEqual(old.stdout.strip(), self.base_sha)
+
+    def test_existing_candidate_branch_and_directory_preserved(self) -> None:
+        run = "phys-20261023T100028Z-T-COLLISION-deadbeef"
+        branch = build_branch_name("T-COLLISION", run)
+        subprocess.run(["git", "branch", branch], cwd=self.repo, check=True, capture_output=True)
+        path = build_worktree_path(self.worktree_root, "T-COLLISION", run)
+        path.mkdir(parents=True)
+        marker = path / "evidence.txt"
+        marker.write_text("preserve")
+        result = allocate_worktree(self.repo, task_id="T-COLLISION", run_id=run, base_sha=self.base_sha)
+        self.assertTrue(result.success, result.errors)
+        self.assertNotEqual(result.branch_name, branch)
+        self.assertNotEqual(result.worktree_path, str(path))
+        self.assertEqual(marker.read_text(), "preserve")
+
+    def test_branch_claimed_between_preflight_and_add(self) -> None:
+        claimed = []
+        def racing_git(repo, argv, **kwargs):
+            if argv[:3] == ["worktree", "add", "-b"] and not claimed:
+                claimed.append(argv[3])
+                subprocess.run(["git", "branch", argv[3]], cwd=repo, check=True, capture_output=True)
+            return run_git(repo, argv, **kwargs)
+        with patch("dispatch.worktree_allocator.run_git", side_effect=racing_git):
+            result = allocate_worktree(self.repo, task_id="T-RACE", run_id="run-race", base_sha=self.base_sha)
+        self.assertTrue(result.success, result.errors)
+        self.assertNotEqual(result.branch_name, claimed[0])
+        self.assertEqual(result.record.run_id, "run-race")
+        old = subprocess.run(["git", "rev-parse", claimed[0]], cwd=self.repo, check=True, capture_output=True, text=True)
+        self.assertEqual(old.stdout.strip(), self.base_sha)
+
+    def test_collision_retries_are_bounded(self) -> None:
+        with patch("dispatch.worktree_allocator.assert_no_active_duplicate",
+                   return_value=["branch already allocated"]):
+            result = allocate_worktree(self.repo, task_id="T-FULL", run_id="run-full", base_sha=self.base_sha)
+        self.assertFalse(result.success)
+        self.assertIn("retry limit", result.errors[0])
+
+    def test_full_run_suffix_affects_slug(self) -> None:
+        prefix = "phys-20261023T100028Z-" + "LONG-TASK-" * 20
+        self.assertNotEqual(unique_run_slug(prefix + "aaaaaaaa"), unique_run_slug(prefix + "bbbbbbbb"))
+        self.assertEqual(unique_run_slug(prefix + "aaaaaaaa"), unique_run_slug(prefix + "aaaaaaaa"))
+
+    def test_long_task_path_budget(self) -> None:
+        root = self.worktree_root / ("r" * 80)
+        path = build_worktree_path(root, "TASK" * 100, "run-full-suffix")
+        self.assertLess(len(str(path)), 200)
 
     def test_worktree_path_stays_inside_root(self) -> None:
         root = resolve_worktree_root(self.repo)
