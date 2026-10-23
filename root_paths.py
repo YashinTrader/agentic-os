@@ -12,6 +12,10 @@ from subprocess import run as run_command
 from pathlib import Path
 
 
+GIT_PROVENANCE_TIMEOUT_SECONDS = 30
+_config_root_sha_cache: dict[Path, str] = {}
+
+
 def resolve_config_root(repo_root: Path, explicit=None, *, validate: bool = False) -> Path:
     selected = explicit or os.environ.get("AGENTIC_OS_CONFIG_ROOT")
     root = Path(selected or repo_root).resolve()
@@ -36,17 +40,42 @@ def export_roots(state_root: Path, config_root: Path) -> None:
 
 def root_metadata(state_root: Path) -> dict:
     config_root = resolve_config_root(state_root)
-    try:
-        if not (config_root / ".git").exists():
-            return {"config_root": str(config_root), "config_root_git_sha": None,
-                    "state_root": str(Path(state_root).resolve())}
-        result = run_command(["git", "-C", str(config_root), "rev-parse", "HEAD"],
-                             capture_output=True, text=True, timeout=5, check=False)
-        sha = result.stdout.strip() if result.returncode == 0 else None
-    except (OSError, subprocess.SubprocessError):
-        sha = None
-    return {"config_root": str(config_root), "config_root_git_sha": sha,
-            "state_root": str(Path(state_root).resolve())}
+    sha = _config_root_sha_cache.get(config_root)
+    error = None
+    if sha is None:
+        sha, error = _lookup_config_sha(config_root)
+        if sha is not None:
+            # Deploy clones are immutable for the lifetime of this process.
+            _config_root_sha_cache[config_root] = sha
+    metadata = {"config_root": str(config_root), "config_root_git_sha": sha,
+                "state_root": str(Path(state_root).resolve())}
+    if error is not None:
+        metadata["config_root_git_sha_error"] = error
+    return metadata
+
+
+def _lookup_config_sha(config_root: Path) -> tuple[str | None, str | None]:
+    if not (config_root / ".git").exists():
+        return None, "no .git"
+    for attempt in range(2):
+        try:
+            result = run_command(["git", "-C", str(config_root), "rev-parse", "HEAD"],
+                                 capture_output=True, text=True,
+                                 timeout=GIT_PROVENANCE_TIMEOUT_SECONDS, check=False)
+        except subprocess.TimeoutExpired:
+            if attempt == 0:
+                continue
+            return None, "timeout"
+        except OSError:
+            return None, "git not found"
+        except subprocess.SubprocessError as exc:
+            return None, type(exc).__name__
+        if result.returncode != 0:
+            lines = result.stderr.strip().splitlines()
+            return None, f"rc={result.returncode}: {lines[0] if lines else ''}"
+        sha = result.stdout.strip()
+        return (sha, None) if sha else (None, "empty git output")
+    return None, "timeout"
 
 
 @contextmanager
