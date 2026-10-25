@@ -499,6 +499,20 @@ def cmd_resolve(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_fail(args: argparse.Namespace) -> int:
+    from orchestrator.stuck_assignments import fail_assignment, RecoveryRefused
+    try:
+        changed = fail_assignment(Path(args.root), args.assignment_id, actor=args.actor, note=args.note)
+    except RecoveryRefused as exc:
+        print(str(exc), file=sys.stderr)
+        return 4
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    _print_json(dict(status='reviewable_failure', changed=changed))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         description=(
@@ -512,6 +526,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="State root (default: AGENTIC_OS_STATE_ROOT or own checkout).",
     )
     sub = p.add_subparsers(dest="command", required=True)
+    fail_p = sub.add_parser('fail', help='Operator: end abandoned work for review')
+    fail_p.add_argument('assignment_id')
+    fail_p.add_argument('--actor', required=True)
+    fail_p.add_argument('--note', required=True)
+    fail_p.set_defaults(func=cmd_fail)
 
     list_p = sub.add_parser("list", help="List inbox assignments")
     list_p.add_argument("--pending", action="store_true", help="Only pickable (pending) assignments")

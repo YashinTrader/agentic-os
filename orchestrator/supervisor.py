@@ -1149,6 +1149,8 @@ def process_once(repo_root: Path, *, config: SupervisorConfig | None = None, **k
     cfg = config or SupervisorConfig()
     _update_status(repo_root, **root_metadata(repo_root))
     recover_orphans(repo_root, config=cfg)
+    from orchestrator.stuck_assignments import recover_stuck_assignments
+    recover_stuck_assignments(repo_root, max_automatic_retry=cfg.max_automatic_retry)
     # Re-evaluate every tick, before waking new work, so due retries cannot starve.
     report = reevaluate_blocked_builders(
         repo_root, config=cfg, launch=process_wake_signal, single_launch=True, **kwargs

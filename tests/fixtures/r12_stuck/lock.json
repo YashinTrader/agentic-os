@@ -1,0 +1,12 @@
+{
+  "logical_task_id": "T-M1-E2E-LIVE-1",
+  "holder_agent": "composer",
+  "route": "supervisor",
+  "assignment_id": "assign-20261025T182005Z-T-M1-E2E-LIVE-1-46d4144a",
+  "run_id": "phys-20261025T182009Z-T-M1-E2E-LIVE-1-e0c79abb",
+  "base_sha": "a59dd45f98a3ae15bcb929c3cc425da71dbd8cbb",
+  "branch": "agentic/t-m1-e2e-live-1/80ee6b9687f8c803585ea14d",
+  "acquired_at": "2026-10-25T18:20:05.959764+00:00",
+  "heartbeat_at": "2026-10-25T18:30:40.537487+00:00",
+  "state": "max_turns"
+}

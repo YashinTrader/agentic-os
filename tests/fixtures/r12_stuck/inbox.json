@@ -1,0 +1,71 @@
+{
+  "schema_version": "1.0",
+  "assignment_id": "assign-20261025T182005Z-T-M1-E2E-LIVE-1-46d4144a",
+  "task_id": "T-M1-E2E-LIVE-1",
+  "logical_task_id": "T-M1-E2E-LIVE-1",
+  "parent_assignment_id": "assign-20261022T174941Z-T-M1-E2E-LIVE-1-dc641c62",
+  "work_lock_status": {
+    "logical_task_id": "T-M1-E2E-LIVE-1",
+    "holder_agent": "composer",
+    "route": "supervisor",
+    "assignment_id": "assign-20261025T182005Z-T-M1-E2E-LIVE-1-46d4144a",
+    "run_id": "phys-20261025T182009Z-T-M1-E2E-LIVE-1-e0c79abb",
+    "base_sha": "a59dd45f98a3ae15bcb929c3cc425da71dbd8cbb",
+    "branch": "agent/composer/T-M1-E2E-LIVE-1-r12",
+    "acquired_at": "2026-10-25T18:20:05.959764+00:00",
+    "heartbeat_at": "2026-10-25T18:20:09.750883+00:00",
+    "state": "queued",
+    "stale": false,
+    "lock_status": "queued"
+  },
+  "title": "Document running operator CLIs against the deployed state root",
+  "goal": "write the operator guide",
+  "base_branch": "agent/claude/T-VNEXT-ASSESSMENT",
+  "base_sha": "a59dd45f98a3ae15bcb929c3cc425da71dbd8cbb",
+  "new_branch": "agent/composer/T-M1-E2E-LIVE-1-r12",
+  "allowed_paths": [
+    "docs/OPERATIONS_STATE_ROOT.md"
+  ],
+  "forbidden_operations": [
+    "deploy",
+    "git_merge",
+    "git_push_to_protected",
+    "mcp_execution",
+    "production_access",
+    "secrets_exfiltration"
+  ],
+  "acceptance_criteria": [
+    "docs/OPERATIONS_STATE_ROOT.md exists and covers the three CLIs with --root and AGENTIC_OS_CONFIG_ROOT"
+  ],
+  "verification_commands": [
+    "python scripts/validate.py",
+    "python scripts/run_tests.py"
+  ],
+  "timeout": 1800,
+  "handoff_path": "handoffs/T-M1-E2E-LIVE-1__composer__to__claude.md",
+  "assigned_by": "claude",
+  "assigned_to": "composer",
+  "created_at": "2026-10-25T18:20:05Z",
+  "updated_at": "2026-10-25T18:20:09Z",
+  "status": "building",
+  "adapter_id": "composer-restricted",
+  "execution_route": "composer_local_builder",
+  "task_path": "tasks/active/T-M1-E2E-LIVE-1.yaml",
+  "instructions": "Real E2E cycle (owner-approved demonstration, 2026-10-22).",
+  "claimed_at": "2026-10-25T18:20:09Z",
+  "claimed_by": "composer",
+  "reviewed_by": null,
+  "reviewed_at": null,
+  "resolution_note": null,
+  "correction_note": null,
+  "reassigned_from": null,
+  "reassignment_reason": null,
+  "reassigned_to_assignment_id": null,
+  "wake_requested": true,
+  "wake_delivered": true,
+  "woken_at": "2026-10-25T18:20:05Z",
+  "wake_state": "wake_delivered",
+  "wake_detail": "physical supervisor wake queued",
+  "required_mcp_servers": [],
+  "handoff_rel": "handoffs/T-M1-E2E-LIVE-1__composer__to__claude.md"
+}
