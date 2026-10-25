@@ -28,6 +28,10 @@ from dispatch.assignment_channel import (  # noqa: E402
 
 
 def main() -> int:
+    import os
+    if os.environ.get("AGENTIC_BUILDER_RUN_ID"):
+        print("builder isolation: assignment/lock CLI forbidden in assigned builder", file=sys.stderr)
+        return 3
     parser = argparse.ArgumentParser(
         description="Session start: list/claim pending Claude→Grok assignments."
     )

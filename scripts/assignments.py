@@ -663,6 +663,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
+    import os
+    if os.environ.get("AGENTIC_BUILDER_RUN_ID"):
+        print("builder isolation: assignment/lock CLI forbidden in assigned builder", file=sys.stderr)
+        return 3
     parser = build_parser()
     args = parser.parse_args()
     with operator_roots(REPO_ROOT, args.root) as root:

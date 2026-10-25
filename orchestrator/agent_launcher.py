@@ -52,6 +52,7 @@ class LaunchPlan:
     inherit_environment: bool = True
     required_mcp_servers: list[str] = field(default_factory=list)
     mcp_isolation: dict[str, Any] = field(default_factory=dict)
+    contract_sha256: str = ""
 
     @property
     def ok(self) -> bool:
@@ -206,6 +207,12 @@ def build_grok_launch_plan(
         "--single",
         prompt,
     ]
+    # Additional CLI policy; the Windows token remains the security boundary.
+    for name in ('session_pickup', 'assignments', 'work_lock', 'consumer_claims'):
+        argv.extend(['--deny', f'run_terminal_command:*{name}.py*'])
+    for key in ('AGENTIC_OS_STATE_ROOT', 'AGENTIC_OS_CONFIG_ROOT', 'AGENTIC_OS_DEPLOY_ROOT'):
+        if os.environ.get(key):
+            argv.extend(['--deny', os.environ[key].rstrip('/\\') + '/**'])
     for flag in argv:
         if flag in UNSAFE_GROK_FLAGS or any(u in flag for u in UNSAFE_GROK_FLAGS):
             return LaunchPlan(
@@ -220,6 +227,7 @@ def build_grok_launch_plan(
             )
 
     version = probe_version(executable, runner=version_runner)
+    from orchestrator.builder_isolation import builder_environment
     return LaunchPlan(
         agent="composer",
         adapter="composer-restricted",
@@ -227,7 +235,7 @@ def build_grok_launch_plan(
         cwd=str(worktree),
         executable=executable,
         executable_version=version,
-        env={},
+        env=builder_environment(worktree, worktree / '.agentic/profile', worktree.name),
         command_redacted=redact_argv(argv),
         required_mcp_servers=required,
         mcp_isolation=mcp_note,
@@ -282,6 +290,15 @@ def build_codex_fallback_plan(
     stdout_path = str(agent_output_path.with_name("codex_stdout.log"))
     stderr_path = str(agent_output_path.with_name("codex_stderr.log"))
     user_mcp = load_user_mcp_servers() if required else {}
+    import json
+    from orchestrator.task_contract import contract_prompt
+    contract_file = worktree / '.agentic/TASK_CONTRACT.json'
+    fallback_prompt = ('Read .agentic/TASK_CONTRACT.json. You are already assigned. '
+                       'Do not run session pickup or any assignment/lock CLI. '
+                       'Do not access paths outside the worktree. Write the handoff with a blocked reason '
+                       'if the contract is insufficient.')
+    if contract_file.is_file():
+        fallback_prompt = contract_prompt(json.loads(contract_file.read_text(encoding='utf-8')))
     plan = build_codex_command(
         adapter,
         repo_root=repo_root,
@@ -289,9 +306,9 @@ def build_codex_fallback_plan(
         run_id=run_id,
         stdout_path=stdout_path,
         stderr_path=stderr_path,
-        agent_output_path=str(agent_output_path),
+        agent_output_path=str(worktree / '.agentic/codex_agent_output.json'),
         timeout_seconds=int(adapter.get("timeout_seconds") or 1800),
-        prompt=f"Execute assignment task from {task_path.as_posix()} in this isolated worktree.",
+        prompt=fallback_prompt,
         required_mcp_servers=required,
         user_mcp_servers=user_mcp,
     )
@@ -331,6 +348,16 @@ def launch_process(
         reason = "; ".join(plan.blocked_reasons) or STATE_FAILED_LAUNCH
         return None, reason
 
+    builder = plan.agent not in {'claude', 'claude-reviewer'}
+    if builder:
+        from orchestrator.task_contract import verify_contract, ContractError
+        from orchestrator.builder_isolation import standalone_workspace
+        try:
+            verify_contract(Path(plan.cwd), plan.contract_sha256)
+            standalone_workspace(Path(plan.cwd))
+        except (ContractError, OSError) as exc:
+            return None, f"{STATE_FAILED_LAUNCH}: {exc}"
+
     stdout_path.parent.mkdir(parents=True, exist_ok=True)
     stderr_path.parent.mkdir(parents=True, exist_ok=True)
     stdout_f = stdout_path.open("w", encoding="utf-8")
@@ -342,21 +369,26 @@ def launch_process(
         stdin_file = tempfile.TemporaryFile(mode="w+", encoding="utf-8", dir=stdout_path.parent)
         stdin_file.write(plan.stdin_text)
         stdin_file.seek(0)
-    snapshot = worktree_snapshot(Path(plan.cwd), (stdout_path, stderr_path)) if plan.agent != "claude" else None
+    snapshot = worktree_snapshot(Path(plan.cwd), (stdout_path, stderr_path)) if builder else None
     started = time.monotonic()
     try:
-        proc = owned_popen(
-            plan.argv,
-            popen=popen,
-            cwd=plan.cwd,
-            stdout=stdout_f,
-            stderr=stderr_f,
-            shell=False,
-            env=({**os.environ, **plan.env} if plan.env else None)
-            if plan.inherit_environment else dict(plan.env),
-            text=True,
-            stdin=stdin_file,
-        )
+        if builder and popen is None:
+            from orchestrator.builder_isolation import launch_isolated
+            proc = launch_isolated(plan.argv, cwd=plan.cwd, stdout=stdout_f,
+                                   stderr=stderr_f, stdin=stdin_file, env=plan.env)
+        else:
+            proc = owned_popen(
+                plan.argv,
+                popen=popen,
+                cwd=plan.cwd,
+                stdout=stdout_f,
+                stderr=stderr_f,
+                shell=False,
+                env=({**os.environ, **plan.env} if plan.env else None)
+                if plan.inherit_environment else dict(plan.env),
+                text=True,
+                stdin=stdin_file,
+            )
     except OSError as exc:
         stdout_f.close()
         stderr_f.close()

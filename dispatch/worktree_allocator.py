@@ -6,6 +6,8 @@ import os
 import hashlib
 import re
 import subprocess
+import shutil
+import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -30,7 +32,7 @@ MAX_ALLOCATION_ATTEMPTS = 8
 DEFAULT_ALLOCATION_TTL_HOURS = 24
 
 ALLOWED_GIT_SUBCOMMANDS = frozenset(
-    {"rev-parse", "status", "worktree", "merge-base", "diff"}
+    {"rev-parse", "status", "worktree", "merge-base", "diff", "clone", "checkout", "fetch", "bundle", "init"}
 )
 
 _UNSAFE_BRANCH_CHARS = re.compile(r"[^a-zA-Z0-9._/-]+")
@@ -149,7 +151,8 @@ def _validate_base_inside_repo(repo_root: Path, base_sha: str) -> list[str]:
     return errors
 
 
-def run_git(repo_root: Path, argv: list[str], *, timeout: int = GIT_TIMEOUT_SECONDS) -> tuple[int, str, str]:
+def run_git(repo_root: Path, argv: list[str], *, timeout: int = GIT_TIMEOUT_SECONDS,
+            local_only: bool = False) -> tuple[int, str, str]:
     """Run allowlisted git command with argv list only (no shell)."""
     if not argv:
         raise ValueError("git argv must not be empty")
@@ -162,7 +165,13 @@ def run_git(repo_root: Path, argv: list[str], *, timeout: int = GIT_TIMEOUT_SECO
         raise ValueError(f"git worktree subcommand not allowlisted: {argv[1]!r}")
 
     from orchestrator.process_ownership import owned_run
-    proc = owned_run([GIT_EXECUTABLE, *argv], cwd=repo_root, timeout=timeout, shell=False)
+    environment = None
+    if local_only:
+        environment = {key: value for key, value in os.environ.items() if not key.upper().startswith('GIT_')}
+        environment.update(GIT_CONFIG_NOSYSTEM='1', GIT_CONFIG_GLOBAL=os.devnull,
+                           GIT_ALLOW_PROTOCOL='file', GIT_TERMINAL_PROMPT='0')
+    proc = owned_run([GIT_EXECUTABLE, *argv], cwd=repo_root, timeout=timeout, shell=False,
+                     **({'env': environment} if local_only else {}))
     return proc.returncode, proc.stdout or "", proc.stderr or ""
 
 
@@ -204,6 +213,7 @@ def allocate_worktree(
     owner: str = "operator",
     cleanup_policy: str = "manual",
     _attempt: int = 0,
+    standalone_clone: bool = False,
 ) -> AllocationResult:
     """Operator-commanded worktree allocation. Never auto-invoked."""
     repo_root = repo_root.resolve()
@@ -272,10 +282,29 @@ def allocate_worktree(
     save_allocation_record(repo_root, requested)
 
     worktree_path.parent.mkdir(parents=True, exist_ok=True)
-    code, out, err = run_git(
-        repo_root,
-        ["worktree", "add", "-b", branch_name, str(worktree_path), base_sha],
-    )
+    if standalone_clone:
+        # A bundle-backed clone has independent objects and refs. Even --local
+        # clone uses shell-based upload-pack on the installed Git for Windows;
+        # init + bundle fetch avoids that transport entirely.
+        worktree_path.mkdir()
+        provision = worktree_path / '.agentic/provision.bundle'
+        provision.parent.mkdir()
+        code, out, err = run_git(worktree_path, ['init', '--quiet'], local_only=True)
+        if code == 0:
+            code, out, err = run_git(repo_root, ['bundle', 'create', str(provision), '--all'], local_only=True)
+        if code == 0:
+            code, out, err = run_git(worktree_path, ['fetch', '--no-tags', '--no-write-fetch-head',
+                './.agentic/provision.bundle', '+refs/heads/*:refs/remotes/source/*',
+                '+refs/tags/*:refs/tags/*'], local_only=True)
+        if code == 0:
+            provision.unlink()
+        if code == 0:
+            code, out, err = run_git(worktree_path, ["checkout", "-b", branch_name, base_sha], local_only=True)
+    else:
+        code, out, err = run_git(
+            repo_root,
+            ["worktree", "add", "-b", branch_name, str(worktree_path), base_sha],
+        )
     if code != 0:
         failed = AllocationRecord(
             allocation_id=allocation_id,
@@ -307,6 +336,7 @@ def allocate_worktree(
                 repo_root, task_id=task_id, run_id=run_id, base_sha=base_sha,
                 base_branch=base_branch, owner=owner, cleanup_policy=cleanup_policy,
                 _attempt=attempt + 1,
+                standalone_clone=standalone_clone,
             )
         return AllocationResult(False, failed, str(worktree_path), branch_name, [failed.error])
 
@@ -354,6 +384,42 @@ def inspect_worktree(repo_root: Path, allocation_id: str) -> InspectResult:
     dirty = git_worktree_dirty(repo_root, worktree_path) if worktree_path.exists() else True
     head = git_worktree_head(repo_root, worktree_path) if worktree_path.exists() else ""
     return InspectResult(record, dirty, head, errors)
+
+
+def import_builder_results(repo_root: Path, workspace: Path, branch: str) -> None:
+    """Medium supervisor imports commits; builder never writes supervisor Git."""
+    from orchestrator.builder_isolation import standalone_workspace
+    standalone_workspace(workspace)
+    if os.name == 'nt':
+        from orchestrator.builder_isolation import assert_medium_tree
+        assert_medium_tree(workspace)
+    if not branch or branch.startswith('-') or not re.fullmatch(r'[A-Za-z0-9._/-]+', branch):
+        raise ValueError('invalid builder result branch')
+    # The builder may have changed local Git config. Do not execute its filters,
+    # fsmonitor or upload-pack hooks with the supervisor's Medium token.
+    hooks = workspace / ('.agentic/supervisor-disabled-hooks-' + uuid4().hex)
+    hooks.mkdir(parents=True, exist_ok=False)
+    (workspace / '.git/config').write_text(
+        '[core]\n\trepositoryformatversion = 0\n\tbare = false\n'
+        '\tfsmonitor = false\n\thooksPath = "' + hooks.resolve().as_posix() + '"\n', encoding='utf-8')
+    # A local bundle avoids Git for Windows' shell-based upload-pack transport.
+    # The supervisor has stopped the builder tree and sanitized its Git config.
+    bundle = workspace / ('.agentic/supervisor-results-' + uuid4().hex + '.bundle')
+    code, out, err = run_git(workspace, ['bundle', 'create', str(bundle.resolve()), f'refs/heads/{branch}'], local_only=True)
+    if code:
+        raise OSError('builder results bundle failed: ' + (err or out).strip())
+    # POSIX Git builds can interpret C:\\... source arguments as SSH remotes.
+    # Both clone and fetch use unambiguous local relative sources. A Medium
+    # temporary copy also supports workspaces provisioned on another drive.
+    root = repo_root.resolve()
+    with tempfile.TemporaryDirectory(prefix='agentic-import-', dir=root/'.git') as directory:
+        exported = Path(directory)/'results.bundle'
+        shutil.copyfile(bundle, exported)
+        source = './' + exported.relative_to(root).as_posix()
+        code, out, err = run_git(root, ['fetch', '--no-tags', '--no-write-fetch-head', source,
+                                       f'refs/heads/{branch}:refs/heads/{branch}'], local_only=True)
+    if code:
+        raise OSError('builder results fetch failed: ' + (err or out).strip())
 
 
 def cleanup_worktree(repo_root: Path, allocation_id: str) -> CleanupResult:

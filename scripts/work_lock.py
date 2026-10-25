@@ -12,6 +12,10 @@ from dispatch import work_lock
 
 
 def main(argv=None):
+    import os
+    if os.environ.get("AGENTIC_BUILDER_RUN_ID"):
+        print("builder isolation: assignment/lock CLI forbidden in assigned builder", file=sys.stderr)
+        return 3
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--root', type=Path, default=None)
     sub = parser.add_subparsers(dest='command', required=True)

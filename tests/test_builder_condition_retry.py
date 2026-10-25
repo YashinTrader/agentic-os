@@ -66,6 +66,8 @@ class ConditionRetryFixture(unittest.TestCase):
         self.root = Path(self.tmp.name) / "repo"
         self.worktree = Path(self.tmp.name) / "worktree"
         self.worktree.mkdir(parents=True)
+        import subprocess
+        subprocess.run(['git', 'init', '-q', str(self.worktree)], check=True)
         self.clock = Clock()
         self.prompts: list[str] = []
         self.task_id = "T-COND"

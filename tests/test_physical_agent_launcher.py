@@ -75,6 +75,8 @@ class PhysicalLauncherFixture(unittest.TestCase):
         self.root = Path(self.tmp.name) / "repo"
         self.allocated_worktree = Path(self.tmp.name) / "allocated-worktree"
         self.allocated_worktree.mkdir(parents=True)
+        import subprocess
+        subprocess.run(['git', 'init', '-q', str(self.allocated_worktree)], check=True)
         allocation = MagicMock(
             success=True, errors=[], worktree_path=str(self.allocated_worktree),
             branch_name="agentic/t-phys-launch/run",
@@ -216,6 +218,9 @@ class GrokArgvTests(unittest.TestCase):
 
     def test_launch_process_records_pid_and_requires_real_process(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
+            import subprocess
+            from orchestrator.task_contract import prepare_contract
+            subprocess.run(['git', 'init', '-q', tmp], check=True)
             stdout = Path(tmp) / "out.log"
             stderr = Path(tmp) / "err.log"
             plan = build_grok_launch_plan(
@@ -228,6 +233,9 @@ class GrokArgvTests(unittest.TestCase):
             plan.argv = [sys.executable, "-c", "print('hi')"]
             plan.command_redacted = redact_argv(plan.argv)
             plan.blocked_reasons = []
+            _, plan.contract_sha256 = prepare_contract(Path(tmp), json.dumps({
+                'objective': 'fixture', 'allowed_paths': ['docs/**'],
+                'handoff_path': 'handoffs/result.md'}).encode())
             handle, msg = launch_process(
                 plan,
                 stdout_path=stdout,

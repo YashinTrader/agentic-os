@@ -226,6 +226,12 @@ class LocalBuilderDeadlineTests(unittest.TestCase):
         self.root = Path(self.tmp.name)
         self.worktree = self.root/'worktree'
         self.worktree.mkdir()
+        import subprocess
+        from orchestrator.task_contract import prepare_contract
+        subprocess.run(['git', 'init', '-q', str(self.worktree)], check=True)
+        _, self.contract_hash = prepare_contract(self.worktree, json.dumps({
+            'objective': 'deadline fixture', 'allowed_paths': ['docs/**'],
+            'handoff_path': 'handoffs/result.md'}).encode())
         (self.root/'agents').mkdir()
         (self.root/'agents'/'run_deadlines.yaml').write_text(
             'codex-restricted:\n  startup_seconds: 3\n  inactivity_seconds: 4\n')
@@ -239,6 +245,7 @@ class LocalBuilderDeadlineTests(unittest.TestCase):
         from orchestrator.agent_launcher import launch_process
         clock = Clock()
         def launch(plan, **kwargs):
+            plan.contract_sha256 = self.contract_hash
             def popen(argv, **options):
                 self.assertEqual(options['env'], {})
                 return Process(clock, Path(options['stdout'].name), events)

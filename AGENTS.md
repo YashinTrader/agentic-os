@@ -7,6 +7,11 @@
 
 ## Session start (mandatory)
 
+**Supervisor exemption:** Builders with `.agentic/TASK_CONTRACT.json` present or
+`AGENTIC_BUILDER_RUN_ID` set are already assigned and MUST NOT run session pickup
+or any assignment/lock CLI. Follow the worktree-local task contract instead.
+
+
 Before any other work in this repo, pick up Claude-posted assignments:
 
 ```bash

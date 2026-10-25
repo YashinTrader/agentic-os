@@ -444,6 +444,7 @@ def _process_wake_signal(
             repo_root, task_id=task_id or record.task_id, run_id=run_id,
             base_sha=record.base_sha, base_branch=record.base_branch,
             owner="supervisor", cleanup_policy="preserve",
+            standalone_clone=True,
         )
         if not allocation.success:
             release_lease(repo_root, assignment_id, run_id=run_id)
@@ -482,17 +483,31 @@ def _process_wake_signal(
     layer_heartbeat.tick(progress=True)
 
     task_file_rel = task_path or record.task_path
-    if condition_retry_from is not None:
-        prompt = _default_prompt(assignment_id, state.task_id, task_file_rel) + (
-            f" Prior run {condition_retry_from.run_id} stopped on "
-            f"{condition_retry_from.blocked_on or 'an external condition'}. "
-            "Resume the preserved worktree and branch. Do not discard commits."
+    from orchestrator.task_contract import prepare_contract, contract_prompt, ContractError
+    from orchestrator.builder_isolation import standalone_workspace
+    try:
+        standalone_workspace(worktree)
+        contract, contract_sha256 = prepare_contract(
+            worktree, (repo_root / task_file_rel).read_bytes(),
+            turn_budget=config.max_turns, handoff_path=record.handoff_path,
         )
-    elif is_continuation and existing:
-        prompt = _continuation_prompt(existing, task_file_rel)
-    else:
-        prompt = _default_prompt(assignment_id, state.task_id, task_file_rel)
+        prompt = contract_prompt(contract)
+    except (ContractError, OSError) as exc:
+        state.process_state = STATE_FAILED_LAUNCH
+        state.blocked_reason = str(exc)
+        state.completed_at = utc_now()
+        state.retry_eligible = False
+        save_run_state(repo_root, state)
+        route, errors = route_completion(repo_root, state, branch=state.branch, source=agent_id)
+        return {'status': 'failed_launch', 'reason': str(exc), 'run_id': run_id,
+                'assignment_id': assignment_id, 'route': route, 'route_errors': errors}
+    # Hash is supervisor evidence, outside the builder's writable clone.
+    atomic_write_json(run_directory(repo_root, run_id) / 'task_contract_receipt.json',
+                      {'sha256': contract_sha256, 'contract': contract})
     required_mcp_servers = list(getattr(record, "required_mcp_servers", None) or [])
+    prompt = contract_prompt(contract)
+    if preserved is not None:
+        prompt += f' Prior run {preserved.run_id} stopped. Resume existing work. Do not discard commits.'
     if condition_retry_from is not None and agent_id == "codex" and launch_plan_builder is None:
         task_file = (repo_root / task_file_rel).resolve()
         out_path = run_directory(repo_root, run_id) / "codex_agent_output.json"
@@ -518,6 +533,8 @@ def _process_wake_signal(
         )
 
     used_fallback = False
+    plan.contract_sha256 = contract_sha256
+    plan.env['AGENTIC_BUILDER_RUN_ID'] = run_id
     plan_failure_text = '; '.join(plan.blocked_reasons)
     plan_failure_exc = FileNotFoundError(plan_failure_text) if 'executable not found' in plan_failure_text.lower() else None
     plan_failure_class = classify_launch_failure(plan_failure_exc, plan_failure_text)
@@ -541,6 +558,8 @@ def _process_wake_signal(
                                 run_id=run_id, base_sha=record.base_sha, branch=state.branch,
                                 expected_assignment_id=assignment_id, expected_run_id=run_id)
         used_fallback = True
+        plan.contract_sha256 = contract_sha256
+        plan.env['AGENTIC_BUILDER_RUN_ID'] = run_id
         state.fallback_to_agent = "codex"
         state.assigned_agent = "codex"
         state.adapter = "codex-restricted"
@@ -586,6 +605,10 @@ def _process_wake_signal(
     save_run_state(repo_root, state)
     layer_heartbeat.tick(progress=True)
 
+    from orchestrator.builder_watch import state_snapshot, changed_state
+    before_builder = state_snapshot(repo_root)
+    from dispatch.worktree_allocator import resolve_worktree_root
+    plan.env['AGENTIC_BUILDER_INVENTORY_ROOT'] = str(resolve_worktree_root(repo_root))
     handle, launch_msg = _launch_agent_process(repo_root, state, plan, stdout_path=stdout_path, stderr_path=stderr_path, popen=popen)
     if handle is None:
         state.process_state = STATE_FAILED_LAUNCH
@@ -632,7 +655,7 @@ def _process_wake_signal(
         stderr_path=stderr_path,
         timeout_seconds=config.timeout_seconds,
         **({"started_monotonic": handle.started_monotonic,
-            "initial_snapshot": handle.initial_snapshot} if monitor is None else {}),
+            "initial_snapshot": handle.initial_snapshot, "builder_contract": contract} if monitor is None else {}),
     )
     maybe_record_recovery(state, now=clock_from(config))
 
@@ -655,6 +678,46 @@ def _process_wake_signal(
         deadline_state=getattr(mon, "deadline_state", None),
         required_mcp_servers=list(getattr(plan, "required_mcp_servers", None) or required_mcp_servers),
     )
+    from orchestrator.builder_watch import BuilderWatch
+    replay = BuilderWatch(worktree, contract, notify=lambda *_: None)
+    replay.initial = handle.initial_snapshot or replay.initial
+    for line in mon.stdout.splitlines():
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(event, dict):
+            replay.event(event)
+    supervisor_paths = [f'runtime/dispatch/assignments/{kind}/{assignment_id}.json'
+                        for kind in ('inbox', 'claims')]
+    supervisor_paths.append(work_lock.lock_path(repo_root, state.logical_task_id).relative_to(repo_root).as_posix())
+    try:
+        changed = changed_state(before_builder, state_snapshot(repo_root), supervisor_paths)
+    except OSError as exc:
+        changed = ['snapshot_error: ' + str(exc)]
+    diagnostic = {**replay.diagnostic(), 'changed_state_paths': changed}
+    atomic_write_json(run_dir / 'builder_diagnostic.json', diagnostic)
+    if changed or replay.outside:
+        from orchestrator.launch_failures import alert_once
+        alert_once(repo_root, [run_id, 'isolation_violation'], event='isolation_violation',
+                   assignment_id=assignment_id, run_id=run_id, diagnostic=diagnostic)
+        classification = Classification('failed', 'isolation_violation', json.dumps(diagnostic))
+    elif classification.process_state == STATE_MAX_TURNS:
+        classification = Classification('failed', 'completion_condition_unmet', json.dumps(diagnostic))
+    if popen is None and classification.process_state == STATE_COMPLETED:
+        from orchestrator.builder_completion import verify_completion
+        try:
+            failures, acceptance_evidence = verify_completion(
+                plan, contract, base_sha=state.base_sha, evidence_dir=run_dir)
+            atomic_write_json(run_dir/'completion_checks.json',
+                              {'failures': failures, 'acceptance': acceptance_evidence})
+            if failures:
+                classification = Classification('failed', 'completion_condition_unmet', '; '.join(failures))
+            else:
+                from dispatch.worktree_allocator import import_builder_results
+                import_builder_results(repo_root, worktree, state.branch)
+        except (OSError, ValueError) as exc:
+            classification = Classification('failed', 'completion_verification_failed', str(exc))
     fp = _apply_classification(repo_root, state, classification, config=config)
 
     if state.process_state == STATE_MAX_TURNS:
@@ -709,6 +772,8 @@ def _process_wake_signal(
                 codex_executable=config.codex_executable,
                 required_mcp_servers=required_mcp_servers,
             )
+            cplan.contract_sha256 = contract_sha256
+            cplan.env['AGENTIC_BUILDER_RUN_ID'] = fallback_run
             if cplan.ok:
                 # A fallback is a separate pre-launch attempt with its own evidence.
                 attempt.update(started=False, run_id=fallback_run, lock_acquired=False)
@@ -732,7 +797,7 @@ def _process_wake_signal(
                     adapter="codex-restricted",
                     process_state=STATE_LAUNCHING,
                     worktree=str(worktree),
-                    branch=record.new_branch,
+                    branch=state.branch,
                     base_sha=record.base_sha,
                     fallback_from_run_id=state.run_id,
                     retry_count=state.retry_count,
@@ -747,6 +812,7 @@ def _process_wake_signal(
                 fb_state.stderr_path = fb_stderr.relative_to(repo_root).as_posix()
                 save_run_state(repo_root, fb_state)
                 layer_heartbeat.tick(progress=True)
+                cplan.env['AGENTIC_BUILDER_INVENTORY_ROOT'] = str(resolve_worktree_root(repo_root))
                 fb_handle, fb_msg = _launch_agent_process(
                     repo_root, fb_state, cplan, stdout_path=fb_stdout, stderr_path=fb_stderr, popen=popen
                 )
@@ -779,7 +845,8 @@ def _process_wake_signal(
                         stderr_path=fb_stderr,
                         timeout_seconds=config.timeout_seconds,
                         **({"started_monotonic": fb_handle.started_monotonic,
-                            "initial_snapshot": fb_handle.initial_snapshot} if monitor is None else {}),
+                            "initial_snapshot": fb_handle.initial_snapshot,
+                            "builder_contract": contract} if monitor is None else {}),
                     )
                     maybe_record_recovery(fb_state, now=clock_from(config))
                     fb_state.exit_code = fb_mon.exit_code
@@ -796,6 +863,39 @@ def _process_wake_signal(
                             getattr(cplan, "required_mcp_servers", None) or required_mcp_servers
                         ),
                     )
+                    fb_watch = BuilderWatch(worktree, contract, notify=lambda *_: None)
+                    fb_watch.initial = fb_handle.initial_snapshot or fb_watch.initial
+                    for line in fb_mon.stdout.splitlines():
+                        try:
+                            event = json.loads(line)
+                        except ValueError:
+                            continue
+                        if isinstance(event, dict):
+                            fb_watch.event(event)
+                    fb_changed = changed_state(before_builder, state_snapshot(repo_root), supervisor_paths)
+                    fb_diagnostic = {**fb_watch.diagnostic(), 'changed_state_paths': fb_changed}
+                    atomic_write_json(run_directory(repo_root, fallback_run)/'builder_diagnostic.json', fb_diagnostic)
+                    if fb_changed or fb_watch.outside:
+                        from orchestrator.launch_failures import alert_once
+                        alert_once(repo_root, [fallback_run, 'isolation_violation'], event='isolation_violation',
+                                   run_id=fallback_run, diagnostic=fb_diagnostic)
+                        fb_class = Classification('failed', 'isolation_violation', json.dumps(fb_diagnostic))
+                    elif fb_class.process_state == STATE_MAX_TURNS:
+                        fb_class = Classification('failed', 'completion_condition_unmet', json.dumps(fb_diagnostic))
+                    elif popen is None and fb_class.process_state == STATE_COMPLETED:
+                        from orchestrator.builder_completion import verify_completion
+                        try:
+                            failures, checks = verify_completion(cplan, contract, base_sha=state.base_sha,
+                                                                 evidence_dir=run_directory(repo_root, fallback_run))
+                            atomic_write_json(run_directory(repo_root, fallback_run)/'completion_checks.json',
+                                              {'failures': failures, 'acceptance': checks})
+                            if failures:
+                                fb_class = Classification('failed', 'completion_condition_unmet', '; '.join(failures))
+                            else:
+                                from dispatch.worktree_allocator import import_builder_results
+                                import_builder_results(repo_root, worktree, state.branch)
+                        except (OSError, ValueError) as exc:
+                            fb_class = Classification('failed', 'completion_verification_failed', str(exc))
                     fb_state.process_state = getattr(fb_mon, "deadline_state", None) or (
                         STATE_COMPLETED if fb_class.process_state == "completed" else fb_class.process_state
                     )

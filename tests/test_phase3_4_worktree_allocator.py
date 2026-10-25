@@ -136,7 +136,9 @@ class WorktreeAllocatorTests(unittest.TestCase):
         self.assertEqual(unique_run_slug(prefix + "aaaaaaaa"), unique_run_slug(prefix + "aaaaaaaa"))
 
     def test_long_task_path_budget(self) -> None:
-        root = self.worktree_root / ("r" * 80)
+        # Keep the synthetic root within the budget even when TEMP is scoped
+        # beneath a long isolated checkout path.
+        root = self.worktree_root / ("r" * min(80, max(1, 150 - len(str(self.worktree_root)))))
         path = build_worktree_path(root, "TASK" * 100, "run-full-suffix")
         self.assertLess(len(str(path)), 200)
 
@@ -161,6 +163,23 @@ class WorktreeAllocatorTests(unittest.TestCase):
         self.assertEqual(result.record.status, "allocated")
         self.assertTrue(Path(result.worktree_path).exists())
         self.assertTrue((self.repo / ".git").exists())
+
+    def test_standalone_clone_has_independent_metadata_and_supervisor_fetch(self) -> None:
+        from dispatch.worktree_allocator import import_builder_results
+        from orchestrator.builder_isolation import standalone_workspace
+        original_config = (self.repo/'.git/config').read_bytes()
+        result = allocate_worktree(self.repo, task_id='T-ISOLATED', run_id='standalone',
+                                   base_sha=self.base_sha, standalone_clone=True)
+        self.assertTrue(result.success, result.errors)
+        root = standalone_workspace(Path(result.worktree_path))
+        self.assertTrue((root/'.git').is_dir())
+        self.assertFalse((root/'.git/commondir').exists())
+        self.assertFalse((root/'.git/objects/info/alternates').exists())
+        import_builder_results(self.repo, root, result.branch_name)
+        code = subprocess.run(['git', 'rev-parse', result.branch_name], cwd=self.repo,
+                              capture_output=True, text=True, check=True)
+        self.assertEqual(code.stdout.strip(), self.base_sha)
+        self.assertEqual((self.repo/'.git/config').read_bytes(), original_config)
 
     def test_duplicate_active_allocation_blocked(self) -> None:
         first = allocate_worktree(

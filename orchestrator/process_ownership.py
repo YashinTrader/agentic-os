@@ -177,6 +177,10 @@ def ownership_metadata(process) -> dict:
 
 
 def terminate_owned(process) -> bool:
+    from orchestrator.builder_isolation import IsolatedProcess
+    if isinstance(process, IsolatedProcess) and process._mutex:
+        process.terminate()
+        return True
     owner = getattr(process, "_agentic_owner", None)
     if not isinstance(owner, ProcessOwner):
         # No OS signaling for unowned PIDs. Test doubles can expose kill().

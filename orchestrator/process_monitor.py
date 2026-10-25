@@ -72,6 +72,7 @@ def monitor_process(
     worktree: Path | None = None,
     initial_snapshot: dict | None = None,
     started_monotonic: float | None = None,
+    builder_contract: dict | None = None,
 ) -> MonitorResult:
     """Block until process exits or times out; keep heartbeat fresh.
 
@@ -109,6 +110,22 @@ def monitor_process(
     exit_code: int | None = None
     timed_out = False
     deadline_state = None
+    watch = None
+    if builder_contract is not None and worktree is not None:
+        from orchestrator.builder_watch import BuilderWatch
+        from orchestrator.launch_failures import alert_once
+        from dispatch.orchestrator_pokes import write_orchestrator_poke
+        def notice(event, diagnostic):
+            try:
+                alert_once(repo_root, [state.run_id, event], event=event, run_id=state.run_id,
+                           assignment_id=state.assignment_id, diagnostic=diagnostic)
+                write_orchestrator_poke(repo_root, source=state.assigned_agent,
+                                        assignment_id=state.assignment_id, task_id=state.task_id, event=event)
+            except OSError:
+                if event != 'no_early_progress':
+                    raise
+                logging.getLogger(__name__).warning('Run %s progress notice could not be persisted', state.run_id)
+        watch = BuilderWatch(worktree, builder_contract, notify=notice)
 
     try:
         while True:
@@ -117,6 +134,14 @@ def monitor_process(
             now = clock()
             fired = deadlines.expired(now)
             events = activity.poll()
+            if watch is not None:
+                watch.poll(stdout_path)
+                if watch.outside:
+                    terminate_owned(process)
+                    exit_code = process.wait(timeout=5)
+                    deadline_state = 'failed_launch'
+                    state.blocked_reason = 'isolation_violation: out-of-worktree tool call'
+                    break
             if grok_stream:
                 state.liveness_events = activity.liveness_events
             current = worktree_snapshot(worktree, excluded)
@@ -157,6 +182,8 @@ def monitor_process(
             process.wait(timeout=5)
         raise
 
+    if hasattr(process, 'drain_output'):
+        process.drain_output()
     return MonitorResult(
         exit_code=exit_code,
         timed_out=timed_out,
