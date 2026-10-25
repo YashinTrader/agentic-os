@@ -20,7 +20,15 @@ class BuilderWatchTests(unittest.TestCase):
                                  notify=lambda event, detail: self.notices.append((event, detail)))
 
     def test_replay_real_stream_one_checkpoint_and_outside_diagnostic(self):
-        evidence = ROOT/'runtime/dispatch/m1-34/evidence/grok_stdout.log'
+        evidence = ROOT/'tests/fixtures/r12_e2e/grok_stdout.jsonl'
+        events = [json.loads(line) for line in evidence.read_text(encoding='utf-8').splitlines()]
+        self.assertTrue(any(event['type'] == 'max_turns_reached' for event in events))
+        self.assertEqual(events[-1]['type'], 'end')
+        from orchestrator.failure_classify import classify_process_output
+        result = classify_process_output(agent='composer', adapter='composer-restricted',
+            exit_code=1, stdout=evidence.read_text(encoding='utf-8'))
+        self.assertEqual(result.process_state, 'max_turns')
+        self.assertFalse(result.retry_eligible)
         for line in evidence.read_text(encoding='utf-8').splitlines():
             try:
                 event = json.loads(line)

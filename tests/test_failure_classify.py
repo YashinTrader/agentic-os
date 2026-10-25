@@ -66,6 +66,7 @@ class StructuredClassificationTests(unittest.TestCase):
 
     def test_max_turns_structured_signals(self):
         for event in (
+            {"type": "max_turns_reached"},
             {"type": "result", "subtype": "error_max_turns"},
             {"type": "result", "stop_reason": "max_turns"},
             {"type": "result", "num_turns": 5, "max_turns": 5},
@@ -73,7 +74,8 @@ class StructuredClassificationTests(unittest.TestCase):
             with self.subTest(event=event):
                 result = self.classify(json.dumps(event))
                 self.assertEqual(result.process_state, "max_turns")
-                self.assertTrue(result.retry_eligible)
+                self.assertFalse(result.retry_eligible)
+                self.assertIn("reviewer action", result.detail)
 
     def test_stderr_and_plain_stdout(self):
         self.assertEqual(self.classify("usage limit exceeded", exit_code=1).process_state, "blocked_quota")

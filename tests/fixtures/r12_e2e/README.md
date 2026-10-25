@@ -1,0 +1,1 @@
+R12 evidence copied from the staged m1-33 and m1-34 evidence. JSON files are unchanged. grok_stdout.jsonl retains original tool_call, usage, max_turns_reached, error and end lines in stream order; token deltas and tool results are omitted. Paths in evidence are inert historical strings, never accessed by tests.

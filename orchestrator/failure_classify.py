@@ -132,6 +132,9 @@ def _error_signals(stdout: str, stderr: str, *, failed_exit: bool, unknown_exit:
             if not isinstance(event, dict):
                 continue
             kind = event.get("type")
+            if kind == "max_turns_reached":
+                max_turns = True
+                continue
             # Grok's single JSON result may omit the event type entirely.
             if kind is None and "result" in event and ("is_error" in event or "error" in event):
                 kind = "result"
@@ -224,8 +227,8 @@ def classify_process_output(
         return Classification(
             process_state=STATE_MAX_TURNS,
             category="max_turns",
-            detail="agent reached the bounded turn limit",
-            retry_eligible=True,
+            detail="turn budget exhausted; reviewer action required: inspect preserved branch and run evidence",
+            retry_eligible=False,
         )
 
     # Required MCP failures are external blockers (truthful; not silent).

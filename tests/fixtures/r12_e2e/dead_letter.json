@@ -1,0 +1,20 @@
+{
+  "schema_version": "1.0",
+  "assignment_id": "assign-20261025T182005Z-T-M1-E2E-LIVE-1-46d4144a",
+  "task_id": "T-M1-E2E-LIVE-1",
+  "logical_task_id": "T-M1-E2E-LIVE-1",
+  "agent_id": "composer",
+  "adapter_id": "composer-restricted",
+  "task_path": "tasks/active/T-M1-E2E-LIVE-1.yaml",
+  "mechanism": "physical_supervisor",
+  "requested_by": "claude",
+  "requested_at": "2026-10-25T18:20:05Z",
+  "retry": {
+    "attempts": 3,
+    "reason": "logical task T-M1-E2E-LIVE-1 held by composer via supervisor (assign-20261025T182005Z-T-M1-E2E-LIVE-1-46d4144a); explicit release or supersede required",
+    "first_failed_at": "2026-10-25T18:30:42.996802+00:00",
+    "last_failed_at": "2026-10-25T18:32:20.919424+00:00",
+    "next_attempt_at": "2026-10-25T18:34:20.919424+00:00",
+    "dead_lettered_at": "2026-10-25T18:32:20.919424+00:00"
+  }
+}

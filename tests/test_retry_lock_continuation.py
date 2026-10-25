@@ -23,13 +23,23 @@ class RetryLockContinuationTests(ConditionRetryFixture):
         return process_once(self.root, config=self._config(), popen=popen or self._popen,
                             launch_plan_builder=self._plan, monitor=monitor or _monitor('', exit_code=0))
 
-    def max_turns(self):
-        report = self.tick(_monitor('Stopped after reaching max turns (30)'))
-        self.assertEqual(report['status'], 'requeued_continuation', report)
-        return report
+    def transient(self):
+        # A crashed launch with no failure fingerprint is eligible for recovery.
+        # Seed only the temporary fixture; no real assignment or process is used.
+        state = RunState(run_id='transient-run', assignment_id=self.assignment_id,
+                         task_id=self.task_id, logical_task_id=self.task_id,
+                         assigned_agent='composer', adapter='composer-restricted',
+                         process_state='failed_launch', retry_eligible=True,
+                         worktree=str(self.worktree), branch='agent/composer/T-COND')
+        work_lock.acquire(self.root, self.task_id, holder_agent='composer', route='supervisor',
+                          assignment_id=self.assignment_id, run_id=state.run_id, resume=True)
+        save_run_state(self.root, state)
+        from dispatch.assignment_channel import set_assignment_status
+        set_assignment_status(self.root, self.assignment_id, 'building')
+        return {'run_id': state.run_id}
 
-    def test_max_turns_continues_then_success_holds_for_review(self):
-        first = self.max_turns()
+    def test_transient_continues_then_success_holds_for_review(self):
+        first = self.transient()
         lock = work_lock.status(self.root)[0]
         self.assertEqual(lock['state'], 'reserved')
         self.assertEqual(lock['prior_run_ids'], [first['run_id']])
@@ -40,6 +50,9 @@ class RetryLockContinuationTests(ConditionRetryFixture):
         report = self.tick()
         self.assertEqual(report['process_state'], 'completed', report)
         self.assertNotEqual(report['run_id'], first['run_id'])
+        continued = next(run for run in self._runs() if run.run_id == report['run_id'])
+        self.assertEqual(continued.continuation_from_run_id, first['run_id'])
+        self.assertEqual(continued.worktree, str(self.worktree))
         lock = work_lock.status(self.root)[0]
         self.assertEqual(lock['run_id'], report['run_id'])
         self.assertEqual(lock['state'], 'completed')
@@ -47,7 +60,7 @@ class RetryLockContinuationTests(ConditionRetryFixture):
         self.assertEqual(read_assignment(self.root, self.assignment_id)[0].status, 'awaiting_review')
 
     def test_concurrent_continuations_exactly_one_wins_and_old_save_is_fenced(self):
-        first = self.max_turns()
+        first = self.transient()
         barrier = threading.Barrier(2)
 
         def acquire(run):
@@ -68,17 +81,16 @@ class RetryLockContinuationTests(ConditionRetryFixture):
         self.assertEqual(work_lock.status(self.root)[0]['state'], 'running')
 
     def test_turn_budget_exhaustion_is_one_reviewable_failure(self):
-        first = self.max_turns()
-        second = self.tick(_monitor('Stopped after reaching max turns (30)'))
-        self.assertEqual(second['process_state'], 'blocked_external')
+        report = self.tick(_monitor('Stopped after reaching max turns (30)'))
+        self.assertEqual(report['process_state'], 'failed', report)
         self.assertEqual(read_assignment(self.root, self.assignment_id)[0].status, 'reviewable_failure')
         self.assertEqual(len(self._poke_events()), 1)
-        state = next(s for s in self._runs() if s.run_id == second['run_id'])
+        state = self._runs()[0]
         self.assertFalse(state.retry_eligible)
-        self.assertIn('budget exhausted', state.blocked_reason)
-        self.assertIn(first['run_id'], state.blocked_reason)
-        self.assertIn(second['run_id'], state.blocked_reason)
-        self.assertEqual(state.continuation_from_run_id, first['run_id'])
+        self.assertIn('reviewer', state.blocked_reason)
+        self.assertFalse(self.wake_path.exists())
+        self.assertEqual(work_lock.status(self.root)[0]['state'], 'failed')
+        self.assertEqual(work_lock.status(self.root)[0]['run_id'], state.run_id)
         route_completion(self.root, state)
         self.assertEqual(len(self._poke_events()), 1)
         from dispatch.orchestrator_pokes import list_orchestrator_pokes
@@ -87,7 +99,33 @@ class RetryLockContinuationTests(ConditionRetryFixture):
         self.assertEqual(errors, [])
         route_completion(self.root, state)
         self.assertEqual(self._poke_events(), [])
+        for _ in range(3):
+            self.tick()
+        self.assertEqual(len(self.prompts), 1)
+        self.assertFalse(list((self.root / 'runtime/dispatch/wake_queue/dead_letter').rglob('*.json')))
+
+    def test_orphan_max_turns_is_terminal_without_continuation(self):
+        from orchestrator.supervisor import recover_orphans
+        self.transient()
+        state = self._runs()[0]
+        state.process_state = 'running'
+        state.pid = 4242
+        state.stdout_path = f'runtime/dispatch/runs/{state.run_id}/stdout.log'
+        (self.root / state.stdout_path).write_text('{"type":"max_turns_reached"}\n{"type":"end","stopReason":"cancelled"}\n')
+        save_run_state(self.root, state)
+        with patch('orchestrator.supervisor.pid_is_alive', return_value=False):
+            recover_orphans(self.root, config=self._config())
+            recover_orphans(self.root, config=self._config())
+        terminal = self._runs()[0]
+        self.assertFalse(terminal.retry_eligible)
+        self.assertEqual(terminal.process_state, 'blocked_external')
+        self.assertIn('turn budget exhausted', terminal.blocked_reason)
+        self.assertIn('reviewer action', terminal.blocked_reason)
+        self.assertEqual(read_assignment(self.root, self.assignment_id)[0].status, 'reviewable_failure')
+        self.assertEqual(work_lock.status(self.root)[0]['run_id'], state.run_id)
         self.assertEqual(work_lock.status(self.root)[0]['state'], 'blocked_external')
+        self.assertEqual(len(self._poke_events()), 1)
+        self.assertEqual(self.prompts, [])
 
     def test_dead_letter_records_all_runs_and_notifies_once(self):
         with patch('orchestrator.supervisor.allocate_worktree', side_effect=ValueError('bad base SHA; fix contract')):
@@ -176,10 +214,15 @@ class RetryLockContinuationTests(ConditionRetryFixture):
 
     def test_retry_count_exhaustion_has_actionable_failure(self):
         from orchestrator.supervisor import _exhaust_assignment
-        self.max_turns()
+        self.transient()
         state = self._runs()[0]
         state.process_state = 'failed'
         state.retry_count = 10
+        from orchestrator.failure_classify import build_fingerprint, classify_process_output
+        state.failure_fingerprint = build_fingerprint(
+            agent=state.assigned_agent, adapter=state.adapter, exit_code=1,
+            classification=classify_process_output(agent=state.assigned_agent,
+                adapter=state.adapter, exit_code=1, stderr='transient crash')).to_dict()
         state.retry_eligible = True
         save_run_state(self.root, state)
         report = self.tick()
@@ -190,8 +233,8 @@ class RetryLockContinuationTests(ConditionRetryFixture):
         _exhaust_assignment(self.root, self.assignment_id, 'automatic retries exhausted')
         self.assertEqual(len(self._poke_events()), 1)
 
-    def test_evidence_terminal_shape_is_resumed_before_refusal_sequence(self):
-        evidence = Path(__file__).resolve().parents[1] / 'runtime/dispatch/m1-33/evidence'
+    def test_evidence_terminal_shape_is_reviewable_before_refusal_sequence(self):
+        evidence = Path(__file__).resolve().parents[1] / 'tests/fixtures/r12_e2e'
         result = json.loads((evidence / 'grok_max_turns_result.json').read_text())
         old_lock = json.loads((evidence / 'lock_after.json').read_text())
         refusal = json.loads((evidence / 'refused_relaunch.json').read_text())
@@ -216,7 +259,18 @@ class RetryLockContinuationTests(ConditionRetryFixture):
         from dispatch.assignment_channel import set_assignment_status
         set_assignment_status(self.root, self.assignment_id, 'building')
         report = self.tick()
-        self.assertEqual(report['process_state'], 'completed', report)
-        self.assertEqual(len(self.prompts), 1)
-        self.assertIn(state.run_id, work_lock.status(self.root)[0]['prior_run_ids'])
+        self.assertEqual(report['status'], 'skipped', report)
+        self.assertEqual(len(self.prompts), 0)
+        terminal = next(run for run in self._runs() if run.run_id == state.run_id)
+        self.assertFalse(terminal.retry_eligible)
+        self.assertIn('turn budget exhausted', terminal.blocked_reason)
+        self.assertIn('reviewer action', terminal.blocked_reason)
+        self.assertEqual(read_assignment(self.root, self.assignment_id)[0].status, 'reviewable_failure')
+        self.assertEqual(work_lock.status(self.root)[0]['run_id'], state.run_id)
+        self.assertEqual(work_lock.status(self.root)[0]['state'], 'failed')
+        self.assertFalse(self.wake_path.exists())
+        for _ in range(3):
+            self.tick()
+            route_completion(self.root, terminal)
+        self.assertEqual(len(self._poke_events()), 1)
         self.assertFalse(list((self.root / 'runtime/dispatch/wake_queue/dead_letter').rglob('*.json')))

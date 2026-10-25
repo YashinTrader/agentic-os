@@ -50,6 +50,7 @@ from orchestrator.process_ownership import ownership_metadata, process_start_tim
 from orchestrator.quota_probe import paid_probe_status
 from orchestrator.process_monitor import mark_orphaned, monitor_process, pid_is_alive, read_text
 from orchestrator.runtime_store import (
+    TERMINAL_STATES,
     STATE_BLOCKED_NO_ADAPTER,
     STATE_COMPLETED,
     STATE_FAILED_LAUNCH,
@@ -300,13 +301,16 @@ def _process_wake_signal(
         if record.status == 'reviewable_failure' and existing and existing.failure_class in {'CONFIG', 'BLOCKED_SECURITY_POLICY'}:
             _consume_wake(repo_root, signal_path)
             return {'status': 'skipped', 'reason': 'launch failure requires reviewer action', 'nonretryable': True}
-        # A refused prelaunch must not hide the physical run needing continuation.
+        # A refused prelaunch must not hide the physical owner that exhausted its budget.
         from orchestrator.runtime_store import load_run_state
         locks = work_lock.status(repo_root, record.logical_task_id or record.task_id)
         if locks and locks[0]['assignment_id'] == assignment_id:
             owner = load_run_state(repo_root, locks[0]['run_id'])
-            if owner and owner.process_state == STATE_MAX_TURNS and owner.retry_eligible:
-                existing = owner
+            if owner and owner.process_state == STATE_MAX_TURNS:
+                _exhaust_assignment(repo_root, assignment_id, 'turn budget exhausted')
+                _consume_wake(repo_root, signal_path)
+                return {'status': 'skipped', 'reason': 'turn budget exhausted; reviewer action required',
+                        'assignment_id': assignment_id, 'run_id': owner.run_id}
     if existing and existing.process_state == STATE_COMPLETED:
         _consume_wake(repo_root, signal_path)
         return {
@@ -427,7 +431,8 @@ def _process_wake_signal(
     set_assignment_status(repo_root, assignment_id, "building")
 
     preserved = condition_retry_from if condition_retry_from is not None else None
-    is_continuation = preserved is None and bool(existing and existing.process_state == STATE_MAX_TURNS)
+    is_continuation = preserved is None and bool(
+        existing and existing.process_state in TERMINAL_STATES and existing.retry_eligible)
     if preserved is None and is_continuation and existing is not None:
         preserved = existing
     if preserved is not None and preserved.worktree:
@@ -703,7 +708,9 @@ def _process_wake_signal(
                    assignment_id=assignment_id, run_id=run_id, diagnostic=diagnostic)
         classification = Classification('failed', 'isolation_violation', json.dumps(diagnostic))
     elif classification.process_state == STATE_MAX_TURNS:
-        classification = Classification('failed', 'completion_condition_unmet', json.dumps(diagnostic))
+        classification = Classification('failed', 'completion_condition_unmet',
+                                        'turn budget exhausted; reviewer action required: inspect preserved branch and run diagnostic; '
+                                        + json.dumps(diagnostic))
     if popen is None and classification.process_state == STATE_COMPLETED:
         from orchestrator.builder_completion import verify_completion
         try:
@@ -719,22 +726,6 @@ def _process_wake_signal(
         except (OSError, ValueError) as exc:
             classification = Classification('failed', 'completion_verification_failed', str(exc))
     fp = _apply_classification(repo_root, state, classification, config=config)
-
-    if state.process_state == STATE_MAX_TURNS:
-        save_run_state(repo_root, state)
-        layer_heartbeat.tick(progress=True)
-        release_lease(repo_root, assignment_id, run_id=run_id)
-        if state.auto_resume_count < 1:
-            return {
-                "status": "requeued_continuation", "assignment_id": assignment_id,
-                "run_id": run_id, "worktree": str(worktree), "branch": state.branch,
-            }
-        state.process_state = STATE_BLOCKED_EXTERNAL
-        state.blocked_reason = (
-            f"automatic max-turn continuation budget exhausted; run_ids={state.continuation_from_run_id}, {state.run_id}; "
-            "unfinished work requires reviewer action: inspect the preserved branch and authorize a child or retry"
-        )
-        state.retry_eligible = False
 
     # Codex fallback after Grok quota/auth/unavailable — one time max, no loops.
     if (
@@ -881,7 +872,9 @@ def _process_wake_signal(
                                    run_id=fallback_run, diagnostic=fb_diagnostic)
                         fb_class = Classification('failed', 'isolation_violation', json.dumps(fb_diagnostic))
                     elif fb_class.process_state == STATE_MAX_TURNS:
-                        fb_class = Classification('failed', 'completion_condition_unmet', json.dumps(fb_diagnostic))
+                        fb_class = Classification('failed', 'completion_condition_unmet',
+                                                 'turn budget exhausted; reviewer action required: inspect preserved branch and run diagnostic; '
+                                                 + json.dumps(fb_diagnostic))
                     elif popen is None and fb_class.process_state == STATE_COMPLETED:
                         from orchestrator.builder_completion import verify_completion
                         try:
@@ -964,6 +957,9 @@ def _apply_classification(
     repo_root: Path, state: RunState, classification: Classification, *, config: SupervisorConfig,
 ) -> FailureFingerprint:
     """Use the same failure metadata and condition schedule for monitoring and salvage."""
+    if classification.process_state == STATE_MAX_TURNS:
+        classification = Classification('blocked_external', 'max_turns',
+            'turn budget exhausted; reviewer action required: inspect preserved branch and run evidence before authorizing a retry')
     state.process_state = classification.process_state
     state.blocked_reason = (
         f"{state.deadline_fired} deadline expired" if state.deadline_fired else classification.detail
@@ -1031,13 +1027,6 @@ def recover_orphans(repo_root: Path, *, config: SupervisorConfig | None = None) 
             state.exit_code = None
             state.completed_at = utc_now()
             _apply_classification(repo_root, state, classification, config=cfg)
-            if state.process_state == STATE_MAX_TURNS and state.auto_resume_count >= 1:
-                state.process_state = STATE_BLOCKED_EXTERNAL
-                state.blocked_reason = (
-                    f"automatic max-turn continuation budget exhausted; run_ids={state.continuation_from_run_id}, {state.run_id}; "
-                    "unfinished work requires reviewer action: inspect the preserved branch and authorize a child or retry"
-                )
-                state.retry_eligible = False
             try:
                 save_run_state(repo_root, state)
             except work_lock.WorkLockError:
@@ -1045,8 +1034,7 @@ def recover_orphans(repo_root: Path, *, config: SupervisorConfig | None = None) 
                 # outcome or change its assignment/lease on the dead run's behalf.
                 recovered.append({"run_id": state.run_id, "status": "fenced"})
                 continue
-            if state.process_state != STATE_MAX_TURNS:
-                route_completion(repo_root, state, branch=state.branch, source=state.assigned_agent)
+            route_completion(repo_root, state, branch=state.branch, source=state.assigned_agent)
         else:
             mark_orphaned(repo_root, state, detail=f"PID {state.pid} not alive")
             try:
