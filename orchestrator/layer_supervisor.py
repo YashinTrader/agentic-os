@@ -20,7 +20,7 @@ from root_paths import root_metadata
 from dispatch.atomic_io import atomic_write_json
 from orchestrator.process_ownership import owned_popen, terminate_owned, ownership_metadata, process_start_time
 from orchestrator.layer_heartbeat import read_heartbeat, timestamp
-from orchestrator.supervisor_control import control_dir, file_lock, identity_state, register_supervisor_job, is_legacy_status
+from orchestrator.supervisor_control import control_dir, file_lock, identity_state, register_supervisor_job, is_legacy_status, recorded_state
 
 from orchestrator.launch_failures import classify_launch_failure, executable_identity, alert_once
 from orchestrator.root_restart_guard import RootRestartGuard
@@ -456,7 +456,7 @@ class LayerSupervisor:
                     if is_legacy_status(old):
                         print(f'legacy supervisor status requires audited adoption: python scripts/stop_supervisor.py --state-root "{self.root}" --adopt-legacy-status --actor <a> --reason <r>', flush=True)
                         return 2
-                    if old and identity_state(old) in {"live", "unknown"}:
+                    if old and recorded_state(old, self.root) in {"live", "unknown", "unverified"}:
                         print("supervisor already live or identity unverifiable; refusing start", flush=True)
                         return 2
                     if self.root_guard:

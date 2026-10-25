@@ -30,9 +30,10 @@ HOST = """import sys
 from pathlib import Path
 from orchestrator.layer_supervisor import LayerSupervisor
 from scripts import run_supervisor_layers as entrypoint
-root = Path(sys.argv[1])
-command = [sys.executable, str(root / 'fake.py')]
-entrypoint.LayerSupervisor = lambda root, commands, **kwargs: LayerSupervisor(root, {'builder': command, 'claude': command}, **kwargs)
+root = Path(sys.argv[sys.argv.index('--state-root') + 1])
+command = [sys.executable, str(root / 'run_orchestrator.py'), '--state-root', str(root)]
+claude = [sys.executable, str(root / 'run_claude_event_consumer.py'), '--state-root', str(root)]
+entrypoint.LayerSupervisor = lambda root, commands, **kwargs: LayerSupervisor(root, {'builder': command, 'claude': claude}, **kwargs)
 sys.argv = ['run_supervisor_layers.py', '--state-root', str(root)]
 raise SystemExit(entrypoint.main())
 """
@@ -44,7 +45,8 @@ class StopSupervisorTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         (self.root / "runtime").mkdir()
-        (self.root / "fake.py").write_text(FAKE, encoding="utf-8")
+        (self.root / "run_orchestrator.py").write_text(FAKE, encoding="utf-8")
+        (self.root / "run_claude_event_consumer.py").write_text(FAKE, encoding="utf-8")
         self.env = {**os.environ, "PYTHONPATH": str(ROOT), "AGENTIC_OS_CONFIG_ROOT": str(ROOT)}
         self.processes = []
         self.addCleanup(self.cleanup_processes)
@@ -87,14 +89,15 @@ class StopSupervisorTests(unittest.TestCase):
         self.fail(f"timed out; status={self.status()}")
 
     def start(self, version="old", unresponsive=False):
-        host = self.root / f"{version}.py"
+        host = self.root / version / "run_supervisor_layers.py"
+        host.parent.mkdir(exist_ok=True)
         prefix = ""
         if unresponsive:
             prefix = ("import orchestrator.layer_supervisor as module\n"
                       "original = module.read_heartbeat\n"
                       "module.read_heartbeat = lambda path: {} if path.name == 'stop_request.json' else original(path)\n")
         host.write_text(prefix + HOST, encoding="utf-8")
-        process = self.launch([sys.executable, str(host), str(self.root)])
+        process = self.launch([sys.executable, str(host), "--state-root", str(self.root)])
         previous_pid = getattr(self, "supervisor_pid", None)
         self.supervisor_pid = None
         def ticking():
@@ -162,7 +165,7 @@ class StopSupervisorTests(unittest.TestCase):
         before = self.legacy_status()
         host = self.root / "blocked.py"
         host.write_text(HOST, encoding="utf-8")
-        blocked = self.launch([sys.executable, str(host), str(self.root)])
+        blocked = self.launch([sys.executable, str(host), "--state-root", str(self.root)])
         self.assertEqual(blocked.wait(timeout=10), 2)
         self.assertIn("--adopt-legacy-status", blocked.stdout.read().decode())
         result = self.stop_cli("--adopt-legacy-status")
@@ -281,6 +284,75 @@ class StopSupervisorTests(unittest.TestCase):
         audit = list((control_dir(self.root) / "audit").glob("*.json"))
         self.assertTrue(json.loads(audit[0].read_text())["forced"])
 
+    def test_copied_status_refuses_and_original_still_stops(self):
+        process = self.start()
+        before = self.status()
+        with tempfile.TemporaryDirectory() as other:
+            atomic_write_json(control_dir(Path(other)) / "status.json", before)
+            result = subprocess.run([sys.executable, str(ROOT / "scripts/stop_supervisor.py"),
+                "--state-root", other, "--actor", "test", "--reason", "copied", "--timeout", "0"],
+                env=self.env, capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 4, result.stdout + result.stderr)
+            self.assertIsNone(process.poll())
+            self.assertFalse((control_dir(Path(other)) / "stop_request.json").exists())
+        self.assertEqual(self.stop_cli().returncode, 0)
+        self.assertEqual(process.wait(timeout=5), 0)
+
+    def test_copied_live_status_does_not_block_other_root_start(self):
+        original = self.start()
+        before = self.status()
+        original_root = self.root
+        original_pid = self.supervisor_pid
+        with tempfile.TemporaryDirectory() as other:
+            try:
+                self.root = Path(other)
+                for name in ("run_orchestrator.py", "run_claude_event_consumer.py"):
+                    (self.root / name).write_text(FAKE, encoding="utf-8")
+                atomic_write_json(control_dir(self.root) / "status.json", before)
+                replacement = self.start()
+                self.assertIsNone(original.poll())
+                self.assertEqual(self.stop_cli().returncode, 0)
+                self.assertEqual(replacement.wait(timeout=5), 0)
+            finally:
+                self.root = original_root
+                self.supervisor_pid = original_pid
+        self.assertEqual(self.stop_cli().returncode, 0)
+        self.assertEqual(original.wait(timeout=5), 0)
+
+    def test_command_evidence_environment_relative_case_and_missing(self):
+        from orchestrator.supervisor_control import recorded_state
+        from unittest.mock import MagicMock
+        process = MagicMock()
+        process.cwd.return_value = str(self.root)
+        record = {"pid": 123, "process_start_time": "creation"}
+        for args, env, expected in (
+            (["python", "run_supervisor_layers.py", "--state-root", "."], {}, "live"),
+            (["python", "run_supervisor_layers.py", "--state-root=" + str(self.root).upper()], {}, "live"),
+            (["python", "run_supervisor_layers.py"], {"AGENTIC_OS_STATE_ROOT": str(self.root)}, "live"),
+            (["python", "run_supervisor_layers.py"], {}, "unverified"),
+            (["python", "other.py", "--state-root", str(self.root)], {}, "foreign"),
+        ):
+            process.cmdline.return_value = args
+            process.environ.return_value = env
+            with patch("psutil.Process", return_value=process), patch(
+                    "orchestrator.supervisor_control.identity_state", return_value="live"):
+                self.assertEqual(recorded_state(record, self.root), expected)
+
+    def test_foreign_child_refused_before_graceful_request(self):
+        process = self.start(unresponsive=True)
+        with tempfile.TemporaryDirectory() as other:
+            fake = Path(other) / "run_orchestrator.py"
+            fake.write_text("import time; time.sleep(120)", encoding="utf-8")
+            child = self.launch([sys.executable, str(fake), "--state-root", other])
+            record = self.status()
+            record["recorded_children"].append({"pid": child.pid,
+                "process_start_time": process_start_time(child.pid)})
+            atomic_write_json(control_dir(self.root) / "status.json", record)
+            self.assertEqual(stop(self.root, "test", "foreign child", 0), 4)
+            self.assertIsNone(child.poll())
+            self.assertIsNone(process.poll())
+            self.assertFalse((control_dir(self.root) / "stop_request.json").exists())
+
     def test_reused_pid_refused_without_signaling(self):
         process = self.launch([sys.executable, "-c", "import time; time.sleep(120)"])
         atomic_write_json(control_dir(self.root) / "status.json", {
@@ -295,7 +367,7 @@ class StopSupervisorTests(unittest.TestCase):
         record = self.status()
         record["process_start_time"] = "reused"
         with self.assertRaises(ValueError):
-            force_recorded_tree(record)
+            force_recorded_tree(record, self.root)
         self.assertIsNone(process.poll())
         self.assertEqual(self.stop_cli().returncode, 0)
         self.assertEqual(process.wait(timeout=5), 0)
@@ -309,7 +381,7 @@ class StopSupervisorTests(unittest.TestCase):
         # Keep the real root's start time; only the Job name is foreign.
         record["process_start_time"] = self.status()["process_start_time"]
         with self.assertRaises(ValueError):
-            force_recorded_tree(record)
+            force_recorded_tree(record, self.root)
         self.assertIsNone(process.poll())
         self.assertIsNone(decoy.poll())
         self.assertEqual(self.stop_cli().returncode, 0)
@@ -329,12 +401,14 @@ class StopSupervisorTests(unittest.TestCase):
         self.assertEqual(process.wait(timeout=5), 0)
 
     def test_live_status_fence_even_without_instance_lock(self):
-        process = self.launch([sys.executable, "-c", "import time; time.sleep(120)"])
+        fake = self.root / "run_supervisor_layers.py"
+        fake.write_text("import time; time.sleep(120)", encoding="utf-8")
+        process = self.launch([sys.executable, str(fake), "--state-root", str(self.root)])
         atomic_write_json(control_dir(self.root) / "status.json", {
             "pid": process.pid, "process_start_time": process_start_time(process.pid)})
-        host = self.root / "second.py"
+        host = self.root / "run_supervisor_layers.py"
         host.write_text(HOST, encoding="utf-8")
-        second = self.launch([sys.executable, str(host), str(self.root)])
+        second = self.launch([sys.executable, str(host), "--state-root", str(self.root)])
         self.assertEqual(second.wait(timeout=10), 2)
         self.assertIsNone(process.poll())
 
@@ -342,7 +416,7 @@ class StopSupervisorTests(unittest.TestCase):
         for version in ("old", "new", "old"):
             process = self.start(version)
             before = self.status()
-            second = self.launch([sys.executable, str(self.root / f"{version}.py"), str(self.root)])
+            second = self.launch([sys.executable, str(self.root / version / "run_supervisor_layers.py"), "--state-root", str(self.root)])
             self.assertEqual(second.wait(timeout=10), 2)
             self.assertEqual(self.status()["pid"], before["pid"])
             for previous in self.processes:

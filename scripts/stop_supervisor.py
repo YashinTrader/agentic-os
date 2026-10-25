@@ -15,7 +15,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from dispatch.atomic_io import atomic_write_json
 from orchestrator.layer_heartbeat import read_heartbeat, timestamp
-from orchestrator.supervisor_control import control_dir, read_control_status, file_lock, identity_state, force_recorded_tree, is_legacy_status, legacy_process_blockers
+from orchestrator.supervisor_control import control_dir, read_control_status, file_lock, identity_state, force_recorded_tree, is_legacy_status, legacy_process_blockers, verify_recorded_tree, StateRootMismatch
 from root_paths import resolve_state_root
 
 
@@ -47,6 +47,7 @@ def stop(root: Path, actor: str, reason: str, timeout: float = 90,
                 status = read_control_status(directory / "status.json")
                 if not status or identity_state(status) in {"reused", "unknown"}:
                     return finish(2, "refused: missing, reused or unverifiable root PID/start time")
+                verify_recorded_tree(status, root)
                 audit["root"] = {key: status.get(key) for key in
                                  ("pid", "process_start_time", "instance_token", "process_identity")}
                 request = {**audit["root"], **{key: audit[key] for key in
@@ -76,6 +77,8 @@ def stop(root: Path, actor: str, reason: str, timeout: float = 90,
                                     or not isinstance(record.get("process_start_time"), str)):
                                 raise ValueError("incomplete recorded process identity")
                             records[(record.get("pid"), record.get("process_start_time"))] = record
+                for source in sources:
+                    verify_recorded_tree(source, root)
                 states = [identity_state(record) for record in records.values()]
                 audit["verified_processes"] = [
                     {"pid": record.get("pid"), "process_start_time": record.get("process_start_time"),
@@ -107,13 +110,15 @@ def stop(root: Path, actor: str, reason: str, timeout: float = 90,
                 return finish(2, "refused: root no longer matches; surviving children cannot be targeted")
             audit.update(forced=True, forced_at=timestamp())
             atomic_write_json(audit_path, audit)
-            force_recorded_tree(status)
+            force_recorded_tree(status, root)
             deadline = time.monotonic() + 10
             while time.monotonic() < deadline:
                 if all(state in {"gone", "reused"} for state in tree_states()):
                     return finish(3, "forced-owned: terminated recorded root tree after timeout")
                 time.sleep(.1)
             return finish(2, "failed: forced-owned termination did not clear recorded tree")
+    except StateRootMismatch as exc:
+        return finish(4, f"refused: {exc}")
     except (OSError, ValueError, subprocess.SubprocessError) as exc:
         return finish(2, f"refused/failed: {exc}")
 

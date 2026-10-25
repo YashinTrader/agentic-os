@@ -126,8 +126,72 @@ def identity_state(record: dict) -> str:
     return "unknown"
 
 
-def force_recorded_tree(record: dict) -> None:
+class StateRootMismatch(ValueError):
+    """Recorded live process lacks evidence of ownership by the selected root."""
+
+
+def recorded_state(record: dict, root: Path, entrypoints=("run_supervisor_layers.py",)) -> str:
+    state = identity_state(record)
+    if state != "live":
+        return state
+    try:
+        import psutil
+    except ImportError:
+        return "unverified"
+    try:
+        process = psutil.Process(record["pid"])
+        args = process.cmdline()
+        if not any(Path(arg.replace("\\", "/")).name.casefold() in entrypoints for arg in args):
+            return "foreign"
+        selected = []
+        for index, arg in enumerate(args):
+            if arg == "--state-root":
+                selected.append(args[index + 1] if index + 1 < len(args) else "")
+            elif arg.startswith("--state-root="):
+                selected.append(arg.split("=", 1)[1])
+        if not selected:
+            selected = [process.environ().get("AGENTIC_OS_STATE_ROOT", "")]
+        for value in selected:
+            if not value:
+                return "unverified"
+            path = Path(value)
+            if not path.is_absolute():
+                path = Path(process.cwd()) / path
+            if str(path.resolve()).casefold() != str(root.resolve()).casefold():
+                return "foreign"
+        # Recheck creation identity after inspecting a reusable PID.
+        return identity_state(record)
+    except (OSError, ValueError, psutil.Error):
+        return "unverified"
+
+
+LAYER_ENTRYPOINTS = {"builder": "run_orchestrator.py", "claude": "run_claude_event_consumer.py"}
+
+
+def verify_recorded_tree(record: dict, root: Path) -> None:
+    records = [(record, ("run_supervisor_layers.py",))]
+    children = record.get("children", {})
+    history = record.get("recorded_children", [])
+    if not isinstance(children, dict) or not isinstance(history, list):
+        raise ValueError("invalid recorded child identities")
+    for name, child in children.items():
+        records.append((child, (LAYER_ENTRYPOINTS.get(name, ""),)))
+    records.extend((child, tuple(LAYER_ENTRYPOINTS.values())) for child in history)
+    for child, entries in records:
+        if not isinstance(child, dict):
+            raise ValueError("invalid recorded process identity")
+        if child.get("pid") is None:
+            continue
+        state = recorded_state(child, root, entries)
+        if state in {"foreign", "unverified"}:
+            raise StateRootMismatch("recorded process belongs to another state root or ownership evidence is missing")
+        if state == "unknown":
+            raise ValueError("recorded process identity cannot be verified")
+
+
+def force_recorded_tree(record: dict, root: Path) -> None:
     """Revalidate immediately before signaling; never select by executable name."""
+    verify_recorded_tree(record, root)
     if os.name == "nt":
         from orchestrator.process_ownership import kernel, _windows_start_time
         # Retain the process object through Job membership and identity checks.
@@ -155,6 +219,7 @@ def force_recorded_tree(record: dict) -> None:
                     raise ValueError("recorded root is not a member of recorded Job")
                 if _windows_start_time(handle) != record["process_start_time"]:
                     raise ValueError("root identity changed immediately before termination")
+                verify_recorded_tree(record, root)
                 if not kernel.TerminateJobObject(job, 1):
                     raise ctypes.WinError(ctypes.get_last_error())
             finally:
@@ -176,9 +241,11 @@ def force_recorded_tree(record: dict) -> None:
                     or os.getpgid(child_pid) != child_pid
                     or identity_state(record) != "live"):
                 raise ValueError("cannot validate recorded layer group ownership")
+            verify_recorded_tree(record, root)
             os.killpg(child_pid, signal.SIGKILL)
         if identity_state(record) != "live":
             raise ValueError("root identity changed immediately before termination")
+        verify_recorded_tree(record, root)
         os.killpg(record["pid"], signal.SIGKILL)
 
 
