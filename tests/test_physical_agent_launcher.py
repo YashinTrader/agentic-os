@@ -266,13 +266,15 @@ class FailureClassifyTests(unittest.TestCase):
         self.assertEqual(quota.process_state, "blocked_quota")
         self.assertIsNotNone(quota.retry_after)
 
-    def test_max_turns_classification_is_resume_eligible(self) -> None:
+    def test_max_turns_classification_is_terminal(self) -> None:
+        # Owner decision 2026-10-25 (T-M1-35): turn-budget exhaustion is a terminal reviewable failure.
         result = classify_process_output(
             agent="composer", adapter="composer-restricted", exit_code=1,
             stderr="Stopped after reaching max turns (30)",
         )
         self.assertEqual(result.process_state, "max_turns")
-        self.assertTrue(result.retry_eligible)
+        self.assertFalse(result.retry_eligible)
+        self.assertIn("reviewer action required", result.detail)
 
     def test_unchanged_failure_no_relaunch(self) -> None:
         c = classify_process_output(
