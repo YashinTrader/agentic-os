@@ -123,6 +123,8 @@ class RunState:
     handoff_path: str = ""
     blocked_reason: str = ""
     retry_eligible: bool = False
+    failure_class: str = ""
+    blocked_executable: dict[str, Any] | None = None
     retry_count: int = 0
     failure_fingerprint: dict[str, Any] | None = None
     fallback_from_run_id: str | None = None
@@ -160,7 +162,8 @@ def save_run_state(repo_root: Path, state: RunState, *, refresh_work_lock: bool 
     if state.logical_task_id and refresh_work_lock:
         from dispatch.work_lock import heartbeat, WorkLockError
         try:
-            heartbeat(repo_root, state.logical_task_id, run_id=state.run_id, state=state.process_state)
+            heartbeat(repo_root, state.logical_task_id, run_id=state.run_id, state=state.process_state,
+                      reserve=state.retry_eligible and state.process_state in TERMINAL_STATES)
         except WorkLockError:
             # Keep the zombie's evidence separate from normal outcomes. The
             # monitor catches this ownership loss and terminates its own tree.
@@ -210,6 +213,8 @@ def save_run_state(repo_root: Path, state: RunState, *, refresh_work_lock: bool 
             "blocked_reasons": [state.blocked_reason] if state.blocked_reason else [],
             "blocked_reason": state.blocked_reason,
             "retry_eligible": state.retry_eligible,
+            "failure_class": state.failure_class,
+            "blocked_executable": state.blocked_executable,
             "retry_count": state.retry_count,
             "failure_fingerprint": state.failure_fingerprint,
             "fallback_from_run_id": state.fallback_from_run_id,

@@ -97,7 +97,7 @@ class PrelaunchIsolationTests(ConditionRetryFixture):
         self.clock.advance(minutes=1)
         self.assertEqual(self.tick()['process_state'], 'completed')
 
-    def test_missing_adapter_dead_letters_and_releases_lock(self):
+    def test_missing_adapter_dead_letters_and_retains_reviewable_failure_lock(self):
         def unavailable(**kwargs):
             plan = self._plan(**kwargs)
             plan.blocked_reasons = ['blocked_no_adapter: unavailable']
@@ -106,12 +106,14 @@ class PrelaunchIsolationTests(ConditionRetryFixture):
         with patch.object(self, '_plan', side_effect=RuntimeError('task load failed')):
             self.assertEqual(self.tick()['status'], 'error')
         self.assertEqual(work_lock.status(self.root), [])
-        for _ in range(2):
+        for attempt in range(2):
             self.clock.advance(minutes=10)
             report = process_once(self.root, config=self._config(), launch_plan_builder=unavailable)
             self.assertEqual(report['status'], 'blocked', report)
-            self.assertEqual(work_lock.status(self.root), [])
+            if attempt == 0:
+                self.assertEqual(work_lock.status(self.root), [])
         self.assertTrue(report['dead_lettered'])
+        self.assertEqual(work_lock.status(self.root)[0]['state'], 'failed')
 
     def test_spawn_error_result_releases_lock(self):
         with patch('orchestrator.supervisor.launch_process', return_value=(None, 'spawn failed')):

@@ -96,11 +96,25 @@ def acquire(root: Path, logical_task_id: str, *, holder_agent: str, route: str,
         if prior:
             same_assignment = bool(assignment_id and prior['assignment_id'] == assignment_id)
             same_run = bool(run_id and prior['run_id'] == run_id)
+            if (resume and same_assignment and prior['holder_agent'] == holder_agent
+                    and prior['state'] not in {'reserved', 'running', 'queued', 'launching'}):
+                # Upgrade terminal locks written before reservation-on-completion.
+                # Durable run evidence, never age, authorizes this transition.
+                from orchestrator.runtime_store import load_run_state, TERMINAL_STATES as RUN_TERMINAL
+                ended = load_run_state(root, prior['run_id'])
+                if (ended and ended.assignment_id == assignment_id
+                        and ended.assigned_agent == holder_agent
+                        and ended.process_state in RUN_TERMINAL and ended.retry_eligible):
+                    _reserve(prior)
             if (resume and prior['holder_agent'] == holder_agent
-                    and (same_assignment or same_run)
+                    and (same_assignment if assignment_id else same_run)
                     and (not run_id or prior['state'] == 'reserved' or same_run)):
                 prior.update(heartbeat_at=now())
                 if run_id:
+                    if prior['run_id'] and prior['run_id'] != run_id:
+                        history = prior.setdefault('prior_run_ids', [])
+                        if prior['run_id'] not in history:
+                            history.append(prior['run_id'])
                     prior.update(run_id=run_id, route=route, state="running",
                                  base_sha=base_sha or prior['base_sha'], branch=branch or prior['branch'])
                 atomic_write_json(path, prior)
@@ -184,7 +198,8 @@ def supersede(root: Path, logical_task_id: str, *, actor: str, reason: str,
         return replacement
 
 
-def heartbeat(root: Path, logical_task_id: str, *, run_id: str, state: str | None = None, branch: str | None = None) -> None:
+def heartbeat(root: Path, logical_task_id: str, *, run_id: str, state: str | None = None, branch: str | None = None,
+              reserve: bool = False) -> None:
     path = lock_path(root, logical_task_id)
     with _guard(path):
         record = _read(path)
@@ -199,7 +214,19 @@ def heartbeat(root: Path, logical_task_id: str, *, run_id: str, state: str | Non
             record['branch'] = branch
         if state:
             record['state'] = state
+        if reserve:
+            _reserve(record)
         atomic_write_json(path, record)
+
+
+def _reserve(record: dict) -> None:
+    """Caller holds _guard; retain the last physical owner for completion fencing."""
+    history = record.setdefault('prior_run_ids', [])
+    if record['run_id'] and record['run_id'] not in history:
+        history.append(record['run_id'])
+    if record['state'] != 'reserved':
+        record['last_run_state'] = record['state']
+    record['state'] = 'reserved'
 
 
 def concurrency_error(root: Path, maximum: int) -> str:

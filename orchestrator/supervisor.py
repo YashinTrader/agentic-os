@@ -7,6 +7,7 @@ import os
 import signal
 import time
 import uuid
+import subprocess
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -34,6 +35,7 @@ from orchestrator.builder_condition import (
     reevaluate_blocked_builders,
 )
 from orchestrator.event_router import route_completion
+from orchestrator.launch_failures import classify_launch_failure, executable_identity, alert_once
 from orchestrator.failure_classify import Classification, build_fingerprint, classify_process_output, should_relaunch
 from orchestrator.leases import (
     DEFAULT_MAX_CONCURRENCY,
@@ -64,6 +66,76 @@ from orchestrator.runtime_store import (
 )
 
 STOP_REQUESTED = False
+
+
+def _launch_agent_process(root, state, plan, *, stdout_path, stderr_path, popen):
+    """Retain OSError identity even though the CLI launch helper returns text."""
+    failure = None
+
+    def spawn(*args, **kwargs):
+        nonlocal failure
+        try:
+            return (popen or subprocess.Popen)(*args, **kwargs)
+        except OSError as exc:
+            failure = exc
+            raise
+
+    handle, message = launch_process(plan, stdout_path=stdout_path, stderr_path=stderr_path, popen=spawn)
+    if handle is None:
+        _classify_launch_denial(root, state, failure, message, plan.executable)
+    return handle, message
+
+
+def _classify_launch_denial(root: Path, state: RunState, exc: Exception | None,
+                            message: str, executable: str) -> None:
+    state.failure_class = classify_launch_failure(exc, message)
+    state.retry_eligible = state.failure_class == 'TRANSIENT'
+    if not state.retry_eligible:
+        state.blocked_executable = executable_identity(executable or 'grok', root)
+        state.blocked_reason = f'{message}; failure_class={state.failure_class}; executable={state.blocked_executable}'
+        alert_once(root, ['agent_cli', state.failure_class, state.blocked_executable],
+                   kind='agent_cli_launch_failure', failure_class=state.failure_class,
+                   executable=state.blocked_executable, assignment_id=state.assignment_id,
+                   run_id=state.run_id, reason=message)
+
+
+def _exhaust_assignment(root: Path, assignment_id: str, reason: str) -> None:
+    """Publish an actionable terminal failure, fenced to the current owner."""
+    from orchestrator.runtime_store import list_supervisor_runs
+    record, _ = read_assignment(root, assignment_id)
+    if record is None or record.status not in {'pending', 'claimed', 'building', 'reviewable_failure', 'changes_requested'}:
+        return
+    logical_id = record.logical_task_id or record.task_id
+    locks = work_lock.status(root, logical_id)
+    states = [s for s in list_supervisor_runs(root, limit=None) if s.assignment_id == assignment_id]
+    ids = sorted({s.run_id for s in states})
+    if locks:
+        lock = locks[0]
+        if lock['assignment_id'] != assignment_id or lock['holder_agent'] != record.assigned_to:
+            return
+        state = next((s for s in states if s.run_id == lock['run_id']), None)
+        if state and state.process_state in {STATE_RUNNING, STATE_LAUNCHING, STATE_QUEUED}:
+            return
+    else:
+        state = states[0] if states else None
+    if state is None:
+        if locks and locks[0]['run_id']:
+            return  # Missing run evidence never authorizes ending a possible live holder.
+        # A wake may exhaust before any physical run exists.
+        state = RunState(run_id=generate_run_id(record.task_id), assignment_id=assignment_id,
+                         task_id=record.task_id, assigned_agent=record.assigned_to,
+                         adapter=record.adapter_id)
+        ids.append(state.run_id)
+    if not locks or not locks[0]['run_id']:
+        work_lock.acquire(root, logical_id, holder_agent=record.assigned_to, route='supervisor',
+                          assignment_id=assignment_id, run_id=state.run_id, resume=True)
+    state.logical_task_id = logical_id
+    state.process_state = 'failed'
+    state.retry_eligible = False
+    state.completed_at = utc_now()
+    state.blocked_reason = f'{reason}; run_ids={", ".join(ids)}; reviewer action required: inspect run evidence and authorize a retry or child assignment'
+    save_run_state(root, state)
+    route_completion(root, state, summary=state.blocked_reason, source=state.assigned_agent)
 
 
 def _handle_stop(signum: int, frame: object) -> None:
@@ -156,7 +228,9 @@ def process_wake_signal(
     except Exception as exc:
         if attempt["started"]:
             raise
-        report = {"status": "error", "reason": str(exc)}
+        report = {"status": "error", "reason": str(exc),
+                  "failure_class": classify_launch_failure(exc)}
+        attempt['exception'] = exc
     finally:
         if not attempt["started"] and attempt.get("run_id"):
             from orchestrator.runtime_store import load_run_state
@@ -167,12 +241,18 @@ def process_wake_signal(
                     state.completed_at = utc_now()
                     state.blocked_reason = str(report.get("reason", "pre-launch failure"))
                     state.logical_task_id = attempt.get("logical_id", "")
+                    _classify_launch_denial(repo_root, state, attempt.get('exception'),
+                                            state.blocked_reason, state.executable or config.grok_executable or '')
                     save_run_state(repo_root, state)
+                    if state.failure_class != 'TRANSIENT' and attempt.get('lock_acquired'):
+                        route_completion(repo_root, state, summary=state.blocked_reason, source=state.assigned_agent)
+                        report.update(nonretryable=True, failure_class=state.failure_class)
+                        attempt['preserve_lock'] = True
             except work_lock.WorkLockError as exc:
                 report["cleanup_fenced"] = str(exc)
             finally:
                 try:
-                    if attempt.get("lock_acquired"):
+                    if attempt.get("lock_acquired") and not attempt.get('preserve_lock'):
                         # Fence cleanup against a concurrent explicit supersede.
                         work_lock.release(
                             repo_root, attempt["logical_id"], actor="supervisor",
@@ -185,6 +265,8 @@ def process_wake_signal(
                     release_lease(repo_root, attempt["assignment_id"], run_id=attempt["run_id"])
             report.setdefault("run_id", attempt["run_id"])
     report["process_started"] = attempt["started"]
+    if report.get('nonretryable') and signal_path.exists():
+        _consume_wake(repo_root, signal_path)
     return report
 
 
@@ -213,6 +295,18 @@ def _process_wake_signal(
 
     # Never relaunch completed/awaiting review work.
     existing = find_latest_run_for_assignment(repo_root, assignment_id)
+    record, _ = read_assignment(repo_root, assignment_id)
+    if record:
+        if record.status == 'reviewable_failure' and existing and existing.failure_class in {'CONFIG', 'BLOCKED_SECURITY_POLICY'}:
+            _consume_wake(repo_root, signal_path)
+            return {'status': 'skipped', 'reason': 'launch failure requires reviewer action', 'nonretryable': True}
+        # A refused prelaunch must not hide the physical run needing continuation.
+        from orchestrator.runtime_store import load_run_state
+        locks = work_lock.status(repo_root, record.logical_task_id or record.task_id)
+        if locks and locks[0]['assignment_id'] == assignment_id:
+            owner = load_run_state(repo_root, locks[0]['run_id'])
+            if owner and owner.process_state == STATE_MAX_TURNS and owner.retry_eligible:
+                existing = owner
     if existing and existing.process_state == STATE_COMPLETED:
         _consume_wake(repo_root, signal_path)
         return {
@@ -244,6 +338,10 @@ def _process_wake_signal(
             max_automatic_retry=config.max_automatic_retry,
         )
         if not ok:
+            # Quota/auth retries have their own durable condition schedule; an
+            # immediate duplicate wake is not exhaustion of that budget.
+            if not existing.blocked_on:
+                _exhaust_assignment(repo_root, assignment_id, 'automatic retries exhausted: ' + why)
             _consume_wake(repo_root, signal_path)
             return {
                 "status": "skipped",
@@ -420,7 +518,10 @@ def _process_wake_signal(
         )
 
     used_fallback = False
-    if (not plan.ok) and config.allow_codex_fallback:
+    plan_failure_text = '; '.join(plan.blocked_reasons)
+    plan_failure_exc = FileNotFoundError(plan_failure_text) if 'executable not found' in plan_failure_text.lower() else None
+    plan_failure_class = classify_launch_failure(plan_failure_exc, plan_failure_text)
+    if (not plan.ok) and config.allow_codex_fallback and plan_failure_class == 'TRANSIENT':
         # Fallback only for missing adapter / unavailable Grok — not builder-to-builder reassignment.
         # Claude remains authority for formal reassignment; this is process fallback for one run.
         task_file = (repo_root / (task_path or record.task_path)).resolve()
@@ -448,10 +549,16 @@ def _process_wake_signal(
         state.process_state = STATE_BLOCKED_NO_ADAPTER if "blocked_no_adapter" in ";".join(plan.blocked_reasons) else STATE_FAILED_LAUNCH
         state.blocked_reason = "; ".join(plan.blocked_reasons)
         state.completed_at = utc_now()
-        state.retry_eligible = False
+        missing = 'executable not found' in state.blocked_reason.lower()
+        configured_executable = (config.codex_executable or 'codex') if state.assigned_agent == 'codex' else (config.grok_executable or 'grok')
+        _classify_launch_denial(repo_root, state, FileNotFoundError(state.blocked_reason) if missing else None,
+                               state.blocked_reason, plan.executable or configured_executable)
         save_run_state(repo_root, state)
         layer_heartbeat.tick(progress=True)
-        route, route_errors = route_completion(repo_root, state, branch=state.branch, source="composer")
+        route, route_errors = ({}, [])
+        if not state.retry_eligible:
+            route, route_errors = route_completion(repo_root, state, branch=state.branch, source="composer")
+            attempt['preserve_lock'] = True
         release_lease(repo_root, assignment_id, run_id=run_id)
         return {
             "status": "blocked",
@@ -462,6 +569,8 @@ def _process_wake_signal(
             "route": route,
             "route_errors": route_errors,
             "used_fallback": used_fallback,
+            "nonretryable": not state.retry_eligible,
+            "failure_class": state.failure_class,
         }
 
     run_dir = run_directory(repo_root, run_id)
@@ -477,14 +586,19 @@ def _process_wake_signal(
     save_run_state(repo_root, state)
     layer_heartbeat.tick(progress=True)
 
-    handle, launch_msg = launch_process(plan, stdout_path=stdout_path, stderr_path=stderr_path, popen=popen)
+    handle, launch_msg = _launch_agent_process(repo_root, state, plan, stdout_path=stdout_path, stderr_path=stderr_path, popen=popen)
     if handle is None:
         state.process_state = STATE_FAILED_LAUNCH
         state.blocked_reason = launch_msg
         state.completed_at = utc_now()
         save_run_state(repo_root, state)
         layer_heartbeat.tick(progress=True)
-        route, route_errors = route_completion(repo_root, state, branch=state.branch, source=state.assigned_agent)
+        route, route_errors = ({}, [])
+        if not state.retry_eligible:
+            state.blocked_reason = f'{launch_msg}; failure_class={state.failure_class}; executable={state.blocked_executable}'
+            save_run_state(repo_root, state)
+            route, route_errors = route_completion(repo_root, state, branch=state.branch, source=state.assigned_agent)
+            attempt['preserve_lock'] = True
         release_lease(repo_root, assignment_id, run_id=run_id)
         return {
             "status": "failed_launch",
@@ -493,6 +607,8 @@ def _process_wake_signal(
             "reason": launch_msg,
             "route": route,
             "route_errors": route_errors,
+            "nonretryable": not state.retry_eligible,
+            "failure_class": state.failure_class,
         }
 
     # Only after a real PID exists may state become running.
@@ -551,7 +667,10 @@ def _process_wake_signal(
                 "run_id": run_id, "worktree": str(worktree), "branch": state.branch,
             }
         state.process_state = STATE_BLOCKED_EXTERNAL
-        state.blocked_reason = "automatic max-turn continuation budget exhausted"
+        state.blocked_reason = (
+            f"automatic max-turn continuation budget exhausted; run_ids={state.continuation_from_run_id}, {state.run_id}; "
+            "unfinished work requires reviewer action: inspect the preserved branch and authorize a child or retry"
+        )
         state.retry_eligible = False
 
     # Codex fallback after Grok quota/auth/unavailable — one time max, no loops.
@@ -628,19 +747,21 @@ def _process_wake_signal(
                 fb_state.stderr_path = fb_stderr.relative_to(repo_root).as_posix()
                 save_run_state(repo_root, fb_state)
                 layer_heartbeat.tick(progress=True)
-                fb_handle, fb_msg = launch_process(
-                    cplan, stdout_path=fb_stdout, stderr_path=fb_stderr, popen=popen
+                fb_handle, fb_msg = _launch_agent_process(
+                    repo_root, fb_state, cplan, stdout_path=fb_stdout, stderr_path=fb_stderr, popen=popen
                 )
                 if fb_handle is None:
                     fb_state.process_state = STATE_FAILED_LAUNCH
-                    fb_state.blocked_reason = fb_msg
+                    fb_state.blocked_reason = fb_state.blocked_reason or fb_msg
                     fb_state.completed_at = utc_now()
                     save_run_state(repo_root, fb_state)
                     route, route_errors = route_completion(repo_root, fb_state, branch=state.branch, source="codex")
+                    attempt['preserve_lock'] = not fb_state.retry_eligible
                     release_lease(repo_root, assignment_id, run_id=run_id)
                     _consume_wake(repo_root, signal_path)
                     return {"status": "failed_launch", "reason": fb_msg, "assignment_id": assignment_id,
-                            "run_id": fallback_run, "route": route, "route_errors": route_errors}
+                            "run_id": fallback_run, "route": route, "route_errors": route_errors,
+                            "failure_class": fb_state.failure_class, "nonretryable": not fb_state.retry_eligible}
                 if fb_handle is not None:
                     attempt["started"] = True
                     fb_state.pid = fb_handle.pid
@@ -812,7 +933,10 @@ def recover_orphans(repo_root: Path, *, config: SupervisorConfig | None = None) 
             _apply_classification(repo_root, state, classification, config=cfg)
             if state.process_state == STATE_MAX_TURNS and state.auto_resume_count >= 1:
                 state.process_state = STATE_BLOCKED_EXTERNAL
-                state.blocked_reason = "automatic max-turn continuation budget exhausted"
+                state.blocked_reason = (
+                    f"automatic max-turn continuation budget exhausted; run_ids={state.continuation_from_run_id}, {state.run_id}; "
+                    "unfinished work requires reviewer action: inspect the preserved branch and authorize a child or retry"
+                )
                 state.retry_eligible = False
             try:
                 save_run_state(repo_root, state)
@@ -928,6 +1052,8 @@ def _dead_letter_wake(repo_root: Path, path: Path, signal: dict[str, Any], *, no
     destination.parent.mkdir(parents=True, exist_ok=True)
     signal["retry"]["dead_lettered_at"] = now.isoformat()
     atomic_write_json(destination, signal)
+    _exhaust_assignment(repo_root, str(signal.get('assignment_id', '')),
+                        'wake dead-lettered after automatic retries exhausted: ' + str(signal['retry'].get('reason', 'unknown')))
     path.unlink()
 
 

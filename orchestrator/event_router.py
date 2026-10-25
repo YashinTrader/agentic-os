@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from dispatch.completion_fence import fenced_completion
+from dispatch.atomic_io import atomic_write_json
 from pathlib import Path
 from typing import Any
 
@@ -40,6 +43,12 @@ def route_completion(
         "poke": None,
         "outbox_status": None,
     }
+    # The completion fence serializes retries of this outcome with ownership changes.
+    # Persist the notice marker outside the consumable poke queue.
+    notice_path = repo_root / 'runtime/dispatch/completion_notices' / (
+        hashlib.sha256(f'{state.assignment_id}:{state.run_id}'.encode()).hexdigest() + '.json')
+    if notice_path.exists():
+        return json.loads(notice_path.read_text(encoding='utf-8')), []
 
     if state.process_state == STATE_COMPLETED:
         outbox_status = "awaiting_review"
@@ -122,6 +131,8 @@ def route_completion(
         )
         errors.extend(poke_errors)
         result["poke"] = poke
+    if not errors:
+        atomic_write_json(notice_path, result)
     return result, errors
 
 
