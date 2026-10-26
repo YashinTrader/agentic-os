@@ -65,6 +65,7 @@ POST_TEST_ALLOWLIST_EXACT = frozenset(
         "handoffs/T-M1-INTEGRATION-R12__claude__to__gabriel.md",
         "handoffs/T-M1-INTEGRATION-R13__claude__to__gabriel.md",
         "handoffs/T-M1-INTEGRATION-R13-1__claude__to__gabriel.md",
+        "handoffs/T-M1-INTEGRATION-R13-2__claude__to__gabriel.md",
         "handoffs/T-M1-06-CLI-ENCODING__codex__to__claude.md",
         "handoffs/T-M1-02D-PAID-QUOTA-PROBE__codex__to__claude.md",
         "handoffs/T-M1-11-PROCESS-OWNERSHIP-FENCING__codex__to__claude.md",
