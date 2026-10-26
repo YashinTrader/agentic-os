@@ -59,7 +59,7 @@ class DefaultConditionProbeTests(unittest.TestCase):
 
 class ClaudeEventConsumerTests(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory(dir="C:/tmp")
+        self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
         self.poke, errors = write_orchestrator_poke(
             self.root, source="composer", assignment_id="assign-1",
@@ -220,7 +220,9 @@ class ClaudeEventConsumerTests(unittest.TestCase):
         consumer.process_once()
         self.assertEqual(events, [])
         status = load_watcher_status(self.root)
-        self.assertEqual(status["idle_ticks"], 2)
+        # Counters accumulate in memory and publish on the liveness interval.
+        self.assertEqual(status["idle_ticks"], 1)
+        self.assertEqual(consumer._idle_ticks, 2)
 
         write_orchestrator_poke(
             self.root, source="composer", assignment_id="assign-2", task_id="T-2", event="assignment_completed"

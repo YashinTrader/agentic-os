@@ -237,7 +237,7 @@ def save_run_state(repo_root: Path, state: RunState, *, refresh_work_lock: bool 
 
 
 def load_run_state(repo_root: Path, run_id: str) -> RunState | None:
-    path = run_state_path(run_directory(repo_root, run_id))
+    path = run_state_path(run_directory(repo_root, run_id, create=False))
     if not path.is_file():
         return None
     try:

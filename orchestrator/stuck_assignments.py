@@ -35,7 +35,7 @@ def pending_work(root: Path, assignment_id: str, states) -> bool:
 
 
 def fail_assignment(root: Path, assignment_id: str, *, actor: str, note: str,
-                    automatic: bool = False, max_automatic_retry: int = 1) -> bool:
+                    automatic: bool = False, max_automatic_retry: int = 1, states=None) -> bool:
     """Use the existing fenced failure policy; retain ownership for review."""
     from orchestrator.supervisor import _exhaust_assignment
     record, errors = read_assignment(root, assignment_id)
@@ -47,7 +47,8 @@ def fail_assignment(root: Path, assignment_id: str, *, actor: str, note: str,
         raise ValueError('fail requires building or claimed')
     if not actor.strip() or not note.strip():
         raise ValueError('actor and note must be nonempty')
-    states = [s for s in list_supervisor_runs(root, limit=None) if s.assignment_id == assignment_id]
+    states = [s for s in (list_supervisor_runs(root, limit=None) if states is None else states)
+              if s.assignment_id == assignment_id]
     if pending_work(root, assignment_id, states):
         raise RecoveryRefused('active/launching run or pending wake; no changes made')
     latest = states[0] if states else None
@@ -92,17 +93,18 @@ def _turn_limit(command):
         return 'unknown'
 
 
-def recover_stuck_assignments(root: Path, *, max_automatic_retry: int = 1) -> list[str]:
+def recover_stuck_assignments(root: Path, *, max_automatic_retry: int = 1, states=None) -> list[str]:
     """Read-only on idle ticks; durable status makes repeat sweeps no-ops."""
     records, _ = list_inbox_assignments(root)
     recovered = []
+    states = list_supervisor_runs(root, limit=None) if states is None else states
     for record in records:
         if record.status not in {'building', 'claimed'}:
             continue
         try:
             if fail_assignment(root, record.assignment_id, actor='supervisor',
                                note='terminal run without pending wake; reviewer recovery', automatic=True,
-                               max_automatic_retry=max_automatic_retry):
+                               max_automatic_retry=max_automatic_retry, states=states):
                 recovered.append(record.assignment_id)
         except RecoveryRefused:
             continue

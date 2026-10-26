@@ -36,9 +36,10 @@ class ExecutionResult:
     route_block_reasons: list[str] = field(default_factory=list)
 
 
-def run_directory(repo_root: Path, run_id: str) -> Path:
+def run_directory(repo_root: Path, run_id: str, *, create: bool = True) -> Path:
     path = repo_root / "runtime" / "dispatch" / "runs" / run_id
-    path.mkdir(parents=True, exist_ok=True)
+    if create:
+        path.mkdir(parents=True, exist_ok=True)
     return path
 
 

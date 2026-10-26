@@ -8,13 +8,14 @@ import signal
 import time
 import uuid
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable
 
 from root_paths import root_metadata
 from orchestrator.builder_dispatch import dispatch_status
+from orchestrator.idle_scan import ScanGate, fingerprint, write_status
 
 from orchestrator import layer_heartbeat
 from dispatch import work_lock
@@ -173,6 +174,9 @@ class SupervisorConfig:
     worktree: str | None = None
     grok_executable: str | None = None
     codex_executable: str | None = None
+    _recovery_gate: ScanGate = field(default_factory=ScanGate, repr=False)
+    _active_runs: bool = field(default=False, repr=False)
+    _runs: list = field(default_factory=list, repr=False)
 
 
 def _wake_queue(repo_root: Path, agent: str) -> Path:
@@ -984,12 +988,14 @@ def _apply_classification(
     return fp
 
 
-def recover_orphans(repo_root: Path, *, config: SupervisorConfig | None = None) -> list[dict[str, Any]]:
-    from orchestrator.runtime_store import list_supervisor_runs, load_run_state
+def recover_orphans(repo_root: Path, *, config: SupervisorConfig | None = None, states=None) -> list[dict[str, Any]]:
+    from orchestrator.runtime_store import list_supervisor_runs
 
     cfg = config or SupervisorConfig()
     recovered: list[dict[str, Any]] = []
-    for state in list_supervisor_runs(repo_root, limit=None):
+    states = list_supervisor_runs(repo_root, limit=None) if states is None else states
+    by_id = {s.run_id: s for s in states}
+    for state in states:
         layer_heartbeat.tick()
         if state.process_state not in {STATE_RUNNING, STATE_LAUNCHING, STATE_QUEUED}:
             continue
@@ -1069,7 +1075,7 @@ def recover_orphans(repo_root: Path, *, config: SupervisorConfig | None = None) 
         if not run_id:
             continue
         run_dir = repo_root / "runtime/dispatch/runs" / run_id
-        state = load_run_state(repo_root, run_id)
+        state = by_id.get(run_id)
         if state is not None:
             if state.process_state not in {"orphaned", "failed_launch", "blocked_external"}:
                 continue
@@ -1115,7 +1121,7 @@ def _update_status(repo_root: Path, **updates: Any) -> None:
         status = {}
     status.update(updates)
     status['builder_dispatch'] = dispatch_status(repo_root)
-    atomic_write_json(path, status)
+    write_status(path, status, volatile={'idle_ticks', 'last_tick_at'})
 
 
 def _retry_wake(repo_root: Path, path: Path, report: dict[str, Any], *, config: SupervisorConfig) -> None:
@@ -1164,16 +1170,28 @@ def process_once(repo_root: Path, *, config: SupervisorConfig | None = None, **k
     cfg = config or SupervisorConfig()
     pause = dispatch_status(repo_root)
     _update_status(repo_root, **root_metadata(repo_root))
-    recover_orphans(repo_root, config=cfg)
+    from orchestrator.runtime_store import list_supervisor_runs
     from orchestrator.stuck_assignments import recover_stuck_assignments
-    recover_stuck_assignments(repo_root, max_automatic_retry=cfg.max_automatic_retry)
+    dispatch = repo_root / 'runtime/dispatch'
+    snapshot = fingerprint([dispatch / p for p in (
+        'wake_queue', 'assignments/inbox', 'assignments/claims', 'locks', 'runs', 'supervisor_leases')])
+    now = time.monotonic()
+    if cfg._active_runs or cfg._recovery_gate.due(snapshot, now):
+        states = list_supervisor_runs(repo_root, limit=None)
+        cfg._runs = states
+        recover_orphans(repo_root, config=cfg, states=states)
+        recover_stuck_assignments(repo_root, max_automatic_retry=cfg.max_automatic_retry, states=states)
+        cfg._active_runs = any(s.process_state not in TERMINAL_STATES for s in states)
+        # Retain the pre-scan snapshot: writes/races during recovery must cause
+        # another pass, never become silently accepted as already examined.
+        cfg._recovery_gate.record(snapshot, now)
     pause = dispatch_status(repo_root)
     if pause['paused']:
         _update_status(repo_root, builder_dispatch=pause)
         return {'status': 'dispatch_paused', 'agent': cfg.agent, 'builder_dispatch': pause}
     # Re-evaluate every tick, before waking new work, so due retries cannot starve.
     report = reevaluate_blocked_builders(
-        repo_root, config=cfg, launch=process_wake_signal, single_launch=True, **kwargs
+        repo_root, config=cfg, launch=process_wake_signal, single_launch=True, states=cfg._runs, **kwargs
     )
     if report is not None and report.get("process_started"):
         return report
@@ -1232,7 +1250,7 @@ def run_forever(
             pass
 
     status.update(root_metadata(repo_root))
-    atomic_write_json(status_path, status)
+    _update_status(repo_root, **status)
 
     while not STOP_REQUESTED:
         layer_heartbeat.tick()
@@ -1249,7 +1267,6 @@ def run_forever(
             provider: {"classification": "probe_misconfigured", "reason": details["alert_reason"]}
             for provider, details in status["quota_probes"].items() if "alert_reason" in details
         }
-        status_path.parent.mkdir(parents=True, exist_ok=True)
         _update_status(repo_root, **{k: v for k, v in status.items()
                                    if k not in {"wake_alerts", "work_lock_alerts"}})
         if report.get("status") == "idle":

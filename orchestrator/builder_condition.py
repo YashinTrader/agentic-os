@@ -280,10 +280,10 @@ def maybe_record_recovery(state: RunState, *, now: datetime) -> None:
     state.recovery_seconds = max(0, int(delta))
 
 
-def latest_condition_runs(repo_root: Path) -> list[RunState]:
+def latest_condition_runs(repo_root: Path, states=None) -> list[RunState]:
     seen: set[str] = set()
     chosen: list[RunState] = []
-    for state in list_supervisor_runs(repo_root, limit=500):
+    for state in (list_supervisor_runs(repo_root, limit=500) if states is None else states):
         if state.assignment_id in seen:
             continue
         seen.add(state.assignment_id)
@@ -392,6 +392,7 @@ def reevaluate_blocked_builders(
     *,
     config: object,
     launch: Callable[..., dict[str, Any]],
+    states=None,
     **kwargs: Any,
 ) -> dict[str, Any] | None:
     """Periodic tick. Returns None when no blocked builder becomes eligible."""
@@ -404,7 +405,7 @@ def reevaluate_blocked_builders(
     max_attempts = int(getattr(config, "max_condition_retries", None) or MAX_CONDITION_RETRIES)
     escalated: list[str] = []
     eligible: list[RunState] = []
-    states = latest_condition_runs(repo_root)
+    states = latest_condition_runs(repo_root, states)
     cleared = probe_blocked_providers(
         repo_root, [s for s in states if s.attempts < max_attempts], now=now
     )

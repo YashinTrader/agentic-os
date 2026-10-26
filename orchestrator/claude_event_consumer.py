@@ -21,6 +21,7 @@ from dispatch.atomic_io import atomic_write_json
 from dispatch.orchestrator_pokes import list_orchestrator_pokes
 from orchestrator.agent_launcher import resolve_executable
 from orchestrator.review_schema import VALID_VERDICTS
+from orchestrator.idle_scan import ScanGate, STATUS_LIVENESS_SECONDS, fingerprint, write_status
 
 Processor = Callable[..., dict[str, Any]]
 STARTUP_PID_TIMEOUT_SECONDS = 30
@@ -143,6 +144,10 @@ class ClaudeEventConsumer:
         self.consumer_token = uuid.uuid4().hex
         self.consumer_pid = os.getpid()
         self.consumer_start_time = process_start_time(self.consumer_pid)
+        self._scan_gate = ScanGate()
+        self._idle_result = None
+        self._last_idle_status = float('-inf')
+        self._idle_ticks = int(load_watcher_status(self.repo_root).get('idle_ticks', 0))
 
     def _emit(self, event: str, **details: Any) -> None:
         if event == "claimed":
@@ -241,8 +246,9 @@ class ClaudeEventConsumer:
             "last_tick_at": _format_time(now),
             **updates,
         })
-        watcher_dir(self.repo_root).mkdir(parents=True, exist_ok=True)
-        atomic_write_json(watcher_status_path(self.repo_root), current)
+        write_status(watcher_status_path(self.repo_root), current,
+                     volatile={'heartbeat_at', 'last_tick_at', 'idle_ticks',
+                               'oldest_pending_poke_age_seconds'})
         if escalated and not was_escalated:
             self._emit("deferred_escalated", blocked_on=current["deferred_blocked_on"])
         return current
@@ -254,11 +260,31 @@ class ClaudeEventConsumer:
         source.replace(target)
 
     def process_once(self) -> dict[str, Any]:
+        dispatch = self.repo_root / 'runtime/dispatch'
+        snapshot = fingerprint([dispatch / p for p in (
+            'pokes/orchestrator', 'claude_event_consumer/claims',
+            'claude_event_consumer/deferred', 'claude_event_consumer/resolved', 'supervisor_leases')])
+        now = time.monotonic()
+        if self._idle_result is not None and not self._scan_gate.due(snapshot, now):
+            # Empty queues alone can sleep. Deferred/claimed work retains its
+            # per-poll deadlines, probes and process liveness checks below.
+            self._idle_ticks += 1
+            if now - self._last_idle_status >= STATUS_LIVENESS_SECONDS:
+                self._status(lifecycle_state='idle', idle_ticks=self._idle_ticks)
+                self._last_idle_status = now
+            return dict(self._idle_result)
+        self._scan_gate.record(snapshot, now)
+        result = self._process_once()
+        self._last_idle_status = now
+        self._idle_result = result if result == {'status': 'idle', 'errors': []} and not any(
+            any((dispatch / p).glob('*.json'))
+            for p in ('claude_event_consumer/claims', 'claude_event_consumer/deferred', 'supervisor_leases')
+        ) else None
+        return result
+
+    def _process_once(self) -> dict[str, Any]:
         for recovered in consumer_claims.recover_review_leases(self.repo_root):
             self._emit("lease_recovered", reason=recovered["reason"], prior_owner=recovered["prior_owner"])
-        # Reset process-local lifecycle every tick; persisted status is diagnostic history.
-        self._status(lifecycle_state="idle", active_review_assignment=None, pid=None,
-                     claude_session_id=None, last_blocker=None)
         pokes, errors = list_orchestrator_pokes(self.repo_root)
         eligible = [item for item in pokes
                     if item.get("event") == "assignment_completed" and item.get("source") != "claude"]
@@ -299,13 +325,14 @@ class ClaudeEventConsumer:
             self._emit("claimed", fingerprint=fingerprint, assignment_id=poke.get("assignment_id"))
             break
         else:
-            current = load_watcher_status(self.repo_root)
+            self._idle_ticks += 1
             stale = consumer_claims.stale_claims(self.repo_root, self.now(), consumer_token=self.consumer_token)
             self._status(lifecycle_state="blocked_stale_claim" if stale else
                          "blocked_capacity" if (skipped or {}).get("blocked_on") == "capacity:review" else "idle",
                          active_review_assignment=None, pid=None,
+                         claude_session_id=None,
                          last_blocker=(skipped or {}).get("reason") or (skipped or {}).get("last_blocker") or (skipped or {}).get("blocked_on"),
-                         idle_ticks=int(current.get("idle_ticks", 0)) + 1)
+                         idle_ticks=self._idle_ticks)
             return skipped or deduplicated or {"status": "idle", "errors": errors}
 
         child_pid = None
