@@ -1,20 +1,20 @@
-timestamp: 2026-10-23T17:56:30Z
+timestamp: 2026-10-26T00:09:12Z
 dependency_install: skipped
 dependency_install_reason: core dependencies vendored into the signed CPython 3.11.9 runtime (R12 runtime decision); cognee optional since T-M1-22
 known_exempt_failures: []
 repo_identity: {"origin": "https://github.com/YashinTrader/agentic-os.git", "roots": ["18ccb6e2e421044e6e21411c83513d80e38fb4ba"]}
-artifact_origin_path: C:/Users/gabot/agentic-os-worktrees/r12-integration
+artifact_origin_path: C:/Users/gabot/agentic-os-worktrees/r13-integration
 hostname: AIAG
 python_version: 3.11.9
 command_line: ["C:\\Users\\gabot\\agentic-os-runtime\\py311\\Scripts\\python.exe", "-m", "unittest", "discover", "-s", "tests", "-p", "test_*.py", "-v"]
-raw_output_sha256: 666e158f97672e61c699a6df4b40dfbd67500337fb244049562cf4d7a67ff192
-repo_root: C:/Users/gabot/agentic-os-worktrees/r12-integration
+raw_output_sha256: 37df7e18b464b40855b59506a6331dd35edac6df0b38ce80291c5883820b91d3
+repo_root: C:/Users/gabot/agentic-os-worktrees/r13-integration
 commit: unknown
-commit_full: d80dab42e124d16c2c2bf440cd2974e71147486d
+commit_full: 93a81863e530513d3ef3b0a09b25a1e28ea0a625
 python: C:\Users\gabot\agentic-os-runtime\py311\Scripts\python.exe
-test_count: 962
+test_count: 1012
 exit_code: 0
-evidence_block_sha256: e2038b1414b5a1f6e09b6bba46793e9c22e8189f36a673bde6d9e9d652a38c14
+evidence_block_sha256: e777fe14a108a1e5964eaeb145db42a2f9274ece0ed0ee53396e601e16518175
 --- raw output ---
 dependency_install: skipped
 dependency_install_reason: core dependencies vendored into the signed CPython 3.11.9 runtime (R12 runtime decision); cognee optional since T-M1-22
@@ -32,10 +32,19 @@ root restart guard open; start refused
   "status": "idle"
 }
 refused/failed: unreadable
+refused: recorded process belongs to another state root or ownership evidence is missing
 maintenance mode on
 maintenance mode off
 refused: missing, reused or unverifiable root PID/start time
 refused: missing, reused or unverifiable root PID/start time
+{
+  "status": "reviewable_failure",
+  "changed": true
+}
+{
+  "status": "reviewable_failure",
+  "changed": false
+}
 test_canonical_seal_ignores_only_formatting_and_closeout (test_achievable_evidence_seal.AchievableSealTests.test_canonical_seal_ignores_only_formatting_and_closeout) ... ok
 test_missing_or_duplicate_evidence_is_rejected (test_achievable_evidence_seal.AchievableSealTests.test_missing_or_duplicate_evidence_is_rejected) ... ok
 test_real_git_closeout_and_every_sealed_field_tamper (test_achievable_evidence_seal.AchievableSealTests.test_real_git_closeout_and_every_sealed_field_tamper) ... ok
@@ -84,6 +93,28 @@ test_quota_without_retry_after_relaunches_once_after_backoff (test_builder_condi
 test_recovery_seconds_from_blocked_since_to_first_activity (test_builder_condition_retry.RecoveryTests.test_recovery_seconds_from_blocked_since_to_first_activity) ... ok
 test_retry_after_is_honored_ahead_of_backoff (test_builder_condition_retry.RetryAfterTests.test_retry_after_is_honored_ahead_of_backoff) ... ok
 test_orchestrator_supersede_still_replaces_the_lock (test_builder_condition_retry.SupersedeWhileBlockedTests.test_orchestrator_supersede_still_replaces_the_lock) ... ok
+test_cli_guards_and_supervisor_exemption (test_builder_isolation_contract.ContractTests.test_cli_guards_and_supervisor_exemption) ... ok
+test_env_uses_only_private_profile (test_builder_isolation_contract.ContractTests.test_env_uses_only_private_profile) ... ok
+test_grok_deny_plan_keeps_30_turns_without_unverified_sandbox (test_builder_isolation_contract.ContractTests.test_grok_deny_plan_keeps_30_turns_without_unverified_sandbox) ... ok
+test_invalid_schema_and_missing_files_refuse_before_launch (test_builder_isolation_contract.ContractTests.test_invalid_schema_and_missing_files_refuse_before_launch) ... ok
+test_labelling_failure_is_fatal (test_builder_isolation_contract.ContractTests.test_labelling_failure_is_fatal) ... ok
+test_reject_shared_git_and_escape_paths (test_builder_isolation_contract.ContractTests.test_reject_shared_git_and_escape_paths) ... ok
+test_schema_hash_and_ignored_materialized_files (test_builder_isolation_contract.ContractTests.test_schema_hash_and_ignored_materialized_files) ... ok
+test_mandatory_label_aliases_and_numeric_levels (test_builder_isolation_contract.LabelLifecycleTests.test_mandatory_label_aliases_and_numeric_levels) ... ok
+test_reentrant_gate_is_refused (test_builder_isolation_contract.LabelLifecycleTests.test_reentrant_gate_is_refused) ... ok
+test_stale_child_label_is_detected (test_builder_isolation_contract.LabelLifecycleTests.test_stale_child_label_is_detected) ... ok
+test_stale_inventory_refuses_launch (test_builder_isolation_contract.LabelLifecycleTests.test_stale_inventory_refuses_launch) ... ok
+test_tree_exit_precedes_medium_restoration_and_gate_release (test_builder_isolation_contract.LabelLifecycleTests.test_tree_exit_precedes_medium_restoration_and_gate_release) ... ok
+test_real_adversarial_builder_and_descendants (test_builder_isolation_contract.WindowsBoundaryTests.test_real_adversarial_builder_and_descendants) ... ok
+test_labelling_failure_refuses_process_creation (test_builder_isolation_contract.WindowsSetupFaultTests.test_labelling_failure_refuses_process_creation) ... ok
+test_lowering_failure_refuses_process_creation (test_builder_isolation_contract.WindowsSetupFaultTests.test_lowering_failure_refuses_process_creation) ... ok
+test_missing_relevant_file_routes_reviewable_failure_without_launch (test_builder_supervisor_contract.SupervisorContractTests.test_missing_relevant_file_routes_reviewable_failure_without_launch) ... ok
+test_supervisor_own_lock_heartbeat_does_not_flag (test_builder_supervisor_contract.SupervisorContractTests.test_supervisor_own_lock_heartbeat_does_not_flag) ... ok
+test_unrelated_state_mutation_is_failure_with_one_alert (test_builder_supervisor_contract.SupervisorContractTests.test_unrelated_state_mutation_is_failure_with_one_alert) ... ok
+test_allowed_diff_or_plan_suppresses_notice (test_builder_watch.BuilderWatchTests.test_allowed_diff_or_plan_suppresses_notice) ... ok
+test_outside_references_are_lexical_and_inside_paths_allowed (test_builder_watch.BuilderWatchTests.test_outside_references_are_lexical_and_inside_paths_allowed) ... ok
+test_replay_real_stream_one_checkpoint_and_outside_diagnostic (test_builder_watch.BuilderWatchTests.test_replay_real_stream_one_checkpoint_and_outside_diagnostic) ... ok
+test_snapshot_detects_inbox_claim_and_task_move_excludes_exact_own_files (test_builder_watch.BuilderWatchTests.test_snapshot_detects_inbox_claim_and_task_move_excludes_exact_own_files) ... ok
 test_capacity_creates_no_run_ids_or_directories (test_capacity_leak.CapacityLeakTests.test_capacity_creates_no_run_ids_or_directories) ... ok
 test_condition_retry_capacity_does_not_spend_attempt (test_capacity_leak.CapacityLeakTests.test_condition_retry_capacity_does_not_spend_attempt) ... ok
 test_dead_owner_does_not_override_live_run_pid (test_capacity_leak.CapacityLeakTests.test_dead_owner_does_not_override_live_run_pid) ... ok
@@ -586,6 +617,7 @@ test_invalid_base_sha_blocked (test_phase3_4_worktree_allocator.WorktreeAllocato
 test_long_task_path_budget (test_phase3_4_worktree_allocator.WorktreeAllocatorTests.test_long_task_path_budget) ... ok
 test_run_git_never_uses_shell (test_phase3_4_worktree_allocator.WorktreeAllocatorTests.test_run_git_never_uses_shell) ... ok
 test_same_window_runs_and_legacy_branch_preserved (test_phase3_4_worktree_allocator.WorktreeAllocatorTests.test_same_window_runs_and_legacy_branch_preserved) ... ok
+test_standalone_clone_has_independent_metadata_and_supervisor_fetch (test_phase3_4_worktree_allocator.WorktreeAllocatorTests.test_standalone_clone_has_independent_metadata_and_supervisor_fetch) ... ok
 test_unsafe_task_id_rejected_for_containment (test_phase3_4_worktree_allocator.WorktreeAllocatorTests.test_unsafe_task_id_rejected_for_containment) ... ok
 test_worktree_path_stays_inside_root (test_phase3_4_worktree_allocator.WorktreeAllocatorTests.test_worktree_path_stays_inside_root) ... ok
 test_duplicate_active_ownership_detected (test_phase3_4_worktree_registry.WorktreeRegistryTests.test_duplicate_active_ownership_detected) ... ok
@@ -777,7 +809,7 @@ test_dogfood_fixtures_committed (test_phase3_8b_assignment_loop.DogfoodFixturePr
 test_display_name_is_grok_build_45 (test_phase3_8b_assignment_loop.IdentityMetadataTests.test_display_name_is_grok_build_45) ... ok
 test_fallback_lineage_and_no_loop_marker (test_physical_agent_launcher.CodexFallbackLineageTests.test_fallback_lineage_and_no_loop_marker) ... ok
 test_auth_and_quota_classification (test_physical_agent_launcher.FailureClassifyTests.test_auth_and_quota_classification) ... ok
-test_max_turns_classification_is_resume_eligible (test_physical_agent_launcher.FailureClassifyTests.test_max_turns_classification_is_resume_eligible) ... ok
+test_max_turns_classification_is_terminal (test_physical_agent_launcher.FailureClassifyTests.test_max_turns_classification_is_terminal) ... ok
 test_unchanged_failure_no_relaunch (test_physical_agent_launcher.FailureClassifyTests.test_unchanged_failure_no_relaunch) ... ok
 test_buffered_json_format_is_rejected (test_physical_agent_launcher.GrokArgvTests.test_buffered_json_format_is_rejected) ... ok
 test_grok_argv_construction_shell_false_safe_flags (test_physical_agent_launcher.GrokArgvTests.test_grok_argv_construction_shell_false_safe_flags) ... ok
@@ -805,7 +837,7 @@ test_invalid_base_releases_attempt_lock_with_audit (test_prelaunch_failure_isola
 test_launch_exception_releases_lock_and_retries_same_assignment (test_prelaunch_failure_isolation.PrelaunchIsolationTests.test_launch_exception_releases_lock_and_retries_same_assignment) ... ok
 test_live_lease_without_run_record_is_not_declared_ghost (test_prelaunch_failure_isolation.PrelaunchIsolationTests.test_live_lease_without_run_record_is_not_declared_ghost) ... ok
 test_malformed_wake_is_bounded (test_prelaunch_failure_isolation.PrelaunchIsolationTests.test_malformed_wake_is_bounded) ... ok
-test_missing_adapter_dead_letters_and_releases_lock (test_prelaunch_failure_isolation.PrelaunchIsolationTests.test_missing_adapter_dead_letters_and_releases_lock) ... ok
+test_missing_adapter_dead_letters_and_retains_reviewable_failure_lock (test_prelaunch_failure_isolation.PrelaunchIsolationTests.test_missing_adapter_dead_letters_and_retains_reviewable_failure_lock) ... ok
 test_poison_backoff_then_dead_letter (test_prelaunch_failure_isolation.PrelaunchIsolationTests.test_poison_backoff_then_dead_letter) ... ok
 test_poison_does_not_hide_two_valid_wakes (test_prelaunch_failure_isolation.PrelaunchIsolationTests.test_poison_does_not_hide_two_valid_wakes) ... ok
 test_prelaunch_cleanup_cannot_release_replacement_holder (test_prelaunch_failure_isolation.PrelaunchIsolationTests.test_prelaunch_cleanup_cannot_release_replacement_holder) ... ok
@@ -860,6 +892,18 @@ test_repository_default_model (test_quota_probe.QuotaProbeTests.test_repository_
 test_sequential_provider_delay_is_included_in_reservation (test_quota_probe.QuotaProbeTests.test_sequential_provider_delay_is_included_in_reservation) ... ok
 test_success_persists_eligibility_for_all_runs_before_single_dispatch (test_quota_probe.QuotaProbeTests.test_success_persists_eligibility_for_all_runs_before_single_dispatch) ... ok
 test_supervisor_status_contains_paid_probe_fields (test_quota_probe.QuotaProbeTests.test_supervisor_status_contains_paid_probe_fields) ... ok
+test_concurrent_continuations_exactly_one_wins_and_old_save_is_fenced (test_retry_lock_continuation.RetryLockContinuationTests.test_concurrent_continuations_exactly_one_wins_and_old_save_is_fenced) ... ok
+test_dead_letter_records_all_runs_and_notifies_once (test_retry_lock_continuation.RetryLockContinuationTests.test_dead_letter_records_all_runs_and_notifies_once) ... ok
+test_evidence_terminal_shape_is_reviewable_before_refusal_sequence (test_retry_lock_continuation.RetryLockContinuationTests.test_evidence_terminal_shape_is_reviewable_before_refusal_sequence) ... ok
+test_interrupted_dead_letter_without_run_has_failure_notice (test_retry_lock_continuation.RetryLockContinuationTests.test_interrupted_dead_letter_without_run_has_failure_notice) ... ok
+test_missing_executable_does_not_requeue (test_retry_lock_continuation.RetryLockContinuationTests.test_missing_executable_does_not_requeue) ... ok
+test_missing_executable_plan_is_config_without_fallback (test_retry_lock_continuation.RetryLockContinuationTests.test_missing_executable_plan_is_config_without_fallback) ... ok
+test_orphan_max_turns_is_terminal_without_continuation (test_retry_lock_continuation.RetryLockContinuationTests.test_orphan_max_turns_is_terminal_without_continuation) ... ok
+test_policy_denial_does_not_requeue (test_retry_lock_continuation.RetryLockContinuationTests.test_policy_denial_does_not_requeue) ... ok
+test_prelaunch_policy_exception_does_not_requeue (test_retry_lock_continuation.RetryLockContinuationTests.test_prelaunch_policy_exception_does_not_requeue) ... ok
+test_retry_count_exhaustion_has_actionable_failure (test_retry_lock_continuation.RetryLockContinuationTests.test_retry_count_exhaustion_has_actionable_failure) ... ok
+test_transient_continues_then_success_holds_for_review (test_retry_lock_continuation.RetryLockContinuationTests.test_transient_continues_then_success_holds_for_review) ... ok
+test_turn_budget_exhaustion_is_one_reviewable_failure (test_retry_lock_continuation.RetryLockContinuationTests.test_turn_budget_exhaustion_is_one_reviewable_failure) ... ok
 test_assignment_lease_remains_capacity_when_other_slots_free (test_review_lease_recovery.ReviewLeaseRecoveryTests.test_assignment_lease_remains_capacity_when_other_slots_free) ... ok
 test_audit_failure_keeps_lease (test_review_lease_recovery.ReviewLeaseRecoveryTests.test_audit_failure_keeps_lease) ... ok
 test_competing_recovery_acquires_only_one_slot (test_review_lease_recovery.ReviewLeaseRecoveryTests.test_competing_recovery_acquires_only_one_slot) ... ok
@@ -942,7 +986,11 @@ test_list_skills_filters_by_risk (test_skills_registry.SkillsRegistryTests.test_
 test_required_skill_fields_exist (test_skills_registry.SkillsRegistryTests.test_required_skill_fields_exist) ... ok
 test_skills_registry_loads (test_skills_registry.SkillsRegistryTests.test_skills_registry_loads) ... ok
 test_adoption_refuses_partial_identity_and_scan_errors (test_stop_supervisor.StopSupervisorTests.test_adoption_refuses_partial_identity_and_scan_errors) ... ok
+test_command_evidence_environment_relative_case_and_missing (test_stop_supervisor.StopSupervisorTests.test_command_evidence_environment_relative_case_and_missing) ... ok
+test_copied_live_status_does_not_block_other_root_start (test_stop_supervisor.StopSupervisorTests.test_copied_live_status_does_not_block_other_root_start) ... ok
+test_copied_status_refuses_and_original_still_stops (test_stop_supervisor.StopSupervisorTests.test_copied_status_refuses_and_original_still_stops) ... ok
 test_force_revalidates_creation_immediately_before_termination (test_stop_supervisor.StopSupervisorTests.test_force_revalidates_creation_immediately_before_termination) ... ok
+test_foreign_child_refused_before_graceful_request (test_stop_supervisor.StopSupervisorTests.test_foreign_child_refused_before_graceful_request) ... ok
 test_foreign_job_is_refused_and_decoy_survives (test_stop_supervisor.StopSupervisorTests.test_foreign_job_is_refused_and_decoy_survives) ... ok
 test_gone_identity_allows_start_without_adoption (test_stop_supervisor.StopSupervisorTests.test_gone_identity_allows_start_without_adoption) ... ok
 test_graceful_real_two_layers_and_audit (test_stop_supervisor.StopSupervisorTests.test_graceful_real_two_layers_and_audit) ... ok
@@ -957,6 +1005,24 @@ test_stale_stop_request_does_not_stop_replacement (test_stop_supervisor.StopSupe
 test_status_read_missing_identity_is_bounded_and_stop_refuses (test_stop_supervisor.StopSupervisorTests.test_status_read_missing_identity_is_bounded_and_stop_refuses) ... ok
 test_status_read_retries_transient_failures (test_stop_supervisor.StopSupervisorTests.test_status_read_retries_transient_failures) ... ok
 test_unresponsive_forces_only_recorded_tree_leaves_decoy (test_stop_supervisor.StopSupervisorTests.test_unresponsive_forces_only_recorded_tree_leaves_decoy) ... ok
+test_absent_wake_config_failure_and_retryable_untouched (test_stuck_assignment_recovery.StuckAssignmentTests.test_absent_wake_config_failure_and_retryable_untouched) ... ok
+test_absent_wake_exhausted_retry_budget (test_stuck_assignment_recovery.StuckAssignmentTests.test_absent_wake_exhausted_retry_budget) ... ok
+test_active_and_launching_refused (test_stuck_assignment_recovery.StuckAssignmentTests.test_active_and_launching_refused) ... active/launching run or pending wake; no changes made
+active/launching run or pending wake; no changes made
+active/launching run or pending wake; no changes made
+ok
+test_builder_guard (test_stuck_assignment_recovery.StuckAssignmentTests.test_builder_guard) ... builder isolation: assignment/lock CLI forbidden in assigned builder
+ok
+test_builder_tick_calls_sweep (test_stuck_assignment_recovery.StuckAssignmentTests.test_builder_tick_calls_sweep) ... ok
+test_exhausted_retries_and_claimed (test_stuck_assignment_recovery.StuckAssignmentTests.test_exhausted_retries_and_claimed) ... ok
+test_launch_lease_without_run_refused (test_stuck_assignment_recovery.StuckAssignmentTests.test_launch_lease_without_run_refused) ... active/launching run or pending wake; no changes made
+ok
+test_operator_audit_and_idempotence (test_stuck_assignment_recovery.StuckAssignmentTests.test_operator_audit_and_idempotence) ... ok
+test_other_active_run_is_not_hidden_by_terminal_owner (test_stuck_assignment_recovery.StuckAssignmentTests.test_other_active_run_is_not_hidden_by_terminal_owner) ... active/launching run or pending wake; no changes made
+ok
+test_pending_wake_refused (test_stuck_assignment_recovery.StuckAssignmentTests.test_pending_wake_refused) ... active/launching run or pending wake; no changes made
+ok
+test_sweep_once_and_idle_no_writes (test_stuck_assignment_recovery.StuckAssignmentTests.test_sweep_once_and_idle_no_writes) ... ok
 test_suggest_team_by_dashboard_skill (test_team_suggestion.TeamSuggestionTests.test_suggest_team_by_dashboard_skill) ... ok
 test_suggest_team_by_python_cli_skill (test_team_suggestion.TeamSuggestionTests.test_suggest_team_by_python_cli_skill) ... ok
 test_suggest_team_cli_json_output (test_team_suggestion.TeamSuggestionTests.test_suggest_team_cli_json_output) ... ok
@@ -1015,6 +1081,6 @@ test_worker_correction_does_not_claim_parent_reservation (test_work_lock.WorkLoc
 test_yaml_followups_inherit_parent_task_and_explicit_split (test_work_lock.WorkLockTests.test_yaml_followups_inherit_parent_task_and_explicit_split) ... ok
 
 ----------------------------------------------------------------------
-Ran 962 tests in 2652.406s
+Ran 1012 tests in 1246.592s
 
 OK (skipped=3)
