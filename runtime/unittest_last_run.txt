@@ -1,4 +1,4 @@
-timestamp: 2026-10-26T08:13:01Z
+timestamp: 2026-10-26T13:46:47Z
 dependency_install: skipped
 dependency_install_reason: core dependencies vendored into the signed CPython 3.11.9 runtime (R12 runtime decision); cognee optional since T-M1-22
 known_exempt_failures: []
@@ -7,14 +7,14 @@ artifact_origin_path: C:/Users/gabot/agentic-os-worktrees/r13-integration
 hostname: AIAG
 python_version: 3.11.9
 command_line: ["C:\\Users\\gabot\\agentic-os-runtime\\py311\\Scripts\\python.exe", "-m", "unittest", "discover", "-s", "tests", "-p", "test_*.py", "-v"]
-raw_output_sha256: 603c0fadcab80ab61096522afa4acd1f46738c981638e542a27b600f0ddf2a9d
+raw_output_sha256: f92a4d3be2a167af0dec69e04aede63b30a6f1ac294082ee69339bd5e15c3c9b
 repo_root: C:/Users/gabot/agentic-os-worktrees/r13-integration
 commit: unknown
-commit_full: 99afeb7815cac732a3f351eae9fb476f045e6ef2
+commit_full: 5f0576998b31744b50d4ebbfdbc617bd9b5ce170
 python: C:\Users\gabot\agentic-os-runtime\py311\Scripts\python.exe
-test_count: 1029
+test_count: 1039
 exit_code: 0
-evidence_block_sha256: 2b355a4c0c70ed5d241b587540d8f3c3d22b72ec5a3641ac4fcacc0011991052
+evidence_block_sha256: 0390ebbb9fd3222d042662863a3b5d928b77f81d63835538d9753702e1330371
 --- raw output ---
 dependency_install: skipped
 dependency_install_reason: core dependencies vendored into the signed CPython 3.11.9 runtime (R12 runtime decision); cognee optional since T-M1-22
@@ -330,6 +330,16 @@ test_adapter_streams_past_startup_and_inactivity (test_grok_streaming.FormatSens
 test_malformed_lines_are_liveness_only (test_grok_streaming.StreamingTests.test_malformed_lines_are_liveness_only) ... ok
 test_real_events_and_terminal_metadata (test_grok_streaming.StreamingTests.test_real_events_and_terminal_metadata) ... ok
 test_terminal_classification (test_grok_streaming.StreamingTests.test_terminal_classification) ... ok
+test_active_run_retains_per_poll_failure_detection (test_idle_efficiency.IdleEfficiencyTests.test_active_run_retains_per_poll_failure_detection) ... ok
+test_due_retry_checked_each_poll_using_cached_states (test_idle_efficiency.IdleEfficiencyTests.test_due_retry_checked_each_poll_using_cached_states) ... ok
+test_idle_consumer_picks_up_new_event_next_poll (test_idle_efficiency.IdleEfficiencyTests.test_idle_consumer_picks_up_new_event_next_poll) ... ok
+test_paused_idle_ceiling_periodic_recovery_and_restart (test_idle_efficiency.IdleEfficiencyTests.test_paused_idle_ceiling_periodic_recovery_and_restart) ... ok
+test_periodic_scan_cannot_miss_overdue_recovery (test_idle_efficiency.IdleEfficiencyTests.test_periodic_scan_cannot_miss_overdue_recovery) ... ok
+test_read_missing_run_does_not_create_directory (test_idle_efficiency.IdleEfficiencyTests.test_read_missing_run_does_not_create_directory) ... ok
+test_realistic_idle_fixture_filesystem_ceiling (test_idle_efficiency.IdleEfficiencyTests.test_realistic_idle_fixture_filesystem_ceiling) ... ok
+test_resumed_new_wake_is_processed_on_next_poll (test_idle_efficiency.IdleEfficiencyTests.test_resumed_new_wake_is_processed_on_next_poll) ... ok
+test_snapshot_tracks_names_atomic_replace_and_in_place_edit (test_idle_efficiency.IdleEfficiencyTests.test_snapshot_tracks_names_atomic_replace_and_in_place_edit) ... ok
+test_status_changes_and_liveness (test_idle_efficiency.IdleEfficiencyTests.test_status_changes_and_liveness) ... ok
 test_imports_and_patch_targets (test_impacted_tests.ImpactedTestsTests.test_imports_and_patch_targets) ... ok
 test_selection_is_sorted_and_matches_module_boundaries (test_impacted_tests.ImpactedTestsTests.test_selection_is_sorted_and_matches_module_boundaries) ... ok
 test_modules_import_in_fresh_interpreters (test_import_guard.ImportGuardTests.test_modules_import_in_fresh_interpreters) ... ok
@@ -1100,6 +1110,6 @@ test_worker_correction_does_not_claim_parent_reservation (test_work_lock.WorkLoc
 test_yaml_followups_inherit_parent_task_and_explicit_split (test_work_lock.WorkLockTests.test_yaml_followups_inherit_parent_task_and_explicit_split) ... ok
 
 ----------------------------------------------------------------------
-Ran 1029 tests in 2703.011s
+Ran 1039 tests in 2949.604s
 
 OK (skipped=3)
