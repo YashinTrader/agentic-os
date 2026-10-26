@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+from tests._dispatch_fixture import resume_builder_dispatch
 import subprocess
 import sys
 import tempfile
@@ -64,6 +65,7 @@ class WorkspaceFixture:
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
+        resume_builder_dispatch(self.root)
         subprocess.run(['git', 'init', '-q', str(self.root)], check=True)
 
     def prepare(self, **changes):
@@ -244,6 +246,7 @@ class WindowsBoundaryTests(WorkspaceFixture, unittest.TestCase):
         self.addCleanup(cleanup_probes)
         workspace = self.root/'builder'
         workspace.mkdir()
+        resume_builder_dispatch(workspace)
         subprocess.run(['git', 'init', '-q', str(workspace)], check=True)
         (workspace/'fixture.py').write_text(FIXTURE)
         contract, digest = prepare_contract(workspace, json.dumps({

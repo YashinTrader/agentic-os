@@ -3,6 +3,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from tests._dispatch_fixture import resume_builder_dispatch
 from unittest.mock import patch
 
 from dispatch import work_lock
@@ -224,6 +225,7 @@ class LocalBuilderDeadlineTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
+        resume_builder_dispatch(self.root)
         self.worktree = self.root/'worktree'
         self.worktree.mkdir()
         import subprocess
@@ -290,6 +292,7 @@ class WorkerDeadlineTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
+        resume_builder_dispatch(self.root)
 
     def check_deadline(self, status):
         import importlib.util
@@ -327,6 +330,7 @@ class LauncherInputTests(unittest.TestCase):
         from orchestrator.agent_launcher import LaunchPlan, launch_process
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
+            resume_builder_dispatch(root)
             def popen(argv, **kwargs):
                 self.assertEqual(kwargs['env'], {'SAFE': 'value'})
                 return SimpleNamespace(pid=1234)

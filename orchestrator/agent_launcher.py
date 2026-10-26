@@ -53,6 +53,7 @@ class LaunchPlan:
     required_mcp_servers: list[str] = field(default_factory=list)
     mcp_isolation: dict[str, Any] = field(default_factory=dict)
     contract_sha256: str = ""
+    dispatch_root: str = ""
 
     @property
     def ok(self) -> bool:
@@ -344,6 +345,11 @@ def launch_process(
     popen: SubprocessPopen | None = None,
     session_id: str | None = None,
 ) -> tuple[LaunchHandle | None, str]:
+    if plan.agent not in {'claude', 'claude-reviewer'}:
+        from orchestrator.builder_dispatch import dispatch_status
+        pause = dispatch_status(Path(plan.dispatch_root or plan.cwd))
+        if pause['paused']:
+            return None, 'dispatch_paused: ' + pause['reason']
     if not plan.ok:
         reason = "; ".join(plan.blocked_reasons) or STATE_FAILED_LAUNCH
         return None, reason

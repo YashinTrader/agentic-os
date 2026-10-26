@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import math
+import os
 from pathlib import Path
 import sys
 import subprocess
@@ -181,9 +182,37 @@ def reset_resilience(root: Path, actor: str, reason: str, layer: str | None = No
         return 2
 
 
+def builder_dispatch(root: Path, operation: str, actor: str, reason: str) -> int:
+    if os.environ.get('AGENTIC_BUILDER_RUN_ID'):
+        return 3
+    if operation not in {'pause', 'resume'} or not actor.strip() or not reason.strip():
+        raise ValueError('builder dispatch requires operation, actor and reason')
+    directory = control_dir(root)
+    token = uuid.uuid4().hex
+    audit = dict(requester=actor, reason=reason, token=token, at=timestamp(),
+                 operation='builder_dispatch', builder_dispatch=operation)
+    path = directory / 'audit' / (token + '.json')
+    try:
+        with file_lock(directory / 'operator.lock'), file_lock(directory / 'control.lock'):
+            atomic_write_json(path, audit)
+            atomic_write_json(directory / 'control/builder_dispatch.json',
+                              dict(paused=operation == 'pause', actor=actor, reason=reason, at=audit['at']))
+            audit.update(exit_code=0, outcome='builder dispatch ' + operation, finished_at=timestamp())
+            atomic_write_json(path, audit)
+        return 0
+    except (OSError, ValueError) as exc:
+        audit.update(exit_code=2, outcome=str(exc), finished_at=timestamp())
+        atomic_write_json(path, audit)
+        return 2
+
+
 def main() -> int:
+    if os.environ.get('AGENTIC_BUILDER_RUN_ID'):
+        print('refused: builder cannot operate supervisor controls', file=sys.stderr)
+        return 3
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--state-root")
+    parser.add_argument("--builder-dispatch", choices=("pause", "resume"))
     parser.add_argument("--adopt-legacy-status", action="store_true")
     parser.add_argument("--reset-circuit")
     parser.add_argument("--actor")
@@ -201,8 +230,12 @@ def main() -> int:
         parser.error("--adopt-legacy-status requires --actor and --reason and cannot combine with --maintenance")
     if args.reset_circuit and (not args.actor or args.maintenance or args.adopt_legacy_status):
         parser.error('--reset-circuit requires --actor and --reason and cannot combine with other operations')
+    if args.builder_dispatch and (not args.actor or args.maintenance or args.adopt_legacy_status or args.reset_circuit):
+        parser.error('--builder-dispatch requires --actor and --reason and cannot combine with other operations')
     try:
         root = resolve_state_root(REPO_ROOT, args.state_root)
+        if args.builder_dispatch:
+            return builder_dispatch(root, args.builder_dispatch, args.actor, args.reason)
         if args.reset_circuit:
             return reset_resilience(root, args.actor, args.reason, args.reset_circuit)
         if args.adopt_legacy_status:

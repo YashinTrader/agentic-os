@@ -242,6 +242,12 @@ def run_adapter_local_builder(
 ) -> LocalBuilderResult:
     """Execute one adapter-driven local-builder run."""
     repo_root = repo_root.resolve()
+    from orchestrator.builder_dispatch import dispatch_status
+    pause = dispatch_status(repo_root)
+    if pause['paused']:
+        return LocalBuilderResult(run_id=work_lock_run_id or '', task_id='',
+                                  status=RESULT_BLOCKED,
+                                  blocked_reasons=['dispatch_paused: ' + pause['reason']])
     task = load_task_yaml(task_path)
     task_id = str(task.get("id", ""))
     if not task_id:
@@ -447,6 +453,7 @@ def run_adapter_local_builder(
         launch_plan = LaunchPlan(
             agent=config.agent_slug, adapter=config.adapter_id, argv=argv,
             cwd=plan.cwd, executable=argv[0], env=env, inherit_environment=False,
+            dispatch_root=str(repo_root),
         )
         handle, reason = launch_process(launch_plan, stdout_path=stdout_path, stderr_path=stderr_path)
         if handle is None:

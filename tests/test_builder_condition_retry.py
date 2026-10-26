@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import sys
 import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from tests._dispatch_fixture import resume_builder_dispatch
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -64,6 +66,7 @@ class ConditionRetryFixture(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.root = Path(self.tmp.name) / "repo"
+        resume_builder_dispatch(self.root)
         self.worktree = Path(self.tmp.name) / "worktree"
         self.worktree.mkdir(parents=True)
         import subprocess

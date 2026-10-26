@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from root_paths import root_metadata
+from orchestrator.builder_dispatch import dispatch_status
 
 from orchestrator import layer_heartbeat
 from dispatch import work_lock
@@ -71,18 +72,23 @@ STOP_REQUESTED = False
 
 def _launch_agent_process(root, state, plan, *, stdout_path, stderr_path, popen):
     """Retain OSError identity even though the CLI launch helper returns text."""
+    if dispatch_status(root)['paused']:
+        return None, 'dispatch_paused: builder dispatch paused'
+    plan.dispatch_root = str(root)
     failure = None
 
     def spawn(*args, **kwargs):
         nonlocal failure
         try:
+            if dispatch_status(root)['paused']:
+                raise OSError('builder dispatch paused')
             return (popen or subprocess.Popen)(*args, **kwargs)
         except OSError as exc:
             failure = exc
             raise
 
     handle, message = launch_process(plan, stdout_path=stdout_path, stderr_path=stderr_path, popen=spawn)
-    if handle is None:
+    if handle is None and not message.startswith("dispatch_paused"):
         _classify_launch_denial(root, state, failure, message, plan.executable)
     return handle, message
 
@@ -174,6 +180,8 @@ def _wake_queue(repo_root: Path, agent: str) -> Path:
 
 
 def _consume_wake(repo_root: Path, path: Path) -> None:
+    if dispatch_status(repo_root)['paused']:
+        return
     consumed = repo_root / "runtime" / "dispatch" / "wake_queue" / "consumed" / path.name
     consumed.parent.mkdir(parents=True, exist_ok=True)
     path.replace(consumed)
@@ -284,6 +292,8 @@ def _process_wake_signal(
     single_launch: bool = False,
 ) -> dict[str, Any]:
     """Consume one wake signal and physically launch the assigned agent if eligible."""
+    if dispatch_status(repo_root)['paused']:
+        return {'status': 'dispatch_paused'}
     signal = read_wake_signal(signal_path)
     assignment_id = str(signal.get("assignment_id", ""))
     task_id = str(signal.get("task_id", ""))
@@ -543,7 +553,7 @@ def _process_wake_signal(
     plan_failure_text = '; '.join(plan.blocked_reasons)
     plan_failure_exc = FileNotFoundError(plan_failure_text) if 'executable not found' in plan_failure_text.lower() else None
     plan_failure_class = classify_launch_failure(plan_failure_exc, plan_failure_text)
-    if (not plan.ok) and config.allow_codex_fallback and plan_failure_class == 'TRANSIENT':
+    if (not plan.ok) and config.allow_codex_fallback and plan_failure_class == 'TRANSIENT' and not dispatch_status(repo_root)['paused']:
         # Fallback only for missing adapter / unavailable Grok — not builder-to-builder reassignment.
         # Claude remains authority for formal reassignment; this is process fallback for one run.
         task_file = (repo_root / (task_path or record.task_path)).resolve()
@@ -743,7 +753,7 @@ def _process_wake_signal(
             retry_count=state.retry_count,
             max_automatic_retry=config.max_automatic_retry,
         )
-        if ok and classification.category in {
+        if ok and not dispatch_status(repo_root)["paused"] and classification.category in {
             "blocked_quota",
             "blocked_authentication",
             "failed_launch",
@@ -1012,7 +1022,7 @@ def recover_orphans(repo_root: Path, *, config: SupervisorConfig | None = None) 
             wake = Path(state.wake_signal_path)
             if not wake.is_absolute():
                 wake = repo_root / wake
-            if wake.is_file():
+            if wake.is_file() and not dispatch_status(repo_root)['paused']:
                 _retry_wake(repo_root, wake, {"status": "failed_launch", "reason": state.blocked_reason}, config=cfg)
             recovered.append({"run_id": state.run_id, "status": state.process_state})
             continue
@@ -1104,11 +1114,14 @@ def _update_status(repo_root: Path, **updates: Any) -> None:
     except (FileNotFoundError, ValueError):
         status = {}
     status.update(updates)
+    status['builder_dispatch'] = dispatch_status(repo_root)
     atomic_write_json(path, status)
 
 
 def _retry_wake(repo_root: Path, path: Path, report: dict[str, Any], *, config: SupervisorConfig) -> None:
     """Three failures, exponential backoff, then durable dead-letter evidence."""
+    if dispatch_status(repo_root)['paused']:
+        return
     try:
         signal = read_wake_signal(path)
         if not isinstance(signal, dict):
@@ -1136,6 +1149,8 @@ def _retry_wake(repo_root: Path, path: Path, report: dict[str, Any], *, config: 
 
 
 def _dead_letter_wake(repo_root: Path, path: Path, signal: dict[str, Any], *, now: datetime) -> None:
+    if dispatch_status(repo_root)['paused']:
+        return
     destination = repo_root / "runtime/dispatch/wake_queue/dead_letter" / path.parent.name / path.name
     destination.parent.mkdir(parents=True, exist_ok=True)
     signal["retry"]["dead_lettered_at"] = now.isoformat()
@@ -1147,10 +1162,15 @@ def _dead_letter_wake(repo_root: Path, path: Path, signal: dict[str, Any], *, no
 
 def process_once(repo_root: Path, *, config: SupervisorConfig | None = None, **kwargs: Any) -> dict[str, Any]:
     cfg = config or SupervisorConfig()
+    pause = dispatch_status(repo_root)
     _update_status(repo_root, **root_metadata(repo_root))
     recover_orphans(repo_root, config=cfg)
     from orchestrator.stuck_assignments import recover_stuck_assignments
     recover_stuck_assignments(repo_root, max_automatic_retry=cfg.max_automatic_retry)
+    pause = dispatch_status(repo_root)
+    if pause['paused']:
+        _update_status(repo_root, builder_dispatch=pause)
+        return {'status': 'dispatch_paused', 'agent': cfg.agent, 'builder_dispatch': pause}
     # Re-evaluate every tick, before waking new work, so due retries cannot starve.
     report = reevaluate_blocked_builders(
         repo_root, config=cfg, launch=process_wake_signal, single_launch=True, **kwargs
@@ -1160,6 +1180,8 @@ def process_once(repo_root: Path, *, config: SupervisorConfig | None = None, **k
     queue = _wake_queue(repo_root, cfg.agent)
     signals = sorted(queue.glob("*.json")) if queue.is_dir() else []
     for path in signals:
+        if dispatch_status(repo_root)['paused']:
+            return {'status': 'dispatch_paused', 'builder_dispatch': dispatch_status(repo_root)}
         try:
             data = read_wake_signal(path)
             retry = data.get("retry", {}) if isinstance(data, dict) else {}

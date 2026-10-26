@@ -19,6 +19,7 @@ from typing import Callable
 from root_paths import root_metadata
 from dispatch.atomic_io import atomic_write_json
 from orchestrator.process_ownership import owned_popen, terminate_owned, ownership_metadata, process_start_time
+from orchestrator.builder_dispatch import dispatch_status
 from orchestrator.layer_heartbeat import read_heartbeat, timestamp
 from orchestrator.supervisor_control import control_dir, file_lock, identity_state, register_supervisor_job, is_legacy_status, recorded_state
 
@@ -183,6 +184,7 @@ class LayerSupervisor:
         content = {
             **self.root_audit,
             **self.identity,
+            "builder_dispatch": dispatch_status(self.root),
             "state": state,
             "alerts": self.alerts, "parked_reason": parked_reason,
             "stop_request": self.stop_request,

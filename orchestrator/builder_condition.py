@@ -343,6 +343,10 @@ def _rollback_dispatch(repo_root: Path, source: RunState, *, now: datetime) -> N
 
 def dispatch_condition_retry(repo_root: Path, source: RunState, *, config: object, launch: Callable[..., dict[str, Any]], **kwargs: Any) -> dict[str, Any]:
     """Relaunch once on the preserved worktree, branch, and work lock."""
+    from orchestrator.builder_dispatch import dispatch_status
+    pause = dispatch_status(repo_root)
+    if pause['paused']:
+        return {'status': 'dispatch_paused', 'builder_dispatch': pause}
     now = clock_from(config)
     source.attempts = int(source.attempts) + 1
     source.condition_retry_dispatched_at = format_time(now)
@@ -391,6 +395,10 @@ def reevaluate_blocked_builders(
     **kwargs: Any,
 ) -> dict[str, Any] | None:
     """Periodic tick. Returns None when no blocked builder becomes eligible."""
+    from orchestrator.builder_dispatch import dispatch_status
+    pause = dispatch_status(repo_root)
+    if pause['paused']:
+        return {'status': 'dispatch_paused', 'builder_dispatch': pause}
     now = clock_from(config)
     probe = getattr(config, "condition_probe", None) or default_builder_probe
     max_attempts = int(getattr(config, "max_condition_retries", None) or MAX_CONDITION_RETRIES)

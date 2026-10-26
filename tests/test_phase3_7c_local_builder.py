@@ -10,6 +10,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from tests._dispatch_fixture import resume_builder_dispatch
 from unittest.mock import MagicMock
 
 import yaml
@@ -64,6 +65,7 @@ class LocalBuilderFixtureMixin:
             self.root,
             ignore=_copy_repo_ignore,
         )
+        resume_builder_dispatch(self.root)
         # Defensive: strip any residual active tasks before writing the fixture task.
         active_dir = self.root / "tasks" / "active"
         active_dir.mkdir(parents=True, exist_ok=True)

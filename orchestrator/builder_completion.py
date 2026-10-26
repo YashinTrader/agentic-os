@@ -19,7 +19,8 @@ def verify_completion(plan, contract, *, base_sha, evidence_dir):
     def run(argv, label):
         out, err = evidence_dir/f'{label}.stdout', evidence_dir/f'{label}.stderr'
         check = LaunchPlan('acceptance', 'isolated-acceptance', argv, str(root), argv[0],
-                           contract_sha256=plan.contract_sha256, env=plan.env)
+                           contract_sha256=plan.contract_sha256, env=plan.env,
+                           dispatch_root=plan.dispatch_root)
         handle, reason = launch_process(check, stdout_path=out, stderr_path=err)
         if handle is None:
             failures.append(label + ': ' + reason)

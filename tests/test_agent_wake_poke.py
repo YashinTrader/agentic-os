@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 from pathlib import Path
+from tests._dispatch_fixture import resume_builder_dispatch
 
 import yaml
 
@@ -18,6 +19,7 @@ class WakePokeTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.root = Path(self.tmp.name)
+        resume_builder_dispatch(self.root)
         agents = self.root / "agents"
         agents.mkdir()
         (agents / "adapter_registry.yaml").write_text("adapters: []\n", encoding="utf-8")

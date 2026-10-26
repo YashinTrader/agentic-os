@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from tests._dispatch_fixture import resume_builder_dispatch
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
@@ -20,6 +21,7 @@ class QuotaProbeTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
+        resume_builder_dispatch(self.root)
         (self.root / "agents").mkdir()
         self.configure()
         self.now = datetime(2026, 10, 21, tzinfo=timezone.utc)
@@ -118,7 +120,7 @@ with patch.object(qp, 'run_quota_probe') as run:
             qp.probe_blocked_providers(self.root, [self.state()], now=self.now)
             self.configure()
             path = qp.ledger_path(self.root)
-            path.parent.mkdir(parents=True)
+            path.parent.mkdir(parents=True, exist_ok=True)
             for value in ('broken', '[]', '{"codex": {"last_paid_probe_at":"broken"}}'):
                 path.write_text(value)
                 qp.probe_blocked_providers(self.root, [self.state()], now=self.now)

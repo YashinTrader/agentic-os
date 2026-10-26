@@ -8,6 +8,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from tests._dispatch_fixture import resume_builder_dispatch
 from unittest.mock import MagicMock, patch
 
 import yaml
@@ -73,6 +74,7 @@ class PhysicalLauncherFixture(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.root = Path(self.tmp.name) / "repo"
+        resume_builder_dispatch(self.root)
         self.allocated_worktree = Path(self.tmp.name) / "allocated-worktree"
         self.allocated_worktree.mkdir(parents=True)
         import subprocess
@@ -218,6 +220,7 @@ class GrokArgvTests(unittest.TestCase):
 
     def test_launch_process_records_pid_and_requires_real_process(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
+            resume_builder_dispatch(Path(tmp))
             import subprocess
             from orchestrator.task_contract import prepare_contract
             subprocess.run(['git', 'init', '-q', tmp], check=True)

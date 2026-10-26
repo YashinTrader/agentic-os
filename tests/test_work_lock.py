@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 import importlib.util
 import json
 from pathlib import Path
+from tests._dispatch_fixture import resume_builder_dispatch
 import subprocess
 import sys
 import tempfile
@@ -26,6 +27,7 @@ class WorkLockTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
+        resume_builder_dispatch(self.root)
 
     def acquire(self, logical='T-1', **kwargs):
         return locks.acquire(self.root, logical, holder_agent='codex', route='manual', run_id='run-1', **kwargs)

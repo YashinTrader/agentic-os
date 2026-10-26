@@ -17,6 +17,10 @@ from dispatch.assignment_channel import claim_assignment  # noqa: E402
 
 
 def process_one(repo_root: Path, agent: str) -> dict:
+    from orchestrator.builder_dispatch import dispatch_status
+    pause = dispatch_status(repo_root)
+    if agent not in {'claude', 'claude-reviewer'} and pause['paused']:
+        return {'status': 'dispatch_paused', 'builder_dispatch': pause}
     queue = repo_root / "runtime" / "dispatch" / "wake_queue" / agent
     signals = sorted(queue.glob("*.json")) if queue.is_dir() else []
     if not signals:

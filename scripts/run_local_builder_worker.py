@@ -84,6 +84,10 @@ def _handle_stop(signum: int, frame: object) -> None:
 
 
 def process_one(repo_root: Path, *, task_path: Path | None = None) -> dict:
+    from orchestrator.builder_dispatch import dispatch_status
+    pause = dispatch_status(repo_root)
+    if pause['paused']:
+        return {'status': 'dispatch_paused', 'builder_dispatch': pause}
     policy = load_execution_policy(repo_root)
     max_concurrent = int(policy.get("maximum_concurrent_runs", 1) or 1)
     guard_error = work_lock.concurrency_error(repo_root, max_concurrent)
