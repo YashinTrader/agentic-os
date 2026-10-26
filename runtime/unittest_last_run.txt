@@ -1,4 +1,4 @@
-timestamp: 2026-10-26T00:09:12Z
+timestamp: 2026-10-26T08:13:01Z
 dependency_install: skipped
 dependency_install_reason: core dependencies vendored into the signed CPython 3.11.9 runtime (R12 runtime decision); cognee optional since T-M1-22
 known_exempt_failures: []
@@ -7,14 +7,14 @@ artifact_origin_path: C:/Users/gabot/agentic-os-worktrees/r13-integration
 hostname: AIAG
 python_version: 3.11.9
 command_line: ["C:\\Users\\gabot\\agentic-os-runtime\\py311\\Scripts\\python.exe", "-m", "unittest", "discover", "-s", "tests", "-p", "test_*.py", "-v"]
-raw_output_sha256: 37df7e18b464b40855b59506a6331dd35edac6df0b38ce80291c5883820b91d3
+raw_output_sha256: 603c0fadcab80ab61096522afa4acd1f46738c981638e542a27b600f0ddf2a9d
 repo_root: C:/Users/gabot/agentic-os-worktrees/r13-integration
 commit: unknown
-commit_full: 93a81863e530513d3ef3b0a09b25a1e28ea0a625
+commit_full: 99afeb7815cac732a3f351eae9fb476f045e6ef2
 python: C:\Users\gabot\agentic-os-runtime\py311\Scripts\python.exe
-test_count: 1012
+test_count: 1029
 exit_code: 0
-evidence_block_sha256: e777fe14a108a1e5964eaeb145db42a2f9274ece0ed0ee53396e601e16518175
+evidence_block_sha256: 2b355a4c0c70ed5d241b587540d8f3c3d22b72ec5a3641ac4fcacc0011991052
 --- raw output ---
 dependency_install: skipped
 dependency_install_reason: core dependencies vendored into the signed CPython 3.11.9 runtime (R12 runtime decision); cognee optional since T-M1-22
@@ -93,6 +93,24 @@ test_quota_without_retry_after_relaunches_once_after_backoff (test_builder_condi
 test_recovery_seconds_from_blocked_since_to_first_activity (test_builder_condition_retry.RecoveryTests.test_recovery_seconds_from_blocked_since_to_first_activity) ... ok
 test_retry_after_is_honored_ahead_of_backoff (test_builder_condition_retry.RetryAfterTests.test_retry_after_is_honored_ahead_of_backoff) ... ok
 test_orchestrator_supersede_still_replaces_the_lock (test_builder_condition_retry.SupersedeWhileBlockedTests.test_orchestrator_supersede_still_replaces_the_lock) ... ok
+test_direct_condition_retry_and_continuation_no_mutation (test_builder_dispatch_pause.DispatchPauseIntegrationTests.test_direct_condition_retry_and_continuation_no_mutation) ... ok
+test_due_retry_and_pending_wake_preserved_until_resume (test_builder_dispatch_pause.DispatchPauseIntegrationTests.test_due_retry_and_pending_wake_preserved_until_resume) ... ok
+test_orphan_finalizes_without_launch_while_paused (test_builder_dispatch_pause.DispatchPauseIntegrationTests.test_orphan_finalizes_without_launch_while_paused) ... ok
+test_pending_wake_launches_next_tick_after_resume (test_builder_dispatch_pause.DispatchPauseIntegrationTests.test_pending_wake_launches_next_tick_after_resume) ... ok
+test_same_assignment_continuation_preserves_state (test_builder_dispatch_pause.DispatchPauseIntegrationTests.test_same_assignment_continuation_preserves_state) ... ok
+test_cli_and_builder_guard (test_builder_dispatch_pause.DispatchPauseTests.test_cli_and_builder_guard) ... refused: builder cannot operate supervisor controls
+ok
+test_continuation_and_fallback_spawn_guard (test_builder_dispatch_pause.DispatchPauseTests.test_continuation_and_fallback_spawn_guard) ... ok
+test_invalid_and_absent_fail_closed (test_builder_dispatch_pause.DispatchPauseTests.test_invalid_and_absent_fail_closed) ... ok
+test_low_level_manual_and_legacy_launches_are_noops (test_builder_dispatch_pause.DispatchPauseTests.test_low_level_manual_and_legacy_launches_are_noops) ... ok
+test_lowest_launcher_and_legacy_worker_are_noops (test_builder_dispatch_pause.DispatchPauseTests.test_lowest_launcher_and_legacy_worker_are_noops) ... ok
+test_pause_keeps_wake_and_skips_due_retry_then_resume (test_builder_dispatch_pause.DispatchPauseTests.test_pause_keeps_wake_and_skips_due_retry_then_resume) ... ok
+test_paused_tick_finalizes_r12_fixture (test_builder_dispatch_pause.DispatchPauseTests.test_paused_tick_finalizes_r12_fixture) ... ok
+test_r12_notice_preserved_and_claude_review_processed_while_paused (test_builder_dispatch_pause.DispatchPauseTests.test_r12_notice_preserved_and_claude_review_processed_while_paused) ... ok
+test_restart_and_layer_telemetry (test_builder_dispatch_pause.DispatchPauseTests.test_restart_and_layer_telemetry) ... ok
+test_restart_status_and_claude_launch_exemption (test_builder_dispatch_pause.DispatchPauseTests.test_restart_status_and_claude_launch_exemption) ... ok
+test_review_consumer_continues_while_paused (test_builder_dispatch_pause.DispatchPauseTests.test_review_consumer_continues_while_paused) ... ok
+test_unreadable_control_is_deduplicated (test_builder_dispatch_pause.DispatchPauseTests.test_unreadable_control_is_deduplicated) ... ok
 test_cli_guards_and_supervisor_exemption (test_builder_isolation_contract.ContractTests.test_cli_guards_and_supervisor_exemption) ... ok
 test_env_uses_only_private_profile (test_builder_isolation_contract.ContractTests.test_env_uses_only_private_profile) ... ok
 test_grok_deny_plan_keeps_30_turns_without_unverified_sandbox (test_builder_isolation_contract.ContractTests.test_grok_deny_plan_keeps_30_turns_without_unverified_sandbox) ... ok
@@ -331,7 +349,8 @@ test_reset_audited_consumed_once_and_no_duplicate_alert (test_launch_resilience.
 test_reset_commands_require_actor_and_reason_and_audit (test_launch_resilience.LaunchResilienceTests.test_reset_commands_require_actor_and_reason_and_audit) ... usage: command [-h] [--state-root STATE_ROOT] [--config-root CONFIG_ROOT]
                [--reset-root-guard] [--actor ACTOR] [--reason REASON]
 command: error: --reset-root-guard requires nonblank --actor and --reason
-usage: command [-h] [--state-root STATE_ROOT] [--adopt-legacy-status]
+usage: command [-h] [--state-root STATE_ROOT]
+               [--builder-dispatch {pause,resume}] [--adopt-legacy-status]
                [--reset-circuit RESET_CIRCUIT] [--actor ACTOR]
                [--reason REASON] [--timeout TIMEOUT] [--maintenance {on,off}]
 command: error: a stop request requires --actor and --reason
@@ -1081,6 +1100,6 @@ test_worker_correction_does_not_claim_parent_reservation (test_work_lock.WorkLoc
 test_yaml_followups_inherit_parent_task_and_explicit_split (test_work_lock.WorkLockTests.test_yaml_followups_inherit_parent_task_and_explicit_split) ... ok
 
 ----------------------------------------------------------------------
-Ran 1012 tests in 1246.592s
+Ran 1029 tests in 2703.011s
 
 OK (skipped=3)
